@@ -36,6 +36,12 @@ typedef struct opentui_external_render_stats {
 
 opentui_native_handle createEventSink(opentui_event_callback callback);
 void destroyEventSink(opentui_native_handle sink_handle);
+opentui_native_handle createEditBuffer(uint8_t width_method, opentui_native_handle event_sink_handle);
+void destroyEditBuffer(opentui_native_handle edit_buffer_handle);
+void editBufferInsertText(
+    opentui_native_handle edit_buffer_handle,
+    const uint8_t *text,
+    uint32_t text_len);
 
 opentui_native_handle createRenderer(
     uint32_t width,
@@ -93,6 +99,9 @@ _Static_assert(offsetof(opentui_external_render_stats, stdout_write_time_valid) 
 
 typedef opentui_native_handle (*opentui_create_event_sink_fn)(opentui_event_callback);
 typedef void (*opentui_destroy_event_sink_fn)(opentui_native_handle);
+typedef opentui_native_handle (*opentui_create_edit_buffer_fn)(uint8_t, opentui_native_handle);
+typedef void (*opentui_destroy_edit_buffer_fn)(opentui_native_handle);
+typedef void (*opentui_edit_buffer_insert_text_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 typedef opentui_native_handle (*opentui_create_renderer_fn)(uint32_t, uint32_t, uint8_t, uint8_t, void *);
 typedef void (*opentui_set_use_thread_fn)(opentui_native_handle, bool);
 typedef void (*opentui_destroy_renderer_fn)(opentui_native_handle);
@@ -106,6 +115,9 @@ typedef void (*opentui_get_render_stats_fn)(opentui_native_handle, opentui_exter
 
 _Static_assert(_Generic(&createEventSink, opentui_create_event_sink_fn: 1, default: 0), "createEventSink ABI drift");
 _Static_assert(_Generic(&destroyEventSink, opentui_destroy_event_sink_fn: 1, default: 0), "destroyEventSink ABI drift");
+_Static_assert(_Generic(&createEditBuffer, opentui_create_edit_buffer_fn: 1, default: 0), "createEditBuffer ABI drift");
+_Static_assert(_Generic(&destroyEditBuffer, opentui_destroy_edit_buffer_fn: 1, default: 0), "destroyEditBuffer ABI drift");
+_Static_assert(_Generic(&editBufferInsertText, opentui_edit_buffer_insert_text_fn: 1, default: 0), "editBufferInsertText ABI drift");
 _Static_assert(_Generic(&createRenderer, opentui_create_renderer_fn: 1, default: 0), "createRenderer ABI drift");
 _Static_assert(_Generic(&setUseThread, opentui_set_use_thread_fn: 1, default: 0), "setUseThread ABI drift");
 _Static_assert(_Generic(&destroyRenderer, opentui_destroy_renderer_fn: 1, default: 0), "destroyRenderer ABI drift");

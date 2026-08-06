@@ -13,6 +13,8 @@ first link seam and the smallest renderer/buffer/event slice:
 | Symbol | Zig definition | ABI shape | Ownership or lifetime |
 | --- | --- | --- | --- |
 | `createEventSink` / `destroyEventSink` | `lib.zig:147`, `lib.zig:219` | `u32` handle; callback is a C function pointer with four borrowed pointer/`u32` pairs | The sink owns its registration. The callback receives synchronous borrowed bytes and must copy them before returning. |
+| `createEditBuffer` / `destroyEditBuffer` | `lib.zig:1975`, `lib.zig:2004` | `u8, u32 -> u32`; `u32 -> void` | The edit buffer borrows the event sink and owns its child text buffer. Destroy the edit buffer before its sink. |
+| `editBufferInsertText` | `lib.zig:2017` | `u32, nullable byte pointer + u32 -> void` | The text is consumed synchronously and emits native events synchronously when an event sink is attached. |
 | `createRenderer` | `lib.zig:648` | `u32, u32, u8, u8, nullable pointer -> u32` | A zero dimension or invalid destination returns handle `0`. The renderer owns its current/next buffers. |
 | `setUseThread` | `lib.zig:711` | `u32, bool -> void` | Phase 1 always passes `false`; all raw entrypoints remain on one native owner. |
 | `destroyRenderer` | `lib.zig:721` | `u32 -> void` | Destruction invalidates renderer-owned borrowed buffer handles before renderer deinitialization. |

@@ -1,9 +1,48 @@
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
 
+#include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "opentui_abi.h"
+
+enum {
+  event_name_capacity = 64,
+  event_data_capacity = 8,
+};
+
+static uint8_t captured_event_name[event_name_capacity];
+static uint8_t captured_event_data[event_data_capacity];
+static uint32_t captured_event_name_len;
+static uint32_t captured_event_data_len;
+static uint32_t captured_event_count;
+static bool captured_event_overflow;
+
+static void reset_event_capture(void) {
+  memset(captured_event_name, 0, sizeof(captured_event_name));
+  memset(captured_event_data, 0, sizeof(captured_event_data));
+  captured_event_name_len = 0;
+  captured_event_data_len = 0;
+  captured_event_count = 0;
+  captured_event_overflow = false;
+}
+
+static void capture_event(
+    const uint8_t *name_ptr,
+    uint32_t name_len,
+    const uint8_t *data_ptr,
+    uint32_t data_len) {
+  captured_event_count += 1;
+  if (name_len > sizeof(captured_event_name) || data_len > sizeof(captured_event_data)) {
+    captured_event_overflow = true;
+  }
+
+  captured_event_name_len = name_len < sizeof(captured_event_name) ? name_len : sizeof(captured_event_name);
+  captured_event_data_len = data_len < sizeof(captured_event_data) ? data_len : sizeof(captured_event_data);
+  memcpy(captured_event_name, name_ptr, captured_event_name_len);
+  memcpy(captured_event_data, data_ptr, captured_event_data_len);
+}
 
 CAMLprim value opentui_test_native_symbol_smoke(value unit_value) {
   CAMLparam1(unit_value);
@@ -66,4 +105,34 @@ CAMLprim value opentui_test_memory_renderer_round_trip(value unit_value) {
       getBufferWidth(next) == 0 && getBufferHeight(next) == 0;
 
   CAMLreturn(Val_bool(round_trip_succeeded));
+}
+
+CAMLprim value opentui_test_event_callback_copy(value unit_value) {
+  CAMLparam1(unit_value);
+
+  reset_event_capture();
+  const opentui_native_handle event_sink = createEventSink(capture_event);
+  if (event_sink == 0) {
+    CAMLreturn(Val_false);
+  }
+
+  const opentui_native_handle edit_buffer = createEditBuffer(1, event_sink);
+  if (edit_buffer == 0) {
+    destroyEventSink(event_sink);
+    CAMLreturn(Val_false);
+  }
+
+  const uint8_t text[1] = {'X'};
+  editBufferInsertText(edit_buffer, text, 1);
+
+  static const uint8_t expected_name[] = "eb_content-changed";
+  const bool copied_payload = captured_event_count == 2 && !captured_event_overflow &&
+      captured_event_name_len == sizeof(expected_name) - 1 &&
+      memcmp(captured_event_name, expected_name, sizeof(expected_name) - 1) == 0 &&
+      captured_event_data_len == 2;
+
+  destroyEditBuffer(edit_buffer);
+  destroyEventSink(event_sink);
+
+  CAMLreturn(Val_bool(copied_payload));
 }

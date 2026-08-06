@@ -49,6 +49,21 @@ comptime {
         fn (opentui.NativeHandle) callconv(.c) void,
         "destroyEventSink",
     );
+    expectType(
+        @TypeOf(opentui.createEditBuffer),
+        fn (u8, opentui.NativeHandle) callconv(.c) opentui.NativeHandle,
+        "createEditBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.destroyEditBuffer),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "destroyEditBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.editBufferInsertText),
+        fn (opentui.NativeHandle, ?[*]const u8, u32) callconv(.c) void,
+        "editBufferInsertText",
+    );
 
     const create_renderer = @typeInfo(@TypeOf(opentui.createRenderer)).@"fn";
     expectType(create_renderer.params[0].type.?, u32, "createRenderer.width");
