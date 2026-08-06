@@ -1,0 +1,243 @@
+# Implementation plan
+
+This plan is ordered around reducing uncertainty at the native boundary before
+adding framework ergonomics. A phase is complete only when its ownership and
+observable behavior are recorded in `design.md` and its tests or measurements
+support the relevant claim.
+
+## Phase 0 — Repository foundation (complete)
+
+- establish the Dune monorepo and package-management lock;
+- provide reproducible Nix default/test shells and native Zig tooling;
+- add CI on supported Linux and Apple Silicon macOS systems;
+- pin the upstream OpenTUI source as `vendor/opentui`;
+- record the package graph, constraints, and tentative decisions.
+
+## Phase 1 — ABI/build seam and minimal native smoke (in progress)
+
+This is the first implementation gate. It intentionally proves a narrow,
+memory-output renderer/buffer/event slice while establishing which state belongs
+in Zig, which values may cross the ABI, and which runtime operations must be
+serialized. Full terminal parsing, the public Yoga surface, native-owned span
+views, and hard performance gates are follow-on work rather than prerequisites
+for the first successful native link.
+
+### Source and ABI audit
+
+- map the upstream build entry points, Zig package dependencies, targets, and
+  required system SDKs;
+- inventory the native exports and group them into renderer, buffer, Yoga,
+  terminal, event, output-feed, and deferred subsystems;
+- compare the TypeScript FFI declarations with the Zig definitions without
+  treating TypeScript types as an ABI specification;
+- record the exact fixed-width types, `extern struct` layouts, enum values,
+  booleans, pointer/length conventions, and status/error encodings;
+- identify which functions return owned handles, renderer-owned borrowed
+  children, raw pointers, borrowed spans, output buffers, or callback
+  registrations;
+- inspect destruction order, stale-handle behavior, callback reentrancy, and
+  private renderer-thread behavior;
+- record the native buffer SoA layout, renderer double-buffer/hit-grid model,
+  Yoga pointer model, native span-feed contract, and TypeScript stdin-parser
+  state machine in `design.md`;
+- choose the first C ABI/build seam and document any facade needed to make the
+  Zig exports safe for OCaml.
+
+### Build/link gate
+
+- record the exact Nix/Zig invocation, target, artifact name, and Dune link
+  path for the pinned native library;
+- account for the upstream dynamic-library shape, Yoga's C++ sources and
+  standard-library link requirements, and any platform SDK libraries before
+  choosing the root build rule;
+- make the first artifact use the memory output backend with native threaded
+  output disabled (`setUseThread` off);
+- make the build fail clearly when the selected artifact or its ABI header is
+  missing. A successful Zig build without a successful Dune link is not a
+  completed Phase 1 seam.
+
+### Data-structure decisions to settle before Phase 2
+
+- use kind-specific abstract handle modules and an immediate OCaml-side handle
+  representation where practical; keep the packed registry format private;
+- keep OpenTUI's cell grid, hit grid, grapheme/link pools, renderer caches, and
+  output span ring native;
+- classify every cross-boundary buffer as synchronous-borrowed, reusable
+  caller-owned, or native-owned-borrowed; do not expose a naked pointer or
+  naked Bigarray from the raw package;
+- use a reusable `Bigarray.Array1` byte buffer with one `Cstruct.t` view for
+  terminal input and bounded scratch output; avoid a `Bytes`-to-`Cstruct`
+  conversion in the read loop;
+- keep Yoga nodes behind an owning native object or a generation-checked native
+  wrapper; do not publish raw `YGNodeRef` values;
+- specify stdin framing with a reusable byte queue and mutable parser state;
+  implement it after the Phase 1 native smoke gate;
+- define one native-owner UI fiber/domain, a bounded event handoff, and the
+  policy for dropping/coalescing only high-rate motion events;
+- use buffered memory for the first output smoke path. Treat
+  `NativeSpanFeed`'s native-owned zero-copy lifetime/backpressure proof as
+  Phase 2 work, after the initial ABI and link seam is real;
+- before exposing span views or reservations, add native release/consumed and
+  reservation-cancel operations. The current upstream surface has a
+  `markSpanConsumed` method but no export and has reserve/commit without a
+  cancel path;
+- keep direct OptimizedBuffer views deferred because native resize reallocates
+  its SoA arrays; choose scoped borrows, deferred reclamation, or snapshot copy
+  only after a measured post-processing need;
+- classify every future float-to-text use as protocol, snapshot, diagnostic, or
+  display output; do not use generic `string_of_float` as an accidental wire
+  format, and defer `dtoa` until a concrete OCaml-owned text boundary exists;
+- use Eio only at the terminal/runtime boundary and avoid adding a general
+  container or lock-free queue package without a measured need.
+
+### First binding slice to prove
+
+- load and link the selected native artifact from the root Dune workflow;
+- create and destroy a memory-output renderer, obtain abstract current/next
+  buffer handles, and prove the documented borrowed-buffer invalidation order;
+- exercise a small set of batched buffer operations: clear, cell/text update,
+  and caller-owned bounded resolved-character output. Raw `get*Ptr` access and
+  native-owned cell views are explicitly deferred;
+- create/destroy one event sink and copy one synchronous callback payload into
+  an owned test packet;
+- use native-threaded output off and keep all raw entrypoints on the one UI
+  owner.
+
+The first slice does not include the full stdin parser, terminal mode setup,
+the public Yoga API, or `NativeSpanFeed` zero-copy reservations. Those are
+audited in Phase 1 but implemented only after this smoke path has established
+the build and ownership conventions.
+
+### Phase 1 acceptance tests
+
+- source inventory points to the relevant pinned files and names all deferred
+  subsystems;
+- Zig/C ABI declarations are checked against a generated header or equivalent
+  compile-time probe rather than inferred from TypeScript alone;
+- the Nix/Dune workflow produces and links the selected native artifact, with
+  the required Yoga C++ and platform-library dependencies accounted for;
+- create/destroy tests prove renderer-owned buffer handles become invalid in
+  the documented order and stale handles do not resolve;
+- invalid dimensions, oversized lengths, null/empty spans, and native failure
+  statuses have deterministic OCaml results;
+- native writes into caller-owned output storage are visible in OCaml without
+  an intermediate string allocation;
+- callback tests prove native bytes are copied before callback return and no
+  arbitrary renderer call occurs from the callback;
+- a small baseline records allocations and native-call counts for repeated
+  buffer updates, without making an unmeasured allocation number a Phase 1
+  correctness gate.
+
+The following are deliberately deferred from this gate: chunk-shape-invariant
+stdin parsing, Yoga layout readback and custom measurement, native-owned span
+aliasing/release, reserve/commit/cancel, terminal integration, and a hard frame
+allocation budget.
+
+**Exit:** a reviewed ABI inventory, low-level ownership/scheduling decision,
+build/link seam, and minimal smoke layer are checked in. An OCaml integration
+test can create/destroy a memory-output renderer, use abstract buffer handles,
+draw a cell or text span, write into caller-owned output storage, and observe a
+copied callback payload without exposing raw pointers or requiring a second
+external data-structure library.
+
+## Phase 2 — Complete typed raw boundary and native protocol proofs
+
+- make the root development workflow build the pinned native library for the
+  host target using the repository's Zig version;
+- settle whether the Dune build invokes `zig build` directly or consumes a
+  small generated artifact wrapper, including the supported target matrix;
+- complete the minimal OCaml-oriented C-compatible facade: fixed-width
+  booleans and lengths, explicit output structs, and typed status/error
+  conversion rather than raw Zig `bool`, `usize`, or borrowed string fields;
+- implement raw handle creation/destruction and status/error conversion for
+  the selected renderer, buffer, and event domains;
+- add the owned Yoga wrapper and exact layout output (the current upstream
+  layout struct contains six `f32` values), without publishing `YGNodeRef`;
+- add the capability facade with copied strings and fixed-width lengths;
+- add native span-consumed/release and reservation-cancel operations, then
+  prove scoped Bigarray/Cstruct views, reserve/commit, cancellation, and close
+  behavior;
+- test the complete native artifact independently of the UI framework.
+
+**Exit:** an OCaml test can load/link the native artifact, create and destroy a
+renderer/buffer/layout resource, exercise the documented native-owned view
+protocol, and prove that failure paths do not leak or silently reuse an invalid
+handle.
+
+## Phase 3 — Native and terminal foundations
+
+- build `opentui-native` around renderer, buffers, Yoga, native renderables,
+  and frame lifecycle;
+- build `opentui-terminal` around terminal mode transitions, input decoding,
+  resize, capabilities, and output flushing;
+- port only the input/event behavior needed by the native OCaml path;
+- add deterministic byte-stream tests and pseudo-terminal integration tests;
+- establish a frame loop that can run without Lwd or widgets.
+
+**Exit:** a small imperative OCaml program can enter terminal mode, render a
+known frame, receive an input/resize event, update a persistent native node,
+flush the next frame, and restore terminal state on shutdown.
+
+## Phase 4 — Retained `opentui-core`
+
+- define the retained scene/renderable model and ownership tree;
+- connect Yoga/layout results to persistent native nodes;
+- define event propagation, hit testing, focus, and teardown boundaries;
+- batch native mutations before a controlled render flush;
+- test that ordinary updates preserve node identity and do not recreate the
+  native tree.
+
+**Exit:** the imperative core supports a small static and interactive scene with
+stable identities, deterministic teardown, and frame/update benchmarks.
+
+## Phase 5 — Solid-like Lwd bindings
+
+- add `opentui-lwd` over the retained core rather than over a rebuilt virtual
+  tree;
+- introduce mount/component scopes, cleanup, context, and keyed children;
+- connect Lwd invalidation to a frame scheduler and batch boundary;
+- add equality/cutoff policy for native property updates;
+- measure allocation and frame behavior for signal updates, list changes, and
+  event bursts;
+- document the cases where an explicit mutable model is preferable to a
+  reactive value.
+
+**Exit:** a reactive example mounts once, updates only affected native state,
+cleans up all resources, and meets an agreed allocation/frame budget under a
+repeatable benchmark.
+
+## Phase 6 — Widgets and application ergonomics
+
+- add a small set of useful widgets over stable core contracts;
+- define styling, focus, keyboard/mouse, scrolling, and accessibility-shaped
+  conventions only as supported by the native core;
+- provide examples that exercise both imperative and Lwd APIs;
+- keep widget state and rendering allocations measurable.
+
+**Exit:** examples are expressive without exposing raw handles or requiring
+callers to manage native lifetime manually.
+
+## Phase 7 — Portability, packaging, and upstream feedback
+
+- test supported Linux and macOS targets, including terminal differences;
+- add package-level documentation and installation examples;
+- define the supported compiler/Zig matrix and submodule update procedure;
+- upstream generally useful Zig fixes rather than accumulating a permanent
+  private fork;
+- publish only the packages whose ownership and ABI contracts are stable.
+
+**Exit:** a clean checkout can reproduce the native build, run the integration
+suite, and consume the stable packages without the JavaScript runtime.
+
+## Immediate next tasks
+
+1. Finish the compile-time ABI probe/header for the selected exports in
+   `vendor/opentui/packages/core/src/zig/lib.zig` and `zig.ts`.
+2. Choose the Yoga ownership wrapper and document the exact renderer-owner,
+   borrowed-buffer, callback, and output-span lifetimes.
+3. Add the root native build seam and one create/destroy smoke test, then add
+   the first buffer/layout/event operations behind it.
+4. Port the small stdin byte-queue/state-machine core with chunk-split tests;
+   keep Eio integration at the terminal runtime boundary.
+5. Replace the placeholder `opentui-raw.Handle` API only after those ABI and
+   ownership tests pass.
