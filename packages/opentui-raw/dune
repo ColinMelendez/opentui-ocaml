@@ -1,0 +1,3 @@
+(library
+ (name opentui_raw)
+ (public_name opentui-raw))
