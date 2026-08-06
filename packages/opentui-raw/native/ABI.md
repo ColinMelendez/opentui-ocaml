@@ -19,11 +19,19 @@ first link seam and the smallest renderer/buffer/event slice:
 | `setUseThread` | `lib.zig:711` | `u32, bool -> void` | Phase 1 always passes `false`; all raw entrypoints remain on one native owner. |
 | `destroyRenderer` | `lib.zig:721` | `u32 -> void` | Destruction invalidates renderer-owned borrowed buffer handles before renderer deinitialization. |
 | `getCurrentBuffer` / `getNextBuffer` | `lib.zig:808`, `lib.zig:813` | `u32 -> u32` | Returned optimized-buffer handles are borrowed children of the renderer. |
-| `bufferClear` | `lib.zig:1168` | `u32, pointer to four `u16` values -> void` | The color pointer is consumed synchronously. |
-| `bufferDrawText` | `lib.zig:1228` | `u32, nullable byte pointer/`u32`, coordinates, two color pointers, `u32` attributes -> void` | Text and colors are synchronous caller-owned input. |
-| `bufferSetCell` | `lib.zig:1245` | `u32`, coordinates, `u32` character, two color pointers, `u32` attributes -> void` | The cell is written in native SoA storage; no native cell view crosses the boundary. |
-| `bufferWriteResolvedChars` | `lib.zig:1219` | `u32, nullable caller output pointer, `u32` capacity, `bool` -> `u32` | Native writes into caller-owned bounded storage and returns the byte count. |
-| `getRenderStats` | `lib.zig:788` | `u32, pointer to `ExternalRenderStats` -> void` | Caller supplies output storage; the Zig probe checks the nine-field C-compatible layout. |
+| `bufferClear` | `lib.zig:1168` | `u32, pointer to four u16 values -> void` | The color pointer is consumed synchronously. |
+| `bufferDrawText` | `lib.zig:1228` | `u32, nullable byte pointer/u32, coordinates, two color pointers, u32 attributes -> void` | Text and colors are synchronous caller-owned input. |
+| `bufferSetCell` | `lib.zig:1245` | `u32, coordinates, u32 character, two color pointers, u32 attributes -> void` | The cell is written in native SoA storage; no native cell view crosses the boundary. |
+| `bufferWriteResolvedChars` | `lib.zig:1219` | `u32, nullable caller output pointer, `u32` capacity, `bool` -> `u32` | Native writes into caller-owned bounded storage and returns the byte count; a capacity smaller than the resolved output returns `0`. |
+| `getRenderStats` | `lib.zig:788` | `u32, pointer to ExternalRenderStats -> void` | Caller supplies output storage; the Zig probe checks the nine-field C-compatible layout. |
+
+The first smoke records the selected failure behavior: zero dimensions, an
+invalid buffered destination, and a null event callback return handle `0`;
+invalid or stale renderer/buffer handles are no-ops or return `0`; nullable
+empty spans are accepted without writing; and a caller-owned output capacity
+that is too small returns `0` without exposing a native error object. These
+cases are boundary evidence for the raw seam, not the final typed OCaml error
+API.
 
 `NativeHandle` is a `u32` packed by the upstream registry: a 16-bit slot
 index, 12-bit generation, and 4-bit kind. Zero is invalid. The packed fields

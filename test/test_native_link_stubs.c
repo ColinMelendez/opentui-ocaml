@@ -47,9 +47,10 @@ static void capture_event(
 CAMLprim value opentui_test_native_symbol_smoke(value unit_value) {
   CAMLparam1(unit_value);
 
-  const bool invalid_dimensions_rejected = createRenderer(0, 1, 1, 1, NULL) == 0 &&
-      createRenderer(1, 0, 1, 1, NULL) == 0;
+  const bool invalid_renderer_options_rejected = createRenderer(0, 1, 1, 1, NULL) == 0 &&
+      createRenderer(1, 0, 1, 1, NULL) == 0 && createRenderer(1, 1, 2, 1, NULL) == 0;
   const opentui_native_handle event_sink = createEventSink(NULL);
+  const bool invalid_callback_rejected = event_sink == 0;
 
   destroyEventSink(event_sink);
   setUseThread(0, false);
@@ -66,8 +67,8 @@ CAMLprim value opentui_test_native_symbol_smoke(value unit_value) {
   bufferDrawText(0, NULL, 0, 0, 0, NULL, NULL, 0);
   bufferSetCell(0, 0, 0, 0, NULL, NULL, 0);
 
-  CAMLreturn(Val_bool(invalid_dimensions_rejected && invalid_handles_rejected && invalid_stats_rejected &&
-      resolved_length == 0));
+  CAMLreturn(Val_bool(invalid_renderer_options_rejected && invalid_callback_rejected &&
+      invalid_handles_rejected && invalid_stats_rejected && resolved_length == 0));
 }
 
 CAMLprim value opentui_test_memory_renderer_round_trip(value unit_value) {
@@ -87,17 +88,19 @@ CAMLprim value opentui_test_memory_renderer_round_trip(value unit_value) {
 
   const uint16_t foreground[4] = {UINT16_C(255), UINT16_C(255), UINT16_C(255), UINT16_C(255)};
   const uint16_t background[4] = {0, 0, 0, UINT16_C(255)};
-  const uint8_t text[1] = {'B'};
+  const uint8_t text[3] = {'B', 'C', 'D'};
   uint8_t too_small_output[1] = {0};
   uint8_t output[2] = {0, 0};
 
   bufferClear(current, background);
+  bufferDrawText(current, NULL, 0, 0, 0, foreground, background, 0);
+  const uint32_t empty_output_length = bufferWriteResolvedChars(current, NULL, 0, false);
   bufferSetCell(current, 0, 0, UINT32_C(65), foreground, background, 0);
-  bufferDrawText(current, text, 1, 1, 0, foreground, background, 0);
-  const uint32_t too_small_length = bufferWriteResolvedChars(current, too_small_output, 1, false);
+  bufferDrawText(current, text, sizeof(text), 1, 0, foreground, background, 0);
+  const uint32_t too_small_length = bufferWriteResolvedChars(current, too_small_output, sizeof(too_small_output), false);
   const uint32_t output_length = bufferWriteResolvedChars(current, output, 2, false);
   round_trip_succeeded = round_trip_succeeded && too_small_length == 0 && output_length == 2 &&
-      output[0] == 'A' && output[1] == 'B';
+      empty_output_length == 0 && output[0] == 'A' && output[1] == 'B';
 
   destroyRenderer(renderer);
   round_trip_succeeded = round_trip_succeeded && getCurrentBuffer(renderer) == 0 &&
@@ -122,6 +125,7 @@ CAMLprim value opentui_test_event_callback_copy(value unit_value) {
     CAMLreturn(Val_false);
   }
 
+  editBufferInsertText(edit_buffer, NULL, 0);
   const uint8_t text[1] = {'X'};
   editBufferInsertText(edit_buffer, text, 1);
 
