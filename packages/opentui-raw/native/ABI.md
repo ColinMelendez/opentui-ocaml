@@ -21,7 +21,7 @@ first link seam and the smallest renderer/buffer/event slice:
 | `bufferDrawText` | `lib.zig:1228` | `u32, nullable byte pointer/`u32`, coordinates, two color pointers, `u32` attributes -> void` | Text and colors are synchronous caller-owned input. |
 | `bufferSetCell` | `lib.zig:1245` | `u32`, coordinates, `u32` character, two color pointers, `u32` attributes -> void` | The cell is written in native SoA storage; no native cell view crosses the boundary. |
 | `bufferWriteResolvedChars` | `lib.zig:1219` | `u32, nullable caller output pointer, `u32` capacity, `bool` -> `u32` | Native writes into caller-owned bounded storage and returns the byte count. |
-| `getRenderStats` | `lib.zig:788` | `u32, pointer to `ExternalRenderStats` -> void` | Caller supplies output storage; the Zig probe checks the six-field C-compatible layout. |
+| `getRenderStats` | `lib.zig:788` | `u32, pointer to `ExternalRenderStats` -> void` | Caller supplies output storage; the Zig probe checks the nine-field C-compatible layout. |
 
 `NativeHandle` is a `u32` packed by the upstream registry: a 16-bit slot
 index, 12-bit generation, and 4-bit kind. Zero is invalid. The packed fields
@@ -38,8 +38,11 @@ calling shape.
 ## Build and link
 
 The pinned upstream dynamic library is built with Zig 0.16.0 in
-`vendor/opentui/packages/core/src/zig`. Its Phase 1 memory-output invocation
-uses `createRenderer(width, height, 1, 2, NULL)` and leaves `setUseThread` off.
+`vendor/opentui/packages/core/src/zig` using `ReleaseSafe`. Its Phase 1
+memory-output invocation uses `createRenderer(width, height, 1, 2, NULL)` and
+leaves `setUseThread` off. `ReleaseSafe` is intentional: the upstream Debug
+allocator captures stack traces that are not compatible with the OCaml C-call
+frame used by the runtime smoke. The compile-only ABI probe remains Debug.
 The Dune rule runs the pinned build, runs the source-importing Zig probe, copies
 the host artifact into the Dune native output directory, and links the C smoke
 stub against it with `-lopentui`.

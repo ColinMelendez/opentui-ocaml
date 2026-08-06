@@ -63,7 +63,7 @@ case "$(uname -s):$(uname -m)" in
 esac
 
 zig_prefix="$output_dir/zig-out"
-(CDPATH= cd -- "$upstream_dir" && zig build -Doptimize=Debug --prefix "$zig_prefix")
+(CDPATH= cd -- "$upstream_dir" && zig build -Doptimize=ReleaseSafe --prefix "$zig_prefix")
 
 artifact="$output_dir/lib/$target_name/$library_name"
 if [ ! -f "$artifact" ]; then
