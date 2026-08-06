@@ -1,0 +1,19 @@
+.{
+    .name = .opentui_raw_abi_probe,
+    .version = "0.1.0",
+    .fingerprint = 0x204f74a068688a23,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .uucode = .{
+            .url = "https://github.com/jacobsandlund/uucode/archive/8ad04b756f85a5ba1ac8d2b8cb48d0946f06b630.tar.gz",
+            .hash = "uucode-0.2.0-ZZjBPuS4VABmt0lQ-jDiKB4afmuZVvZpbX09FP5JrR8N",
+        },
+        .yoga = .{
+            .url = "git+https://github.com/facebook/yoga#v3.2.1",
+            .hash = "N-V-__8AAOYl0gAU76B1VRPFD9AWvy2VkOef2jN0B3sISTeO",
+        },
+    },
+    .paths = .{
+        ".",
+    },
+}

@@ -1,0 +1,8 @@
+/.zig-cache/
+/abi-probe-source/
+/lib/
+/libopentui.dylib
+/libopentui.so
+/opentui-native.stamp
+/zig-pkg/
+/zig-out/

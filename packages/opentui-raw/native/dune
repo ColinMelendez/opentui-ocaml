@@ -1,0 +1,16 @@
+(rule
+ (targets
+  opentui-native.stamp
+  libopentui.dylib
+  libopentui.so)
+ (deps
+  .gitignore
+  ABI.md
+  abi_probe.zig
+  build.zig
+  build.zig.zon
+  build-opentui-native.sh
+  opentui_abi.h
+  (source_tree ../../../vendor/opentui/packages/core/src/zig))
+ (action
+  (run sh %{project_root}/packages/opentui-raw/native/build-opentui-native.sh %{targets})))
