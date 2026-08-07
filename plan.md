@@ -152,10 +152,14 @@ placeholder handle module and all higher-level layers remain unchanged.
 
 ## Phase 2 — Complete typed raw boundary and native protocol proofs
 
-- make the root development workflow build the pinned native library for the
-  host target using the repository's Zig version;
-- settle whether the Dune build invokes `zig build` directly or consumes a
-  small generated artifact wrapper, including the supported target matrix;
+The first Phase 2 increment is the typed raw facade: structured status/error
+results, kind-specific renderer and borrowed-buffer domains, caller-owned
+resolved-character output, and a bounded copied event queue. It stays in
+`opentui-raw`; Yoga, layout, native span views, terminal parsing,
+`opentui-native`, Lwd, and widgets remain later layers.
+
+- reuse the root development workflow and existing Dune/Zig artifact seam while
+  extending the typed raw boundary for the host target;
 - complete the minimal OCaml-oriented C-compatible facade: fixed-width
   booleans and lengths, explicit output structs, and typed status/error
   conversion rather than raw Zig `bool`, `usize`, or borrowed string fields;
@@ -241,14 +245,12 @@ suite, and consume the stable packages without the JavaScript runtime.
 
 ## Immediate next tasks
 
-Phase 1 is complete. The next implementation turn should begin Phase 2 with:
+Phase 1 is complete. Phase 2 begins with the typed raw facade described above;
+the remaining implementation sequence is:
 
-1. a fixed-width OCaml-oriented facade for status/error conversion and the
-   selected renderer, buffer, and event domains;
-2. kind-specific raw handle modules and explicit creation/destruction, while
-   keeping the packed registry representation private;
-3. an owned Yoga wrapper and exact six-`f32` layout output;
-4. native span-consumed/release and reservation-cancel operations before any
+1. extend the fixed-width facade to the remaining native protocol domains;
+2. add an owned Yoga wrapper and exact six-`f32` layout output;
+3. add native span-consumed/release and reservation-cancel operations before any
    zero-copy view is exposed; and
-5. the reusable stdin byte queue and parser state machine only after the raw
+4. add the reusable stdin byte queue and parser state machine only after the raw
    protocol boundary is typed.

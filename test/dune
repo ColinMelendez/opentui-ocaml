@@ -1,6 +1,6 @@
 (test
- (name test_handle)
- (modules test_handle)
+ (name test_raw)
+ (modules test_raw)
  (libraries opentui-raw windtrap))
 
 (library

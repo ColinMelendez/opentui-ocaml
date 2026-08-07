@@ -1,0 +1,32 @@
+type t = {
+  handle : Native_token.Renderer.t;
+  owner : Native_owner.t;
+}
+
+let error_of_status status =
+  match Error.Private.of_native_status status with
+  | Some error -> error
+  | None -> Error.Native_failure
+
+let create ~width ~height =
+  let status, handle = Native.renderer_create width height in
+  match status with
+  | 0 -> Ok { handle; owner = Native_owner.Private.create () }
+  | _ -> Error (error_of_status status)
+
+let close renderer =
+  if Native_owner.is_open renderer.owner then begin
+    Native.renderer_destroy renderer.handle;
+    Native_owner.Private.close renderer.owner
+  end
+
+let buffer renderer ~next =
+  if not (Native_owner.is_open renderer.owner) then Error Error.Closed
+  else
+    let status, handle = Native.renderer_buffer renderer.handle next in
+    match status with
+    | 0 -> Ok (Buffer.Private.of_native handle renderer.owner)
+    | _ -> Error (error_of_status status)
+
+let current_buffer renderer = buffer renderer ~next:false
+let next_buffer renderer = buffer renderer ~next:true

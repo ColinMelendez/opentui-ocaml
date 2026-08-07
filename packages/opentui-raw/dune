@@ -1,3 +1,21 @@
 (library
  (name opentui_raw)
- (public_name opentui-raw))
+ (public_name opentui-raw)
+ (modules buffer color error event event_sink native native_owner native_token renderer)
+ (private_modules native native_owner)
+ (foreign_stubs
+  (language c)
+  (names raw_stubs)
+  (flags (:standard -Ipackages/opentui-raw/native))
+  (extra_deps
+   native/opentui-native.stamp
+   native/libopentui.dylib
+   native/libopentui.so))
+ (c_library_flags
+  (:standard
+   -Lpackages/opentui-raw/native
+   -lopentui
+   -Wl,-rpath,@loader_path/native
+   -Wl,-rpath,@loader_path/../packages/opentui-raw/native
+   -Wl,-rpath,$ORIGIN/native
+   -Wl,-rpath,$ORIGIN/../packages/opentui-raw/native)))
