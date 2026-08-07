@@ -17,7 +17,7 @@
  (name opentui-terminal)
  (synopsis "Reusable OCaml terminal input foundations for OpenTUI")
  (description
-  "A terminal-side package for bounded reusable input storage. Terminal modes and protocol decoding are added only after their ownership contracts are stable.")
+  "A terminal-side package for bounded reusable input storage, protocol framing, and common semantic key decoding. Terminal modes and mouse policy remain separate until their ownership contracts are stable.")
  (license ISC)
  (authors "Colin <cwrmcolin@gmail.com>")
  (maintainers "Colin <cwrmcolin@gmail.com>")

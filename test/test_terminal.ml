@@ -39,6 +39,7 @@ let queue_contents queue =
   result
 
 module Parser = Opentui_terminal.Stdin_parser
+module Decoder = Opentui_terminal.Key_decoder
 
 let parser_create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
   match Parser.create ?initial_capacity ?max_pending_bytes ?timeout_ms () with
@@ -111,6 +112,44 @@ let expect_parser_error expected result =
   match result with
   | Ok _ -> fail "expected a parser error"
   | Error actual -> equal bool true (same_error expected actual)
+
+let expect_modifiers ~shift ~meta ~ctrl actual =
+  equal bool shift actual.Decoder.shift;
+  equal bool meta actual.Decoder.meta;
+  equal bool ctrl actual.Decoder.ctrl
+
+let expect_named event expected_name ~shift ~meta ~ctrl =
+  match event with
+  | Decoder.Key { key = Decoder.Named actual; modifiers } ->
+      equal string expected_name (Decoder.named_key_name actual);
+      expect_modifiers ~shift ~meta ~ctrl modifiers
+  | Decoder.Key { key = Decoder.Character _; modifiers = _ } ->
+      fail "expected a named key"
+  | Decoder.Sequence _ -> fail "expected a semantic key, got a sequence"
+  | Decoder.Paste _ -> fail "expected a semantic key, got paste"
+
+let expect_character event expected_text ~shift ~meta ~ctrl =
+  match event with
+  | Decoder.Key { key = Decoder.Character actual; modifiers } ->
+      equal string expected_text (Bytes.to_string actual);
+      expect_modifiers ~shift ~meta ~ctrl modifiers
+  | Decoder.Key { key = Decoder.Named _; modifiers = _ } ->
+      fail "expected a character key"
+  | Decoder.Sequence _ -> fail "expected a semantic key, got a sequence"
+  | Decoder.Paste _ -> fail "expected a semantic key, got paste"
+
+let expect_decoded_sequence event protocol expected =
+  match event with
+  | Decoder.Sequence { protocol = actual_protocol; bytes } ->
+      equal bool true (same_protocol protocol actual_protocol);
+      equal string expected (Bytes.to_string bytes)
+  | Decoder.Key _ -> fail "expected an undecoded sequence"
+  | Decoder.Paste _ -> fail "expected an undecoded sequence, got paste"
+
+let read_parser_event parser =
+  match Parser.read parser with
+  | Some event -> event
+  | None -> fail "expected a parser event"
 
 let () =
   run "opentui-terminal"
@@ -205,6 +244,62 @@ let () =
           expect_no_event parser;
           push_string parser "P";
           expect_sequence parser Parser.Ss3 "\x1bOP");
+      test "semantic key decoding stays above framing" (fun () ->
+          let parser = parser_create () in
+          push_string parser "A";
+          expect_character (Decoder.decode (read_parser_event parser)) "A"
+            ~shift:true ~meta:false ~ctrl:false;
+          push_string parser "\x01";
+          expect_character (Decoder.decode (read_parser_event parser)) "a"
+            ~shift:false ~meta:false ~ctrl:true;
+          push_string parser "\r";
+          expect_named (Decoder.decode (read_parser_event parser)) "return"
+            ~shift:false ~meta:false ~ctrl:false;
+          push_string parser "\x1b[1;5A";
+          expect_named (Decoder.decode (read_parser_event parser)) "up"
+            ~shift:false ~meta:false ~ctrl:true;
+          push_string parser "\x1b[27;5;13~";
+          expect_named (Decoder.decode (read_parser_event parser)) "return"
+            ~shift:false ~meta:false ~ctrl:true;
+          push_string parser "\x1b[27;5;65~";
+          expect_character (Decoder.decode (read_parser_event parser)) "A"
+            ~shift:false ~meta:false ~ctrl:true;
+          push_string parser "\x1b[3~";
+          expect_named (Decoder.decode (read_parser_event parser)) "delete"
+            ~shift:false ~meta:false ~ctrl:false;
+          push_string parser "\x1b[Z";
+          expect_named (Decoder.decode (read_parser_event parser)) "tab"
+            ~shift:true ~meta:false ~ctrl:false;
+          push_string parser "\x1bOP";
+          expect_named (Decoder.decode (read_parser_event parser)) "f1"
+            ~shift:false ~meta:false ~ctrl:false;
+          push_string parser "\x1b[[5~";
+          expect_named (Decoder.decode (read_parser_event parser)) "pageup"
+            ~shift:false ~meta:false ~ctrl:false;
+          push_string parser "\x1b[1;1R";
+          expect_decoded_sequence (Decoder.decode (read_parser_event parser))
+            Parser.Csi "\x1b[1;1R";
+          push_string parser "\x1bf";
+          expect_character (Decoder.decode (read_parser_event parser)) "f"
+            ~shift:false ~meta:true ~ctrl:false;
+          push_string parser "\x1b\x1b[A";
+          expect_named (Decoder.decode (read_parser_event parser)) "up"
+            ~shift:false ~meta:true ~ctrl:false);
+      test "semantic decoding preserves unknown protocol ownership" (fun () ->
+          let raw = Bytes.of_string "\x1b[M !\"" in
+          let decoded =
+            Decoder.decode
+              (Parser.Sequence { protocol = Parser.Csi; bytes = raw })
+          in
+          Bytes.set_uint8 raw 0 0;
+          expect_decoded_sequence decoded Parser.Csi "\x1b[M !\"";
+          let paste = Bytes.of_string "paste" in
+          let decoded_paste = Decoder.decode (Parser.Paste paste) in
+          Bytes.set_uint8 paste 0 0;
+          match decoded_paste with
+          | Decoder.Paste actual -> equal string "paste" (Bytes.to_string actual)
+          | Decoder.Key _ -> fail "expected decoded paste"
+          | Decoder.Sequence _ -> fail "expected decoded paste");
       test "stdin framing recognizes split opaque responses" (fun () ->
           let parser = parser_create () in
           push_string parser "\x1b]title";

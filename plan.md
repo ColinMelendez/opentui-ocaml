@@ -261,8 +261,8 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. extend `opentui-terminal` with semantic key/mouse decoding and timer/mode
-   coordination only after the framing contract is exercised; and
+2. extend `opentui-terminal` with mouse decoding and timer/mode coordination
+   only after the framing and common key contracts are exercised; and
 3. compose the stable raw pieces in `opentui-native` before adding terminal,
    core, Lwd, or widget layers.
 
@@ -272,5 +272,7 @@ acceptance contract is a reusable `Bigarray.Array1`-backed queue that compacts
 consumed prefixes before growing, enforces a configured maximum atomically,
 preserves split UTF-8 and protocol units across pushes, flushes incomplete
 prefixes only when the caller invokes `flush_timeout`, and copies paste/event
-payloads before returning them. Semantic key/mouse decoding, terminal modes,
-and output lifecycle remain outside this increment.
+payloads before returning them. `Key_decoder` now composes above that framing
+boundary for common semantic keys and copies its character/unknown/paste
+payloads. Mouse decoding, terminal modes, and output lifecycle remain outside
+this increment.
