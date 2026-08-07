@@ -40,6 +40,7 @@ let queue_contents queue =
 
 module Parser = Opentui_terminal.Stdin_parser
 module Decoder = Opentui_terminal.Key_decoder
+module Mouse = Opentui_terminal.Mouse_decoder
 
 let parser_create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
   match Parser.create ?initial_capacity ?max_pending_bytes ?timeout_ms () with
@@ -150,6 +151,57 @@ let read_parser_event parser =
   match Parser.read parser with
   | Some event -> event
   | None -> fail "expected a parser event"
+
+let mouse_sequence text =
+  Parser.Sequence { protocol = Parser.Csi; bytes = Bytes.of_string text }
+
+let x10_sequence ~button_code ~x ~y =
+  let bytes = Bytes.create 6 in
+  Bytes.set_uint8 bytes 0 0x1b;
+  Bytes.set_uint8 bytes 1 0x5b;
+  Bytes.set_uint8 bytes 2 0x4d;
+  Bytes.set_uint8 bytes 3 (button_code + 0x20);
+  Bytes.set_uint8 bytes 4 (x + 0x21);
+  Bytes.set_uint8 bytes 5 (y + 0x21);
+  Parser.Sequence { protocol = Parser.Csi; bytes }
+
+let read_mouse decoder text =
+  match Mouse.decode decoder (mouse_sequence text) with
+  | Some event -> event
+  | None -> fail "expected a mouse event"
+
+let same_mouse_kind left right =
+  match left, right with
+  | Mouse.Down, Mouse.Down
+  | Mouse.Up, Mouse.Up
+  | Mouse.Move, Mouse.Move
+  | Mouse.Drag, Mouse.Drag
+  | Mouse.Scroll, Mouse.Scroll -> true
+  | _ -> false
+
+let expect_mouse event ~kind ~button ~x ~y ~shift ~alt ~ctrl =
+  equal bool true (same_mouse_kind kind event.Mouse.kind);
+  equal int button event.Mouse.button;
+  equal int x event.Mouse.x;
+  equal int y event.Mouse.y;
+  equal bool shift event.Mouse.modifiers.Mouse.shift;
+  equal bool alt event.Mouse.modifiers.Mouse.alt;
+  equal bool ctrl event.Mouse.modifiers.Mouse.ctrl
+
+let expect_scroll event direction delta =
+  match event.Mouse.scroll with
+  | Some scroll ->
+      let same_direction left right =
+        match left, right with
+        | Mouse.Scroll_up, Mouse.Scroll_up
+        | Mouse.Scroll_down, Mouse.Scroll_down
+        | Mouse.Scroll_left, Mouse.Scroll_left
+        | Mouse.Scroll_right, Mouse.Scroll_right -> true
+        | _ -> false
+      in
+      equal bool true (same_direction direction scroll.Mouse.direction);
+      equal int delta scroll.Mouse.delta
+  | None -> fail "expected mouse scroll details"
 
 let () =
   run "opentui-terminal"
@@ -441,5 +493,109 @@ let () =
           let source = byte_array [ 1; 2 ] in
           expect_parser_error
             (Parser.Queue_error Opentui_terminal.Byte_queue.Invalid_range)
-            (Parser.push parser ~source ~off:(-1) ~len:1))
+            (Parser.push parser ~source ~off:(-1) ~len:1));
+      test "SGR mouse decoding preserves modifiers and coordinates" (fun () ->
+          let decoder = Mouse.create () in
+          let event = read_mouse decoder "\x1b[<28;11;6M" in
+          expect_mouse event ~kind:Mouse.Down ~button:0 ~x:10 ~y:5 ~shift:true
+            ~alt:true ~ctrl:true);
+      test "SGR mouse state classifies drag and reset release" (fun () ->
+          let decoder = Mouse.create () in
+          ignore (read_mouse decoder "\x1b[<0;6;6M");
+          let drag = read_mouse decoder "\x1b[<32;8;6M" in
+          expect_mouse drag ~kind:Mouse.Drag ~button:0 ~x:7 ~y:5 ~shift:false
+            ~alt:false ~ctrl:false;
+          let release = read_mouse decoder "\x1b[<0;8;6m" in
+          expect_mouse release ~kind:Mouse.Up ~button:0 ~x:7 ~y:5 ~shift:false
+            ~alt:false ~ctrl:false;
+          let move = read_mouse decoder "\x1b[<35;9;6M" in
+          expect_mouse move ~kind:Mouse.Move ~button:0 ~x:8 ~y:5 ~shift:false
+            ~alt:false ~ctrl:false;
+          Mouse.reset decoder;
+          let reset_move = read_mouse decoder "\x1b[<32;9;6M" in
+          expect_mouse reset_move ~kind:Mouse.Move ~button:0 ~x:8 ~y:5
+            ~shift:false ~alt:false ~ctrl:false);
+      test "SGR release clears every pressed button" (fun () ->
+          let decoder = Mouse.create () in
+          ignore (read_mouse decoder "\x1b[<0;6;6M");
+          ignore (read_mouse decoder "\x1b[<2;6;6M");
+          ignore (read_mouse decoder "\x1b[<0;6;6m");
+          let move = read_mouse decoder "\x1b[<32;9;6M" in
+          expect_mouse move ~kind:Mouse.Move ~button:0 ~x:8 ~y:5 ~shift:false
+            ~alt:false ~ctrl:false);
+      test "SGR mouse scroll keeps direction and motion precedence" (fun () ->
+          let decoder = Mouse.create () in
+          let scroll = read_mouse decoder "\x1b[<65;11;6M" in
+          expect_mouse scroll ~kind:Mouse.Scroll ~button:1 ~x:10 ~y:5
+            ~shift:false ~alt:false ~ctrl:false;
+          expect_scroll scroll Mouse.Scroll_down 1;
+          let motion = read_mouse decoder "\x1b[<96;11;6M" in
+          expect_mouse motion ~kind:Mouse.Move ~button:0 ~x:10 ~y:5
+            ~shift:false ~alt:false ~ctrl:false;
+          (match motion.Mouse.scroll with
+          | None -> ()
+          | Some _ -> fail "motion must not carry scroll details");
+          let release = read_mouse decoder "\x1b[<64;11;6m" in
+          expect_mouse release ~kind:Mouse.Up ~button:0 ~x:10 ~y:5
+            ~shift:false ~alt:false ~ctrl:false;
+          (match release.Mouse.scroll with
+          | None -> ()
+          | Some _ -> fail "scroll release must not carry scroll details"));
+      test "X10 mouse press, scroll, and motion precedence" (fun () ->
+          let decoder = Mouse.create () in
+          let down =
+            match Mouse.decode decoder (x10_sequence ~button_code:0 ~x:2 ~y:3) with
+            | Some event -> event
+            | None -> fail "expected an X10 press"
+          in
+          expect_mouse down ~kind:Mouse.Down ~button:0 ~x:2 ~y:3 ~shift:false
+            ~alt:false ~ctrl:false;
+          let scroll =
+            match Mouse.decode decoder
+                    (x10_sequence ~button_code:64 ~x:2 ~y:3) with
+            | Some event -> event
+            | None -> fail "expected an X10 scroll"
+          in
+          expect_mouse scroll ~kind:Mouse.Scroll ~button:0 ~x:2 ~y:3
+            ~shift:false ~alt:false ~ctrl:false;
+          expect_scroll scroll Mouse.Scroll_up 1;
+          let motion =
+            match Mouse.decode decoder
+                    (x10_sequence ~button_code:96 ~x:2 ~y:3) with
+            | Some event -> event
+            | None -> fail "expected an X10 motion"
+          in
+          expect_mouse motion ~kind:Mouse.Move ~button:0 ~x:2 ~y:3
+            ~shift:false ~alt:false ~ctrl:false;
+          (match motion.Mouse.scroll with
+          | None -> ()
+          | Some _ -> fail "X10 motion must not carry scroll details"));
+      test "X10 mouse high coordinates survive framing" (fun () ->
+          let decoder = Mouse.create () in
+          let parser = parser_create () in
+          let source = Bytes.create 6 in
+          Bytes.set_uint8 source 0 0x1b;
+          Bytes.set_uint8 source 1 0x5b;
+          Bytes.set_uint8 source 2 0x4d;
+          Bytes.set_uint8 source 3 64;
+          Bytes.set_uint8 source 4 128;
+          Bytes.set_uint8 source 5 34;
+          (match Parser.push_bytes parser ~source ~off:0 ~len:6 with
+          | Ok () -> ()
+          | Error error -> fail (Parser.message error));
+          let event =
+            match Parser.read parser with
+            | Some parser_event ->
+                (match Mouse.decode decoder parser_event with
+                | Some event -> event
+                | None -> fail "expected an X10 mouse event")
+            | None -> fail "expected a framed X10 mouse event"
+          in
+          expect_mouse event ~kind:Mouse.Move ~button:0 ~x:95 ~y:1
+            ~shift:false ~alt:false ~ctrl:false);
+      test "non-mouse sequences remain available to other decoders" (fun () ->
+          let decoder = Mouse.create () in
+          match Mouse.decode decoder (mouse_sequence "\x1b[1;5A") with
+          | None -> ()
+          | Some _ -> fail "a keyboard CSI sequence was decoded as mouse")
     ]

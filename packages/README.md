@@ -14,10 +14,11 @@ opentui-raw
 `opentui-terminal` is kept beside the native layer rather than below it because terminal input/output policy should remain usable without importing the renderer's object model. An application can compose the terminal, native, and core layers at its boundary.
 
 The first terminal-side slice is now `opentui-terminal`'s reusable
-`Byte_queue`, framing `Stdin_parser`, and compositional `Key_decoder`. It owns
+`Byte_queue`, framing `Stdin_parser`, compositional `Key_decoder`, and
+stateful `Mouse_decoder`. It owns
 bounded `Bigarray.Array1` input storage, cursor compaction, split-safe protocol
-framing, common semantic key naming/modifiers, and owned event/paste payloads.
-Mouse state and decoding, terminal modes, and output lifecycle remain separate
+framing, common semantic key naming/modifiers, SGR/X10 mouse semantics, and
+owned event/paste payloads. Terminal modes and output lifecycle remain separate
 follow-on modules.
 
 The first `opentui-native` slice composes `opentui-raw` behind an imperative

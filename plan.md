@@ -212,6 +212,13 @@ render status. Native handles, raw buffer pointers, retained renderables,
 Yoga composition, terminal modes, and output flushing remain outside this
 increment.
 
+**Terminal mouse increment:** `opentui-terminal.Mouse_decoder` now composes
+above complete framing events without importing the renderer. It decodes the
+pinned SGR and X10 mouse encodings, retains high X10 coordinate bytes, tracks
+SGR pressed buttons for drag classification, and returns no event for
+non-mouse or malformed frames. Terminal mode negotiation, timer coordination,
+event dispatch, and output flushing remain outside this increment.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -270,10 +277,10 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. extend `opentui-terminal` with mouse decoding and timer/mode coordination
-   only after the framing and common key contracts are exercised; and
-3. compose the stable raw pieces in `opentui-native` before adding terminal,
-   core, Lwd, or widget layers.
+2. add terminal timer/mode coordination around the now-complete framing and
+   semantic key/mouse boundaries; and
+3. extend `opentui-native` with the smallest Yoga/renderable composition before
+   adding terminal, core, Lwd, or widget layers.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their
@@ -283,5 +290,5 @@ preserves split UTF-8 and protocol units across pushes, flushes incomplete
 prefixes only when the caller invokes `flush_timeout`, and copies paste/event
 payloads before returning them. `Key_decoder` now composes above that framing
 boundary for common semantic keys and copies its character/unknown/paste
-payloads. Mouse decoding, terminal modes, and output lifecycle remain outside
-this increment.
+payloads. `Mouse_decoder` now adds stateful SGR/X10 semantics while leaving
+terminal modes and output lifecycle outside this increment.
