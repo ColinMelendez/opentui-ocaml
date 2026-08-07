@@ -76,6 +76,24 @@ let () =
             (Opentui_raw.Buffer.write_resolved_chars buffer ~output
                ~add_line_breaks:false);
           Opentui_raw.Renderer.close renderer);
+      test "renderer exposes typed frame status" (fun () ->
+          let renderer =
+            expect_ok (Opentui_raw.Renderer.create ~width:1l ~height:1l)
+          in
+          let buffer = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.set_cell buffer ~x:0l ~y:0l ~character:65l
+                  ~foreground:Opentui_raw.Color.white
+                  ~background:Opentui_raw.Color.black ~attributes:0l));
+          (match Opentui_raw.Renderer.render renderer ~force:true with
+          | Ok Opentui_raw.Renderer.Rendered -> ()
+          | Ok Opentui_raw.Renderer.Skipped -> fail "expected a rendered frame"
+          | Ok Opentui_raw.Renderer.Failed -> fail "native frame render failed"
+          | Error error -> fail (Opentui_raw.Error.message error));
+          Opentui_raw.Renderer.close renderer;
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Renderer.render renderer ~force:true));
       test "event delivery is polled from an owned copy" (fun () ->
           let sink = expect_ok (Opentui_raw.Event_sink.create ()) in
           equal bool true (emit_event_for_test ());

@@ -8,6 +8,11 @@
  (modules test_terminal)
  (libraries opentui-terminal windtrap))
 
+(test
+ (name test_native)
+ (modules test_native)
+ (libraries opentui-native windtrap))
+
 (library
  (name test_native_link_support)
  (modules test_native_link_support)

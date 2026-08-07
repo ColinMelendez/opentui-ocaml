@@ -3,6 +3,8 @@ type t = {
   owner : Native_owner.t;
 }
 
+type render_status = Rendered | Skipped | Failed
+
 let error_of_status status =
   match Error.Private.of_native_status status with
   | Some error -> error
@@ -30,6 +32,15 @@ let buffer renderer ~next =
 
 let current_buffer renderer = buffer renderer ~next:false
 let next_buffer renderer = buffer renderer ~next:true
+
+let render renderer ~force =
+  if not (Native_owner.is_open renderer.owner) then Error Error.Closed
+  else
+    match Native.renderer_render renderer.handle force with
+    | 0 -> Ok Rendered
+    | 1 -> Ok Skipped
+    | 2 -> Ok Failed
+    | status -> Error (error_of_status status)
 
 module Private = struct
   let with_open renderer operation =

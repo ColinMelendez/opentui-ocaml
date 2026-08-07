@@ -11,6 +11,12 @@ extern "C" {
 
 typedef uint32_t opentui_native_handle;
 
+enum opentui_render_status {
+  OPENTUI_RENDER_STATUS_RENDERED = 0,
+  OPENTUI_RENDER_STATUS_SKIPPED = 1,
+  OPENTUI_RENDER_STATUS_FAILED = 2
+};
+
 typedef void (*opentui_event_callback)(
     const uint8_t *name_ptr,
     uint32_t name_len,
@@ -142,6 +148,7 @@ void setUseThread(opentui_native_handle renderer_handle, bool use_thread);
 void destroyRenderer(opentui_native_handle renderer_handle);
 opentui_native_handle getCurrentBuffer(opentui_native_handle renderer_handle);
 opentui_native_handle getNextBuffer(opentui_native_handle renderer_handle);
+uint8_t render(opentui_native_handle renderer_handle, bool force);
 
 uint32_t getBufferWidth(opentui_native_handle buffer_handle);
 uint32_t getBufferHeight(opentui_native_handle buffer_handle);
@@ -289,6 +296,7 @@ typedef opentui_native_handle (*opentui_create_renderer_fn)(uint32_t, uint32_t, 
 typedef void (*opentui_set_use_thread_fn)(opentui_native_handle, bool);
 typedef void (*opentui_destroy_renderer_fn)(opentui_native_handle);
 typedef opentui_native_handle (*opentui_get_buffer_fn)(opentui_native_handle);
+typedef uint8_t (*opentui_render_fn)(opentui_native_handle, bool);
 typedef uint32_t (*opentui_get_buffer_dimension_fn)(opentui_native_handle);
 typedef void (*opentui_buffer_clear_fn)(opentui_native_handle, const uint16_t *);
 typedef uint32_t (*opentui_buffer_write_fn)(opentui_native_handle, uint8_t *, uint32_t, bool);
@@ -329,6 +337,10 @@ _Static_assert(_Generic(&setUseThread, opentui_set_use_thread_fn: 1, default: 0)
 _Static_assert(_Generic(&destroyRenderer, opentui_destroy_renderer_fn: 1, default: 0), "destroyRenderer ABI drift");
 _Static_assert(_Generic(&getCurrentBuffer, opentui_get_buffer_fn: 1, default: 0), "getCurrentBuffer ABI drift");
 _Static_assert(_Generic(&getNextBuffer, opentui_get_buffer_fn: 1, default: 0), "getNextBuffer ABI drift");
+_Static_assert(OPENTUI_RENDER_STATUS_RENDERED == 0, "rendered status ABI drift");
+_Static_assert(OPENTUI_RENDER_STATUS_SKIPPED == 1, "skipped status ABI drift");
+_Static_assert(OPENTUI_RENDER_STATUS_FAILED == 2, "failed status ABI drift");
+_Static_assert(_Generic(&render, opentui_render_fn: 1, default: 0), "render ABI drift");
 _Static_assert(_Generic(&getBufferWidth, opentui_get_buffer_dimension_fn: 1, default: 0), "getBufferWidth ABI drift");
 _Static_assert(_Generic(&getBufferHeight, opentui_get_buffer_dimension_fn: 1, default: 0), "getBufferHeight ABI drift");
 _Static_assert(_Generic(&bufferClear, opentui_buffer_clear_fn: 1, default: 0), "bufferClear ABI drift");

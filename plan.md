@@ -179,7 +179,8 @@ remain later layers.
 read the six-field layout, reject invalid dimensions and cross-tree parents,
 and observe owner invalidation. They process an XTVERSION response, verify
 typed enum decoding, and observe copied terminal strings. They also drain a
-copied output span, prove release-driven chunk reuse, and exercise reservation
+copied output span, observe typed rendered/skipped/failed frame status, prove
+release-driven chunk reuse, and exercise reservation
 busy/cancel/commit behavior. No raw Yoga pointer, packed style value, native
 span view, parser state, Lwd value, or widget API crosses this increment.
 
@@ -202,6 +203,14 @@ follow-on decision with its own lifetime and benchmark acceptance.
 **Exit:** a small imperative OCaml program can enter terminal mode, render a
 known frame, receive an input/resize event, update a persistent native node,
 flush the next frame, and restore terminal state on shutdown.
+
+**First native increment:** `opentui-native.Renderer` now composes the raw
+renderer behind an opaque single-owner frame token. `begin_frame` opens the
+next native buffer, `Frame.clear`/`set_cell`/`draw_text` apply the basic raw
+mutations, and `present` consumes the token while returning the typed native
+render status. Native handles, raw buffer pointers, retained renderables,
+Yoga composition, terminal modes, and output flushing remain outside this
+increment.
 
 ## Phase 4 — Retained `opentui-core`
 

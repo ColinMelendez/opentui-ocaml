@@ -42,6 +42,9 @@ external renderer_buffer :
   Native_token.Renderer.t -> bool -> int * Native_token.Buffer.t =
   "opentui_raw_renderer_buffer"
 
+external renderer_render : Native_token.Renderer.t -> bool -> int =
+  "opentui_raw_renderer_render"
+
 external buffer_dimensions : Native_token.Buffer.t -> int * int32 * int32 =
   "opentui_raw_buffer_dimensions"
 

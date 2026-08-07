@@ -1,9 +1,12 @@
 type t
 
+type render_status = Rendered | Skipped | Failed
+
 val create : width:int32 -> height:int32 -> (t, Error.t) result
 val close : t -> unit
 val current_buffer : t -> (Buffer.t, Error.t) result
 val next_buffer : t -> (Buffer.t, Error.t) result
+val render : t -> force:bool -> (render_status, Error.t) result
 
 module Private : sig
   val with_open :

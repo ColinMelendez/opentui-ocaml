@@ -134,6 +134,17 @@ CAMLprim value opentui_raw_renderer_buffer(value handle_value, value next_value)
   CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_OK, buffer));
 }
 
+CAMLprim value opentui_raw_renderer_render(value handle_value, value force_value) {
+  CAMLparam2(handle_value, force_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (handle == 0) {
+    CAMLreturn(Val_int(OPENTUI_RENDER_STATUS_FAILED));
+  }
+
+  CAMLreturn(Val_int((int)render(handle, Bool_val(force_value))));
+}
+
 CAMLprim value opentui_raw_buffer_dimensions(value handle_value) {
   CAMLparam1(handle_value);
 

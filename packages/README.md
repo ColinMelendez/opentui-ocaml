@@ -20,4 +20,9 @@ framing, common semantic key naming/modifiers, and owned event/paste payloads.
 Mouse state and decoding, terminal modes, and output lifecycle remain separate
 follow-on modules.
 
+The first `opentui-native` slice composes `opentui-raw` behind an imperative
+renderer/frame lifecycle. Its opaque frame token owns the next-buffer editing
+window and is consumed by `present`; it does not expose native handles or
+introduce terminal, retained-scene, Yoga-renderable, Lwd, or widget policy.
+
 The graph is a design target, not a promise to create a package for every subsystem. The `Buffer` module currently in `opentui-raw` is only the ABI-level borrowed view needed to exercise the pinned renderer; it is not the retained scene or renderable model. Yoga/layout and native renderables should initially be modules of `opentui-native`; they become separate packages only if they have a stable independent consumer.

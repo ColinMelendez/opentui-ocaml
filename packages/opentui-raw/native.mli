@@ -36,6 +36,7 @@ val renderer_create : int32 -> int32 -> int * Native_token.Renderer.t
 val renderer_destroy : Native_token.Renderer.t -> unit
 val renderer_buffer :
   Native_token.Renderer.t -> bool -> int * Native_token.Buffer.t
+val renderer_render : Native_token.Renderer.t -> bool -> int
 val buffer_dimensions : Native_token.Buffer.t -> int * int32 * int32
 val buffer_clear : Native_token.Buffer.t -> color -> int
 val buffer_set_cell : Native_token.Buffer.t -> cell -> int

@@ -8,10 +8,12 @@ callers cannot mix resource domains.
 
 The first production slice uses a memory-output renderer with native threaded
 output disabled. Renderer-owned buffer views become closed when their renderer
-closes. Event callbacks are copied into a bounded native queue and exposed by
-polling; the raw package does not re-enter OCaml from a native callback. Queue
-overflow is reported as a structured error. Because the pinned callback ABI
-has no context pointer, only one event sink may be active at a time.
+closes, and `Renderer.render` exposes the pinned rendered/skipped/failed status
+without exposing native output state. Event callbacks are copied into a bounded
+native queue and exposed by polling; the raw package does not re-enter OCaml
+from a native callback. Queue overflow is reported as a structured error.
+Because the pinned callback ABI has no context pointer, only one event sink may
+be active at a time.
 
 The raw Yoga binding owns a generation-checked tree/node registry and copies
 the exact six-field layout result. The capability binding copies terminal

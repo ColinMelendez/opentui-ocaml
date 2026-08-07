@@ -19,6 +19,7 @@ first link seam and the typed raw renderer/buffer/event/Yoga/capability slice:
 | `setUseThread` | `lib.zig:711` | `u32, bool -> void` | Phase 1 always passes `false`; all raw entrypoints remain on one native owner. |
 | `destroyRenderer` | `lib.zig:721` | `u32 -> void` | Destruction invalidates renderer-owned borrowed buffer handles before renderer deinitialization. |
 | `getCurrentBuffer` / `getNextBuffer` | `lib.zig:808`, `lib.zig:813` | `u32 -> u32` | Returned optimized-buffer handles are borrowed children of the renderer. |
+| `render` | `lib.zig:845` | `u32, bool -> u8` | The renderer returns the pinned `rendered`/`skipped`/`failed` values `0`/`1`/`2`; the OCaml facade maps them to a typed result without exposing the native enum. |
 | `bufferClear` | `lib.zig:1168` | `u32, pointer to four u16 values -> void` | The color pointer is consumed synchronously. |
 | `bufferDrawText` | `lib.zig:1228` | `u32, nullable byte pointer/u32, coordinates, two color pointers, u32 attributes -> void` | Text and colors are synchronous caller-owned input. |
 | `bufferSetCell` | `lib.zig:1245` | `u32, coordinates, u32 character, two color pointers, u32 attributes -> void` | The cell is written in native SoA storage; no native cell view crosses the boundary. |

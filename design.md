@@ -79,7 +79,7 @@ layers, not one package per Zig file:
 | Package | Responsibility | Status |
 | --- | --- | --- |
 | `opentui-raw` | ABI values, generation-checked handles, foreign calls, ownership | current |
-| `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | proposed |
+| `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | foundation increment |
 | `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, resize, output lifecycle | foundation |
 | `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
@@ -318,9 +318,10 @@ small typed operations needed to establish ownership. `Yoga.Node.layout`
 returns an OCaml record copied from the six-`f32` native output,
 `Capabilities.snapshot` copies terminal name/version bytes and decodes the
 source-defined enum codes, and `Span_feed.drain` copies native payloads before
-returning an explicit release token. Neither module exposes a pointer, packed
-native handle, callback, or borrowed string; native zero-copy views remain
-deferred.
+returning an explicit release token. `Renderer.render` maps the pinned
+rendered/skipped/failed byte status to an OCaml variant. Neither module exposes
+a pointer, packed native handle, callback, or borrowed string; native zero-copy
+views remain deferred.
 
 Black-box tests cover layout values, invalid dimensions, cross-tree rejection,
 close invalidation, XTVERSION copying, enum decoding, closed-renderer errors,

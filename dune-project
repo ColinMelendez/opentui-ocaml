@@ -24,3 +24,16 @@
  (depends
   (ocaml (>= 5.2))
   (windtrap :with-test)))
+
+(package
+ (name opentui-native)
+ (synopsis "Imperative native renderer foundation for OpenTUI")
+ (description
+  "A small renderer and frame-lifecycle composition over opentui-raw. Retained scenes, Yoga renderables, terminal policy, and reactive bindings remain separate layers.")
+ (license ISC)
+ (authors "Colin <cwrmcolin@gmail.com>")
+ (maintainers "Colin <cwrmcolin@gmail.com>")
+ (depends
+  (ocaml (>= 5.2))
+  opentui-raw
+  (windtrap :with-test)))

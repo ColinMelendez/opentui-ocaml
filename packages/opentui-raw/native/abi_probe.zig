@@ -29,6 +29,12 @@ fn expectOffset(
     }
 }
 
+fn expectEnumValue(comptime actual: anytype, comptime expected: comptime_int, comptime name: []const u8) void {
+    if (@intFromEnum(actual) != expected) {
+        @compileError(name ++ " has an unexpected ABI value");
+    }
+}
+
 comptime {
     expectSize(opentui.NativeHandle, 4, "NativeHandle");
     expectType(
@@ -250,6 +256,15 @@ comptime {
         fn (opentui.NativeHandle) callconv(.c) opentui.NativeHandle,
         "getNextBuffer",
     );
+    expectType(
+        @TypeOf(opentui.render),
+        fn (opentui.NativeHandle, bool) callconv(.c) u8,
+        "render",
+    );
+    const render_status = @typeInfo(@TypeOf(opentui.CliRenderer.render)).@"fn".return_type.?;
+    expectEnumValue(@as(render_status, .rendered), 0, "RenderStatus.rendered");
+    expectEnumValue(@as(render_status, .skipped), 1, "RenderStatus.skipped");
+    expectEnumValue(@as(render_status, .failed), 2, "RenderStatus.failed");
     expectType(
         @TypeOf(opentui.getBufferWidth),
         fn (opentui.NativeHandle) callconv(.c) u32,
