@@ -30,3 +30,9 @@ let buffer renderer ~next =
 
 let current_buffer renderer = buffer renderer ~next:false
 let next_buffer renderer = buffer renderer ~next:true
+
+module Private = struct
+  let with_open renderer operation =
+    if Native_owner.is_open renderer.owner then operation renderer.handle
+    else Error Error.Closed
+end

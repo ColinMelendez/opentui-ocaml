@@ -1,6 +1,6 @@
 # Design
 
-Status: working design, updated 2026-08-09.
+Status: working design, updated 2026-08-10.
 
 This document records the decisions that are currently intentional and keeps
 the unresolved decisions visible. It describes the native OCaml side of
@@ -78,16 +78,18 @@ layers, not one package per Zig file:
 
 | Package | Responsibility | Status |
 | --- | --- | --- |
-| `opentui-raw` | ABI values, handles, foreign calls, ownership | current |
-| `opentui-native` | renderer, buffers, Yoga, native renderables, native lifecycle | proposed |
+| `opentui-raw` | ABI values, generation-checked handles, foreign calls, ownership | current |
+| `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | proposed |
 | `opentui-terminal` | terminal modes, input decoding, resize, output lifecycle | proposed |
 | `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
 | `opentui-widgets` | reusable controls and application-facing conveniences | later |
 
-Buffers, Yoga, and renderables remain modules of `opentui-native` initially.
-They become separate packages only if an independent consumer and stable
-ownership boundary justify the split.
+The raw package may contain small ABI-level renderer, buffer, Yoga, and
+capability wrappers because they are the narrow ownership boundary. Higher-level
+buffers, Yoga/renderable composition, frame lifecycle, and native integration
+remain modules of `opentui-native` initially. They become separate packages
+only if an independent consumer and stable ownership boundary justify the split.
 
 ### Retained, render-once UI structure
 
@@ -158,7 +160,8 @@ implementation in
 | Resource ownership | Destroy begins by marking the object destroying; renderer destruction invalidates its borrowed buffer children before deinitializing the renderer. Generation exhaustion prevents unsafe slot reuse. | Treat renderer buffers returned by `getCurrentBuffer`/`getNextBuffer` as borrowed views owned by the renderer. Explicit close is primary; a finalizer can only be a leak guard. All calls touching the registry use one serialized native-entry policy. |
 | Renderer frame state | The renderer keeps current/next optimized buffers, current/next hit grids, cursor/output caches, dirty state, and backend state. Hit testing observes the committed/current grid while the next frame is being built. | Do not mirror the cell grid or hit grid in OCaml. The retained core tracks node identity and dirty regions; the native renderer owns frame buffers, diffing, hit-grid storage, and output framing. |
 | Optimized buffer | A structure-of-arrays grid: `u32` encoded characters, four-lane `RGBA` values, and `u32` attributes, plus native grapheme/link pools and clipping/opacity stacks. `RGBA` is `[4]u16`; low bytes hold channels and high bytes carry color metadata. | Keep cells native. Bind batched operations such as clear, text, cell, fill-rectangle, resize, and resolved-character output. Do not expose a per-cell OCaml record or raw pointer view in the initial API. |
-| Yoga layout | `YGNodeRef`/`YGConfigRef` are raw C pointers. Layout results are caller-provided `extern struct`s of six `f32`s (`left`, `top`, `right`, `bottom`, `width`, and `height`); style values include enums, floats, and a packed `u64`. Native renderables currently install synchronous native measure callbacks. | Do not expose `YGNodeRef` as `nativeint` in the public API. Initially keep Yoga nodes behind an `opentui-native` owner, or add a native generation-checked wrapper before exposing node handles. Use caller-provided output storage for hot layout reads and keep measurement native until callback lifetime/reentrancy is designed. |
+| Yoga layout | `YGNodeRef`/`YGConfigRef` are raw C pointers. Layout results are caller-provided `extern struct`s of six `f32`s (`left`, `top`, `right`, `bottom`, `width`, and `height`); style values include enums, floats, and a packed `u64`. Native renderables currently install synchronous native measure callbacks. | The raw package now owns a config and Yoga tree behind a C-side generation-checked registry. `Yoga_tree.t` and `Yoga_node.t` are abstract, owner-scoped tokens; layout readback copies the six fields into OCaml. The current wrapper binds point width/height only. Measurement callbacks, packed style values, and renderable integration stay in native code until callback lifetime/reentrancy is designed. |
+| Terminal capabilities | `ExternalCapabilities` is an `extern struct` with one-byte booleans/enums, two borrowed terminal string pointers with `usize` lengths, and terminal state codes. `getTerminalCapabilities` returns pointers into the renderer's terminal state. | The raw package asserts the 64-byte supported-host layout, checks lengths, copies the two strings, and decodes the pinned enum values into a typed snapshot. Capability responses consume caller-owned bytes synchronously; terminal querying and mode lifecycle remain in `opentui-terminal`. |
 | Native event sink | A C-callable callback receives borrowed name/data pointers and lengths synchronously. Event names are dynamic byte strings. | The raw package callback copies bytes into a bounded native queue before returning; OCaml polls owned packets and receives an explicit overflow error. It does not invoke arbitrary handlers or re-enter the renderer from the callback. Background callbacks still require a separate OCaml runtime-lock and queue design. |
 | Stdin parser | The TypeScript reference has a mutable byte queue with start/end offsets and amortized compaction, a tagged protocol state machine, a bounded 64 KiB pending prefix, a 20 ms ESC timeout, an event queue, a bracketed-paste collector, and mouse-button state. | Audit this state machine in Phase 1, then port it after the native smoke gate as mutable OCaml parser state with one reusable `Bigarray.Array1` of bytes and scalar cursors. Keep one reusable `Cstruct.t` view for Eio reads; do not convert each read to `Bytes` or `string`. Preserve chunk-shape invariance, split UTF-8 handling, ESC timeout behavior, split paste markers, and bounded overflow behavior. Do not allocate a fresh parser-state variant for every byte. |
 | Native output feed | `NativeSpanFeed` owns fixed-size chunks, a span ring, reserve/commit operations, chunk reference counts, and an optional callback. A span remains borrowed until the consumer marks it consumed. | Make this the Phase 2 native-owned zero-copy proof: map each stable chunk once, expose payloads as scoped byte views, and release the span through a native operation. Use `streamReserve`/`streamCommitReserved` for direct OCaml-produced output only after adding native cancellation and consumed/release exports. Never return a borrowed span as an ordinary `bytes` value without copying or an explicit lifetime. |
@@ -174,10 +177,10 @@ retained node is an avoidable default allocation.
 Yoga deserves special caution. OpenTUI's Yoga exports are C-compatible, but
 their pointer values are not entries in the OpenTUI generation-checked handle
 registry. A direct pointer binding would create a second lifetime system and
-would make use-after-free easy to express. The initial native package should
-own the Yoga tree and expose operations on an owned layout object, or add a
-small native wrapper that gives Yoga nodes the same stale-handle checks as the
-rest of the boundary.
+would make use-after-free easy to express. The raw binding therefore owns the
+Yoga config/tree and uses a separate generation-checked registry for abstract
+tree/node tokens. `opentui-native` will compose this resource into persistent
+renderables; it will not bypass the raw owner with a pointer API.
 
 ### Implementation cruxes
 
@@ -301,10 +304,26 @@ allocation baseline. The test-only C shim owns every raw `u32` handle and
 destroys renderer children before their owner; the public raw package still
 does not expose those handles.
 
-The exit is deliberately narrow. Yoga pointers, native span views and
-reservation cancellation, terminal integration, the stdin parser, and all
-reactive or widget layers remain follow-on work under the Phase 2 and later
-boundaries below.
+The exit is deliberately narrow. Native span views and reservation
+cancellation, terminal integration, the stdin parser, and all reactive or
+widget layers remain follow-on work under the Phase 2 and later boundaries
+below. The first typed Phase 2 raw extension now covers the owned Yoga/layout
+and copied capability boundary without changing that separation.
+
+### Phase 2 typed raw progress
+
+The current raw extension keeps the package layers explicit. `opentui-raw`
+contains only the C ABI declarations, status conversion, token registry, and
+small typed operations needed to establish ownership. `Yoga.Node.layout`
+returns an OCaml record copied from the six-`f32` native output, while
+`Capabilities.snapshot` copies terminal name/version bytes and decodes the
+source-defined enum codes. Neither module exposes a pointer, packed native
+handle, callback, or borrowed string.
+
+Black-box tests cover layout values, invalid dimensions, cross-tree rejection,
+close invalidation, XTVERSION copying, enum decoding, and closed-renderer
+errors. Native-owned output spans, the reusable terminal byte queue, parser
+state, `opentui-native`, Lwd, and widgets remain later layers.
 
 ### Eio and external data structures
 

@@ -8,7 +8,7 @@ definitions are authoritative.
 ## Selected probe surface
 
 The checked-in C declarations in [`opentui_abi.h`](opentui_abi.h) cover the
-first link seam and the smallest renderer/buffer/event slice:
+first link seam and the typed raw renderer/buffer/event/Yoga/capability slice:
 
 | Symbol | Zig definition | ABI shape | Ownership or lifetime |
 | --- | --- | --- | --- |
@@ -25,6 +25,13 @@ first link seam and the smallest renderer/buffer/event slice:
 | `bufferWriteResolvedChars` | `lib.zig:1219` | `u32, nullable caller output pointer, `u32` capacity, `bool` -> `u32` | Native writes into caller-owned bounded storage and returns the byte count; a capacity smaller than the resolved output returns `0`. |
 | `getRenderStats` | `lib.zig:788` | `u32, pointer to ExternalRenderStats -> void` | Caller supplies output storage; the Zig probe checks the nine-field C-compatible layout. |
 | `getAllocatorStats` | `lib.zig:617` | `pointer to ExternalAllocatorStats -> void` | Active allocation counters are sampled for a diagnostic baseline. `total_requested_bytes` is valid only when the build enables GPA safe stats. |
+| `yogaConfigCreate` / `yogaConfigFree` | `yoga.zig` | `void pointer -> void pointer`; `void pointer -> void` | The C facade owns one config per Yoga tree and frees it after recursive node destruction. The raw `YGConfigRef` never reaches OCaml. |
+| `yogaNodeCreateWithConfig` / `yogaNodeFreeRecursive` | `yoga.zig` | `const void pointer -> void pointer`; `void pointer -> void` | The C facade owns the root and all descendants. Closing a tree invalidates every associated abstract node token before freeing the native tree. |
+| `yogaNodeInsertChild` / `yogaNodeGetChildCount` | `yoga.zig` | `void pointer, void pointer, u32 -> void`; `const void pointer -> u32` | Children are created with the tree's config and inserted synchronously under a node from the same tree. Cross-tree parents are rejected by the facade. |
+| `yogaNodeCalculateLayout` / `yogaNodeGetComputedLayout` | `yoga.zig` | `void pointer, f32, f32, u32 -> void`; `const void pointer, pointer to six-f32 output -> void` | Dimensions and direction are checked at the C boundary. Layout is copied into an OCaml tuple; no Yoga output pointer escapes. |
+| `yogaNodeStyleSetValue` | `yoga.zig` | `void pointer, u32, u32, u32, f32 -> void` | The current typed surface binds point-valued width and height only. Measure callbacks, packed style values, and native renderable configuration remain deferred. |
+| `getTerminalCapabilities` | `lib.zig:986` | `u32, pointer to 64-byte ExternalCapabilities -> void` on supported 64-bit hosts | Zig returns borrowed terminal-name/version pointers and `usize` lengths. The C shim checks the lengths and copies both strings before returning to OCaml. |
+| `processCapabilityResponse` | `lib.zig:1017` | `u32, nullable byte pointer, u32 -> void` | The response is caller-owned and consumed synchronously. An empty OCaml string crosses as a null pointer with length zero. |
 
 The first smoke records the selected failure behavior: zero dimensions, an
 invalid buffered destination, and a null event callback return handle `0`;
@@ -36,8 +43,25 @@ API.
 
 `NativeHandle` is a `u32` packed by the upstream registry: a 16-bit slot
 index, 12-bit generation, and 4-bit kind. Zero is invalid. The packed fields
-remain private to Zig and are not represented by the OCaml placeholder handle
-module in this patch.
+remain private to Zig. The C facade uses a separate generation-checked token
+registry for Yoga because Yoga pointers are not entries in the upstream
+registry: `Yoga_tree.t` and `Yoga_node.t` are abstract OCaml domains, and every
+node token records its owning tree token. The registry rejects stale tokens,
+cross-tree parents, invalid dimensions, and invalid directions before calling
+Yoga.
+
+`ExternalYogaLayout` is six consecutive `f32` values in the pinned order
+`left`, `top`, `right`, `bottom`, `width`, `height`, for 24 bytes. The
+`ExternalCapabilities` struct is 64 bytes on the supported 64-bit targets;
+the fixed-width one-byte booleans and enum codes occupy the first 20 bytes,
+followed by two borrowed pointer/`size_t` pairs and the final one-byte flags.
+The source-importing Zig probe and the C header both assert these layouts and
+the exact function-pointer signatures.
+
+The capability facade maps the pinned enum codes to typed OCaml variants. It
+does not preserve borrowed terminal pointers: names and versions are copied
+into the returned snapshot, and an invalid or stale renderer produces a
+structured raw error.
 
 The probe also checks `RGBA = [4]u16`, one-byte Zig `bool`, the callback
 signature, the selected function types, and the offsets and size of
@@ -78,9 +102,24 @@ dependencies. The Dune rule accepts only the host target names already
 selected by the pinned build (`aarch64-macos`, `x86_64-macos`,
 `aarch64-linux`, and `x86_64-linux`).
 
+## Phase 2 typed raw extension
+
+The first Phase 2 extension is implemented in `opentui-raw`. It adds
+generation-checked, owner-scoped Yoga tree/node operations and a copied
+capability snapshot while preserving the original renderer/buffer/event
+ownership model. The OCaml API exposes `Yoga.create`, `Yoga.add_child`,
+`Yoga.calculate`, and typed layout readback; it does not expose `YGNodeRef`,
+`YGConfigRef`, packed style values, or callbacks. Capability responses are
+processed synchronously and can be read as a typed `Capabilities.t` record.
+
+Black-box tests cover exact six-field layout readback, invalid dimensions,
+cross-tree parent rejection, owner invalidation after close, XTVERSION string
+copying, enum decoding, and closed-renderer behavior. The next raw protocol
+increment is the native-owned output span lifetime proof.
+
 ## Deferred from this probe
 
-The public Yoga pointer API, terminal capability strings with `usize` lengths,
-the complete stdin parser, native-owned `NativeSpanFeed` views and
-reserve/commit cancellation, raw cell pointers, native renderables, audio,
-image, editor, and all high-level packages remain outside this first seam.
+Yoga custom measurement and native renderable integration, the complete stdin
+parser, native-owned `NativeSpanFeed` views and reserve/commit cancellation,
+raw cell pointers, native renderables, audio, image, editor, and all high-level
+packages remain outside this seam.

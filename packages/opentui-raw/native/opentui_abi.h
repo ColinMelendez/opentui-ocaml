@@ -42,6 +42,49 @@ typedef struct opentui_external_render_stats {
   bool stdout_write_time_valid;
 } opentui_external_render_stats;
 
+typedef void *opentui_yoga_config_ref;
+typedef const void *opentui_yoga_config_const_ref;
+typedef void *opentui_yoga_node_ref;
+typedef const void *opentui_yoga_node_const_ref;
+
+typedef struct opentui_external_yoga_layout {
+  float left;
+  float top;
+  float right;
+  float bottom;
+  float width;
+  float height;
+} opentui_external_yoga_layout;
+
+typedef struct opentui_external_capabilities {
+  bool kitty_keyboard;
+  bool kitty_graphics;
+  bool rgb;
+  bool ansi256;
+  uint8_t unicode;
+  bool sgr_pixels;
+  bool color_scheme_updates;
+  bool explicit_width;
+  bool scaled_text;
+  bool sixel;
+  bool focus_tracking;
+  bool sync;
+  bool bracketed_paste;
+  bool hyperlinks;
+  bool osc52;
+  bool notifications;
+  bool explicit_cursor_positioning;
+  bool remote;
+  uint8_t multiplexer;
+  uint8_t image_protocol;
+  const uint8_t *term_name_ptr;
+  size_t term_name_len;
+  const uint8_t *term_version_ptr;
+  size_t term_version_len;
+  bool term_from_xtversion;
+  uint8_t osc52_support;
+} opentui_external_capabilities;
+
 opentui_native_handle createEventSink(opentui_event_callback callback);
 void destroyEventSink(opentui_native_handle sink_handle);
 opentui_native_handle createEditBuffer(uint8_t width_method, opentui_native_handle event_sink_handle);
@@ -93,11 +136,49 @@ void getRenderStats(
     opentui_external_render_stats *output);
 void getAllocatorStats(opentui_external_allocator_stats *output);
 
+opentui_yoga_config_ref yogaConfigCreate(void);
+void yogaConfigFree(opentui_yoga_config_ref config);
+opentui_yoga_node_ref yogaNodeCreateWithConfig(opentui_yoga_config_const_ref config);
+void yogaNodeFreeRecursive(opentui_yoga_node_ref node);
+void yogaNodeInsertChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child, uint32_t index);
+uint32_t yogaNodeGetChildCount(opentui_yoga_node_const_ref node);
+void yogaNodeCalculateLayout(opentui_yoga_node_ref node, float width, float height, uint32_t direction);
+void yogaNodeGetComputedLayout(
+    opentui_yoga_node_const_ref node,
+    opentui_external_yoga_layout *output);
+void yogaNodeStyleSetValue(
+    opentui_yoga_node_ref node,
+    uint32_t kind,
+    uint32_t edge_or_gutter,
+    uint32_t unit,
+    float value);
+
+void getTerminalCapabilities(
+    opentui_native_handle renderer_handle,
+    opentui_external_capabilities *output);
+void processCapabilityResponse(
+    opentui_native_handle renderer_handle,
+    const uint8_t *response_ptr,
+    uint32_t response_len);
+
 _Static_assert(sizeof(opentui_native_handle) == 4, "OpenTUI handles must be u32");
 _Static_assert(sizeof(bool) == 1, "OpenTUI bool must have one-byte C ABI storage");
 _Static_assert(sizeof(opentui_external_build_options) == 2, "build options ABI drift");
 _Static_assert(sizeof(opentui_external_allocator_stats) == 40, "allocator stats ABI drift");
 _Static_assert(sizeof(opentui_external_render_stats) == 56, "render stats ABI drift");
+_Static_assert(sizeof(opentui_external_yoga_layout) == 24, "Yoga layout ABI drift");
+_Static_assert(offsetof(opentui_external_yoga_layout, top) == 4, "Yoga layout offset drift");
+_Static_assert(offsetof(opentui_external_yoga_layout, right) == 8, "Yoga layout offset drift");
+_Static_assert(offsetof(opentui_external_yoga_layout, bottom) == 12, "Yoga layout offset drift");
+_Static_assert(offsetof(opentui_external_yoga_layout, width) == 16, "Yoga layout offset drift");
+_Static_assert(offsetof(opentui_external_yoga_layout, height) == 20, "Yoga layout offset drift");
+_Static_assert(sizeof(opentui_external_capabilities) == 64, "capabilities ABI drift");
+_Static_assert(offsetof(opentui_external_capabilities, term_name_ptr) == 24, "capabilities offset drift");
+_Static_assert(offsetof(opentui_external_capabilities, term_name_len) == 32, "capabilities offset drift");
+_Static_assert(offsetof(opentui_external_capabilities, term_version_ptr) == 40, "capabilities offset drift");
+_Static_assert(offsetof(opentui_external_capabilities, term_version_len) == 48, "capabilities offset drift");
+_Static_assert(offsetof(opentui_external_capabilities, term_from_xtversion) == 56, "capabilities offset drift");
+_Static_assert(offsetof(opentui_external_capabilities, osc52_support) == 57, "capabilities offset drift");
 _Static_assert(offsetof(opentui_external_allocator_stats, active_allocations) == 8, "allocator stats offset drift");
 _Static_assert(offsetof(opentui_external_allocator_stats, small_allocations) == 16, "allocator stats offset drift");
 _Static_assert(offsetof(opentui_external_allocator_stats, large_allocations) == 24, "allocator stats offset drift");
@@ -127,6 +208,17 @@ typedef void (*opentui_buffer_draw_text_fn)(opentui_native_handle, const uint8_t
 typedef void (*opentui_buffer_set_cell_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
 typedef void (*opentui_get_render_stats_fn)(opentui_native_handle, opentui_external_render_stats *);
 typedef void (*opentui_get_allocator_stats_fn)(opentui_external_allocator_stats *);
+typedef opentui_yoga_config_ref (*opentui_yoga_config_create_fn)(void);
+typedef void (*opentui_yoga_config_free_fn)(opentui_yoga_config_ref);
+typedef opentui_yoga_node_ref (*opentui_yoga_node_create_with_config_fn)(opentui_yoga_config_const_ref);
+typedef void (*opentui_yoga_node_free_recursive_fn)(opentui_yoga_node_ref);
+typedef void (*opentui_yoga_node_insert_child_fn)(opentui_yoga_node_ref, opentui_yoga_node_ref, uint32_t);
+typedef uint32_t (*opentui_yoga_node_get_child_count_fn)(opentui_yoga_node_const_ref);
+typedef void (*opentui_yoga_node_calculate_layout_fn)(opentui_yoga_node_ref, float, float, uint32_t);
+typedef void (*opentui_yoga_node_get_computed_layout_fn)(opentui_yoga_node_const_ref, opentui_external_yoga_layout *);
+typedef void (*opentui_yoga_node_style_set_value_fn)(opentui_yoga_node_ref, uint32_t, uint32_t, uint32_t, float);
+typedef void (*opentui_get_terminal_capabilities_fn)(opentui_native_handle, opentui_external_capabilities *);
+typedef void (*opentui_process_capability_response_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 
 _Static_assert(_Generic(&createEventSink, opentui_create_event_sink_fn: 1, default: 0), "createEventSink ABI drift");
 _Static_assert(_Generic(&destroyEventSink, opentui_destroy_event_sink_fn: 1, default: 0), "destroyEventSink ABI drift");
@@ -146,6 +238,17 @@ _Static_assert(_Generic(&bufferDrawText, opentui_buffer_draw_text_fn: 1, default
 _Static_assert(_Generic(&bufferSetCell, opentui_buffer_set_cell_fn: 1, default: 0), "bufferSetCell ABI drift");
 _Static_assert(_Generic(&getRenderStats, opentui_get_render_stats_fn: 1, default: 0), "getRenderStats ABI drift");
 _Static_assert(_Generic(&getAllocatorStats, opentui_get_allocator_stats_fn: 1, default: 0), "getAllocatorStats ABI drift");
+_Static_assert(_Generic(&yogaConfigCreate, opentui_yoga_config_create_fn: 1, default: 0), "yogaConfigCreate ABI drift");
+_Static_assert(_Generic(&yogaConfigFree, opentui_yoga_config_free_fn: 1, default: 0), "yogaConfigFree ABI drift");
+_Static_assert(_Generic(&yogaNodeCreateWithConfig, opentui_yoga_node_create_with_config_fn: 1, default: 0), "yogaNodeCreateWithConfig ABI drift");
+_Static_assert(_Generic(&yogaNodeFreeRecursive, opentui_yoga_node_free_recursive_fn: 1, default: 0), "yogaNodeFreeRecursive ABI drift");
+_Static_assert(_Generic(&yogaNodeInsertChild, opentui_yoga_node_insert_child_fn: 1, default: 0), "yogaNodeInsertChild ABI drift");
+_Static_assert(_Generic(&yogaNodeGetChildCount, opentui_yoga_node_get_child_count_fn: 1, default: 0), "yogaNodeGetChildCount ABI drift");
+_Static_assert(_Generic(&yogaNodeCalculateLayout, opentui_yoga_node_calculate_layout_fn: 1, default: 0), "yogaNodeCalculateLayout ABI drift");
+_Static_assert(_Generic(&yogaNodeGetComputedLayout, opentui_yoga_node_get_computed_layout_fn: 1, default: 0), "yogaNodeGetComputedLayout ABI drift");
+_Static_assert(_Generic(&yogaNodeStyleSetValue, opentui_yoga_node_style_set_value_fn: 1, default: 0), "yogaNodeStyleSetValue ABI drift");
+_Static_assert(_Generic(&getTerminalCapabilities, opentui_get_terminal_capabilities_fn: 1, default: 0), "getTerminalCapabilities ABI drift");
+_Static_assert(_Generic(&processCapabilityResponse, opentui_process_capability_response_fn: 1, default: 0), "processCapabilityResponse ABI drift");
 
 #ifdef __cplusplus
 }

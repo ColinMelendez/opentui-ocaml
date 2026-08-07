@@ -7,15 +7,7 @@
 #include <string.h>
 
 #include "native/opentui_abi.h"
-
-enum opentui_raw_status {
-  OPENTUI_RAW_STATUS_OK = 0,
-  OPENTUI_RAW_STATUS_INVALID_ARGUMENT = 1,
-  OPENTUI_RAW_STATUS_STALE_HANDLE = 2,
-  OPENTUI_RAW_STATUS_NATIVE_FAILURE = 3,
-  OPENTUI_RAW_STATUS_OUTPUT_TOO_SMALL = 4,
-  OPENTUI_RAW_STATUS_QUEUE_OVERFLOW = 5
-};
+#include "raw_status.h"
 
 static value make_status_handle(int status, opentui_native_handle handle) {
   CAMLparam0();

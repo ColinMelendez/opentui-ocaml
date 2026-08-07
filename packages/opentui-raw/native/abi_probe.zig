@@ -1,5 +1,6 @@
 const std = @import("std");
 const opentui = @import("opentui");
+const yoga = opentui.native_yoga;
 
 var io_threaded: std.Io.Threaded = .init_single_threaded;
 pub const io = io_threaded.io();
@@ -38,6 +39,72 @@ comptime {
     expectSize(bool, 1, "bool");
     expectSize(opentui.RGBA, 8, "RGBA");
     expectType(opentui.RGBA, [4]u16, "RGBA");
+
+    expectSize(yoga.ExternalYogaLayout, 24, "ExternalYogaLayout");
+    expectOffset(yoga.ExternalYogaLayout, "left", 0, "ExternalYogaLayout.left");
+    expectOffset(yoga.ExternalYogaLayout, "top", 4, "ExternalYogaLayout.top");
+    expectOffset(yoga.ExternalYogaLayout, "right", 8, "ExternalYogaLayout.right");
+    expectOffset(yoga.ExternalYogaLayout, "bottom", 12, "ExternalYogaLayout.bottom");
+    expectOffset(yoga.ExternalYogaLayout, "width", 16, "ExternalYogaLayout.width");
+    expectOffset(yoga.ExternalYogaLayout, "height", 20, "ExternalYogaLayout.height");
+
+    expectType(
+        @TypeOf(yoga.yogaConfigCreate),
+        fn () callconv(.c) yoga.YGConfigRef,
+        "yogaConfigCreate",
+    );
+    expectType(
+        @TypeOf(yoga.yogaConfigFree),
+        fn (yoga.YGConfigRef) callconv(.c) void,
+        "yogaConfigFree",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeCreateWithConfig),
+        fn (yoga.YGConfigConstRef) callconv(.c) yoga.YGNodeRef,
+        "yogaNodeCreateWithConfig",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeFreeRecursive),
+        fn (yoga.YGNodeRef) callconv(.c) void,
+        "yogaNodeFreeRecursive",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeInsertChild),
+        fn (yoga.YGNodeRef, yoga.YGNodeRef, u32) callconv(.c) void,
+        "yogaNodeInsertChild",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeGetChildCount),
+        fn (yoga.YGNodeConstRef) callconv(.c) u32,
+        "yogaNodeGetChildCount",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeCalculateLayout),
+        fn (yoga.YGNodeRef, f32, f32, u32) callconv(.c) void,
+        "yogaNodeCalculateLayout",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeGetComputedLayout),
+        fn (yoga.YGNodeConstRef, *yoga.ExternalYogaLayout) callconv(.c) void,
+        "yogaNodeGetComputedLayout",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeStyleSetValue),
+        fn (yoga.YGNodeRef, u32, u32, u32, f32) callconv(.c) void,
+        "yogaNodeStyleSetValue",
+    );
+
+    expectSize(opentui.ExternalCapabilities, 64, "ExternalCapabilities");
+    expectOffset(opentui.ExternalCapabilities, "kitty_keyboard", 0, "ExternalCapabilities.kitty_keyboard");
+    expectOffset(opentui.ExternalCapabilities, "unicode", 4, "ExternalCapabilities.unicode");
+    expectOffset(opentui.ExternalCapabilities, "multiplexer", 18, "ExternalCapabilities.multiplexer");
+    expectOffset(opentui.ExternalCapabilities, "image_protocol", 19, "ExternalCapabilities.image_protocol");
+    expectOffset(opentui.ExternalCapabilities, "term_name_ptr", 24, "ExternalCapabilities.term_name_ptr");
+    expectOffset(opentui.ExternalCapabilities, "term_name_len", 32, "ExternalCapabilities.term_name_len");
+    expectOffset(opentui.ExternalCapabilities, "term_version_ptr", 40, "ExternalCapabilities.term_version_ptr");
+    expectOffset(opentui.ExternalCapabilities, "term_version_len", 48, "ExternalCapabilities.term_version_len");
+    expectOffset(opentui.ExternalCapabilities, "term_from_xtversion", 56, "ExternalCapabilities.term_from_xtversion");
+    expectOffset(opentui.ExternalCapabilities, "osc52_support", 57, "ExternalCapabilities.osc52_support");
 
     expectType(
         @TypeOf(opentui.createEventSink),
@@ -158,6 +225,16 @@ comptime {
         @TypeOf(opentui.getAllocatorStats),
         fn (*opentui.ExternalAllocatorStats) callconv(.c) void,
         "getAllocatorStats",
+    );
+    expectType(
+        @TypeOf(opentui.getTerminalCapabilities),
+        fn (opentui.NativeHandle, *opentui.ExternalCapabilities) callconv(.c) void,
+        "getTerminalCapabilities",
+    );
+    expectType(
+        @TypeOf(opentui.processCapabilityResponse),
+        fn (opentui.NativeHandle, ?[*]const u8, u32) callconv(.c) void,
+        "processCapabilityResponse",
     );
 }
 

@@ -79,7 +79,12 @@ rm -rf "$probe_source_dir"
 mkdir -p "$probe_source_dir"
 cp -R "$upstream_dir"/. "$probe_source_dir"/
 rm -f "$probe_source_dir/lib.zig"
-sed 's/^export fn /pub export fn /' "$upstream_dir/lib.zig" > "$probe_source_dir/lib.zig"
+sed \
+  -e 's/^const native_yoga =/pub const native_yoga =/' \
+  -e 's/^export fn /pub export fn /' \
+  "$upstream_dir/lib.zig" > "$probe_source_dir/lib.zig"
+sed 's/^export fn /pub export fn /' "$upstream_dir/yoga.zig" > "$probe_source_dir/yoga.zig.probe"
+mv "$probe_source_dir/yoga.zig.probe" "$probe_source_dir/yoga.zig"
 
 (CDPATH= cd -- "$output_dir" && zig build --build-file "$native_dir/build.zig" -Doptimize=Debug -Dsource-root=abi-probe-source)
 

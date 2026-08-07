@@ -23,6 +23,14 @@ let expect_error expected result =
   | Ok _ -> fail "expected an error"
   | Error actual -> equal bool true (same_error actual expected)
 
+let expect_layout ~left ~top ~right ~bottom ~width ~height actual =
+  equal (float 0.0001) left actual.Opentui_raw.Yoga.left;
+  equal (float 0.0001) top actual.Opentui_raw.Yoga.top;
+  equal (float 0.0001) right actual.Opentui_raw.Yoga.right;
+  equal (float 0.0001) bottom actual.Opentui_raw.Yoga.bottom;
+  equal (float 0.0001) width actual.Opentui_raw.Yoga.width;
+  equal (float 0.0001) height actual.Opentui_raw.Yoga.height
+
 let () =
   run "opentui-raw"
     [
@@ -106,4 +114,74 @@ let () =
           | Ok (Some _) -> fail "overflow remained sticky after reporting"
           | Error error -> fail (Opentui_raw.Error.message error));
           Opentui_raw.Event_sink.close sink);
+      test "Yoga owns a tree and exposes computed layout" (fun () ->
+          let tree = expect_ok (Opentui_raw.Yoga.create ()) in
+          let root = expect_ok (Opentui_raw.Yoga.root tree) in
+          let child =
+            expect_ok (Opentui_raw.Yoga.add_child tree ~parent:root)
+          in
+          ignore (expect_ok (Opentui_raw.Yoga.Node.set_width child 10.0));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.set_height child 5.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.calculate tree ~width:100.0 ~height:40.0
+                  ~direction:Opentui_raw.Yoga.Ltr));
+          let root_layout = expect_ok (Opentui_raw.Yoga.Node.layout root) in
+          expect_layout ~left:0.0 ~top:0.0 ~right:0.0 ~bottom:0.0 ~width:100.0
+            ~height:40.0 root_layout;
+          let child_layout = expect_ok (Opentui_raw.Yoga.Node.layout child) in
+          expect_layout ~left:0.0 ~top:0.0 ~right:0.0 ~bottom:0.0 ~width:10.0
+            ~height:5.0 child_layout;
+          Opentui_raw.Yoga.close tree;
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Yoga.Node.layout child);
+          expect_error Opentui_raw.Error.Closed (Opentui_raw.Yoga.root tree));
+      test "Yoga rejects invalid dimensions and cross-tree parents" (fun () ->
+          let first = expect_ok (Opentui_raw.Yoga.create ()) in
+          let second = expect_ok (Opentui_raw.Yoga.create ()) in
+          let first_root = expect_ok (Opentui_raw.Yoga.root first) in
+          let second_root = expect_ok (Opentui_raw.Yoga.root second) in
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.add_child first ~parent:second_root);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_width first_root Float.nan);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_height first_root Float.infinity);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.calculate first ~width:(-1.0) ~height:1.0
+               ~direction:Opentui_raw.Yoga.Inherit);
+          Opentui_raw.Yoga.close first;
+          Opentui_raw.Yoga.close second);
+      test "capability responses become typed copied snapshots" (fun () ->
+          let renderer =
+            expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l)
+          in
+          ignore
+            (expect_ok
+               (Opentui_raw.Capabilities.process_response renderer
+                  ~response:"\x1bP>|kitty(0.42.2)\x1b\\"));
+          ignore
+            (expect_ok
+               (Opentui_raw.Capabilities.process_response renderer
+                  ~response:"\x1b[?2027;2$y"));
+          let capabilities =
+            expect_ok (Opentui_raw.Capabilities.snapshot renderer)
+          in
+          equal string "kitty" capabilities.terminal.name;
+          equal string "0.42.2" capabilities.terminal.version;
+          equal bool true capabilities.terminal.from_xtversion;
+          (match capabilities.unicode with
+          | Opentui_raw.Capabilities.Unicode -> ()
+          | Opentui_raw.Capabilities.Wcwidth -> fail "expected Unicode mode");
+          (match capabilities.multiplexer with
+          | Opentui_raw.Capabilities.No_multiplexer -> ()
+          | _ -> fail "unexpected multiplexer");
+          (match capabilities.image_protocol with
+          | Opentui_raw.Capabilities.Auto -> ()
+          | _ -> fail "unexpected image protocol");
+          Opentui_raw.Renderer.close renderer;
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Capabilities.snapshot renderer);
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Capabilities.process_response renderer ~response:""));
     ]
