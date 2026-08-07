@@ -9,6 +9,11 @@
  (libraries opentui-terminal windtrap))
 
 (test
+ (name test_terminal_modes)
+ (modules test_terminal_modes)
+ (libraries opentui-terminal windtrap))
+
+(test
  (name test_native)
  (modules test_native)
  (libraries opentui-native windtrap))

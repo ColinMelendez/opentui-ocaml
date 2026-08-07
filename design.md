@@ -337,8 +337,10 @@ changing the queue. The package is independent of `opentui-raw`; `Key_decoder`
 adds common semantic key naming/modifiers above `Stdin_parser` while preserving
 unknown protocol events. `Mouse_decoder` adds SGR/X10 semantic events and owns
 only the pressed-button state needed to classify SGR drag motion. Terminal
-modes, Eio flow integration, and output lifecycle remain separate follow-on
-modules.
+modes are represented by writer-free `Terminal_modes` transitions: an owned
+ANSI byte sequence is paired with an immutable next state, so a caller can
+commit the state only after its output sink accepts the sequence. Eio flow
+integration and output lifecycle remain separate follow-on modules.
 
 `opentui-terminal.Stdin_parser` is the framing layer above that queue. It does
 not decode semantic key names or mouse state. `Key` and `Sequence` payloads are
@@ -348,7 +350,8 @@ turn the protocol prefix bound into a paste-size limit. `Key_decoder.decode`
 maps only the common key subset currently needed by the imperative terminal
 path; it copies character, unknown-sequence, and paste payloads at its own
 boundary. `Mouse_decoder.decode` examines only complete CSI sequence events and
-leaves non-mouse frames to the caller's other decoders.
+leaves non-mouse frames to the caller's other decoders. `Terminal_modes` does
+not write to a flow or mutate global terminal state.
 
 ### Eio and external data structures
 

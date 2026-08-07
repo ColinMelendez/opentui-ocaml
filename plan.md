@@ -219,6 +219,14 @@ SGR pressed buttons for drag classification, and returns no event for
 non-mouse or malformed frames. Terminal mode negotiation, timer coordination,
 event dispatch, and output flushing remain outside this increment.
 
+**Terminal mode increment:** `opentui-terminal.Terminal_modes` now represents
+the pinned alternate-screen, cursor, mouse-tracking, and bracketed-paste
+transitions without owning a writer. Every operation returns an owned ANSI
+sequence and an immutable next state; a runtime can commit that state only
+after its output sink accepts the sequence. Idempotence and reset ordering are
+covered, while Eio flow ownership, raw-mode toggling, capability probes, and
+event dispatch remain outside this increment.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -277,8 +285,8 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. add terminal timer/mode coordination around the now-complete framing and
-   semantic key/mouse boundaries; and
+2. add terminal timer coordination and an input-event composition boundary
+   around the framing, semantic key/mouse, and mode layers; and
 3. extend `opentui-native` with the smallest Yoga/renderable composition before
    adding terminal, core, Lwd, or widget layers.
 
@@ -291,4 +299,5 @@ prefixes only when the caller invokes `flush_timeout`, and copies paste/event
 payloads before returning them. `Key_decoder` now composes above that framing
 boundary for common semantic keys and copies its character/unknown/paste
 payloads. `Mouse_decoder` now adds stateful SGR/X10 semantics while leaving
-terminal modes and output lifecycle outside this increment.
+terminal output lifecycle outside this increment. `Terminal_modes` now adds
+writer-free mode transitions without taking ownership of an output flow.

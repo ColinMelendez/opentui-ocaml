@@ -3,8 +3,8 @@
 This package is the terminal-side foundation kept beside `opentui-native`. It
 does not depend on the renderer or `opentui-raw`.
 
-The first slice contains `Byte_queue`, `Stdin_parser`, `Key_decoder`, and
-`Mouse_decoder`.
+The first slice contains `Byte_queue`, `Stdin_parser`, `Key_decoder`,
+`Mouse_decoder`, and `Terminal_modes`.
 `Byte_queue` is a
 reusable `Bigarray.Array1`-backed queue for stdin bytes. It advances logical
 cursors without copying on every consume, compacts before growing, and rejects
@@ -28,5 +28,12 @@ tracks SGR button state for drag classification, and returns `None` for frames
 that are not valid mouse events. It does not own terminal mode negotiation or
 event dispatch.
 
-The package does not yet own terminal mode transitions, event dispatch, output
-lifecycle, Eio integration, or native zero-copy views.
+`Terminal_modes` is a writer-free lifecycle layer. Each operation returns an
+owned ANSI byte sequence together with an immutable next state, so callers can
+commit the next state only after their output sink accepts the bytes. It covers
+alternate-screen, cursor visibility, button/motion mouse tracking, and
+bracketed paste, with idempotent transitions and cleanup ordering matching the
+pinned native terminal policy.
+
+The package does not yet own event dispatch, output lifecycle, Eio integration,
+or native zero-copy views.

@@ -15,11 +15,11 @@ opentui-raw
 
 The first terminal-side slice is now `opentui-terminal`'s reusable
 `Byte_queue`, framing `Stdin_parser`, compositional `Key_decoder`, and
-stateful `Mouse_decoder`. It owns
+stateful `Mouse_decoder` plus writer-free `Terminal_modes`. It owns
 bounded `Bigarray.Array1` input storage, cursor compaction, split-safe protocol
 framing, common semantic key naming/modifiers, SGR/X10 mouse semantics, and
-owned event/paste payloads. Terminal modes and output lifecycle remain separate
-follow-on modules.
+owned event/paste payloads. Output lifecycle and Eio integration remain
+separate follow-on modules.
 
 The first `opentui-native` slice composes `opentui-raw` behind an imperative
 renderer/frame lifecycle. Its opaque frame token owns the next-buffer editing
