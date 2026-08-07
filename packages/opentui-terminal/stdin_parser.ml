@@ -7,7 +7,18 @@ type event =
 
 type error = Invalid_timeout | Queue_error of Byte_queue.error
 
-type state = Ground | Esc | Utf8 | Csi | Ss3 | Osc | Dcs | Apc
+type state =
+  | Ground
+  | Esc
+  | Utf8
+  | Csi
+  | Ss3
+  | Osc
+  | Dcs
+  | Apc
+  | Esc_recovery
+  | Esc_less_mouse
+  | Esc_less_x10_mouse
 
 type t = {
   pending : Byte_queue.t;
@@ -21,6 +32,7 @@ type t = {
   mutable utf8_seen : int;
   mutable saw_esc : bool;
   mutable force_flush : bool;
+  mutable just_flushed_esc : bool;
   mutable paste_active : bool;
   mutable paste_parts : bytes list;
   mutable paste_total : int;
@@ -70,6 +82,7 @@ let create ?initial_capacity ?(max_pending_bytes = default_max_pending_bytes)
             utf8_seen = 0;
             saw_esc = false;
             force_flush = false;
+            just_flushed_esc = false;
             paste_active = false;
             paste_parts = [];
             paste_total = 0;
@@ -99,6 +112,15 @@ let copy_range parser ~start ~end_exclusive =
   let result = Bytes.create length in
   for index = 0 to length - 1 do
     Bytes.set_uint8 result index (byte_at parser (start + index))
+  done;
+  result
+
+let copy_range_with_escape parser ~start ~end_exclusive =
+  let length = end_exclusive - start in
+  let result = Bytes.create (length + 1) in
+  Bytes.set_uint8 result 0 escape;
+  for index = 0 to length - 1 do
+    Bytes.set_uint8 result (index + 1) (byte_at parser (start + index))
   done;
   result
 
@@ -141,6 +163,15 @@ let emit_sequence parser protocol ~start ~end_exclusive =
     (Sequence { protocol; bytes = copy_range parser ~start ~end_exclusive })
     parser.events
 
+let emit_sequence_with_escape parser protocol ~start ~end_exclusive =
+  Queue.add
+    (Sequence
+       {
+         protocol;
+         bytes = copy_range_with_escape parser ~start ~end_exclusive;
+       })
+    parser.events
+
 let clear_paste_storage parser =
   parser.paste_parts <- [];
   parser.paste_total <- 0;
@@ -150,6 +181,8 @@ let clear_paste_storage parser =
 
 let start_paste parser =
   clear_paste_storage parser;
+  parser.force_flush <- false;
+  parser.just_flushed_esc <- false;
   parser.paste_active <- true
 
 let add_paste_stable_byte parser value =
@@ -187,6 +220,7 @@ let finish_paste parser =
     (List.rev parts);
   Queue.add (Paste result) parser.events;
   parser.paste_active <- false;
+  parser.force_flush <- false;
   clear_paste_storage parser
 
 let add_paste_byte parser value =
@@ -205,6 +239,36 @@ let add_paste_byte parser value =
       parser.paste_tail_length <- Array.length bracketed_paste_end - 1)
 
 let is_utf8_continuation value = Int.equal (value land 0xc0) 0x80
+
+let delayed_sgr_mouse_shape parser ~start ~end_exclusive =
+  let length = end_exclusive - start in
+  if Int.compare length 8 < 0 then false
+  else if
+    not
+      (Int.equal (byte_at parser start) 0x5b
+      && Int.equal (byte_at parser (start + 1)) 0x3c)
+  then false
+  else
+    let final = byte_at parser (end_exclusive - 1) in
+    if not (Int.equal final 0x4d || Int.equal final 0x6d) then false
+    else
+      let part = ref 0 in
+      let has_digit = ref false in
+      let valid = ref true in
+      let index = ref (start + 2) in
+      while !valid && Int.compare !index (end_exclusive - 1) < 0 do
+        let value = byte_at parser !index in
+        if Int.compare value 0x30 >= 0 && Int.compare value 0x39 <= 0 then
+          has_digit := true
+        else if Int.equal value 0x3b then
+          if not !has_digit || Int.compare !part 2 >= 0 then valid := false
+          else (
+            part := !part + 1;
+            has_digit := false)
+        else valid := false;
+        index := !index + 1
+      done;
+      !valid && Int.equal !part 2 && !has_digit
 
 let utf8_sequence_length value =
   if Int.compare value 0x80 < 0 then 1
@@ -234,7 +298,12 @@ let scan parser =
     | Ground ->
         parser.unit_start <- parser.cursor;
         let value = byte_at parser parser.cursor in
-        if Int.equal value escape then (
+        let just_flushed_esc = parser.just_flushed_esc in
+        parser.just_flushed_esc <- false;
+        if just_flushed_esc && Int.equal value 0x5b then (
+          parser.cursor <- parser.cursor + 1;
+          parser.state <- Esc_recovery)
+        else if Int.equal value escape then (
           parser.cursor <- parser.cursor + 1;
           parser.state <- Esc)
         else if Int.compare value 0x80 < 0 then (
@@ -283,11 +352,15 @@ let scan parser =
         if Int.compare parser.cursor pending_length >= 0 then
           if not parser.force_flush then scanning := false
           else (
-            if Int.equal (parser.cursor - parser.unit_start) 1 then
+            let flushed_lone_esc =
+              Int.equal (parser.cursor - parser.unit_start) 1
+            in
+            if flushed_lone_esc then
               emit_key parser ~start:parser.unit_start ~end_exclusive:parser.cursor
             else
               emit_sequence parser Unknown ~start:parser.unit_start
                 ~end_exclusive:parser.cursor;
+            parser.just_flushed_esc <- flushed_lone_esc;
             set_ground parser;
             consume_prefix parser parser.cursor)
         else (
@@ -319,6 +392,69 @@ let scan parser =
                 ~end_exclusive:parser.cursor;
               set_ground parser;
               consume_prefix parser parser.cursor)
+    | Esc_recovery ->
+        if Int.compare parser.cursor pending_length >= 0 then
+          if not parser.force_flush then scanning := false
+          else (
+            emit_key parser ~start:parser.unit_start
+              ~end_exclusive:parser.cursor;
+            set_ground parser;
+            consume_prefix parser parser.cursor)
+        else
+          let value = byte_at parser parser.cursor in
+          if Int.equal value 0x3c then (
+            parser.cursor <- parser.cursor + 1;
+            parser.state <- Esc_less_mouse)
+          else if Int.equal value 0x4d then (
+            parser.cursor <- parser.cursor + 1;
+            parser.state <- Esc_less_x10_mouse)
+          else (
+            emit_key parser ~start:parser.unit_start
+              ~end_exclusive:(parser.unit_start + 1);
+            set_ground parser;
+            consume_prefix parser (parser.unit_start + 1))
+    | Esc_less_mouse ->
+        if Int.compare parser.cursor pending_length >= 0 then
+          if not parser.force_flush then scanning := false
+          else (
+            emit_sequence_with_escape parser Unknown ~start:parser.unit_start
+              ~end_exclusive:parser.cursor;
+            set_ground parser;
+            consume_prefix parser parser.cursor)
+        else
+          let value = byte_at parser parser.cursor in
+          if Int.compare value 0x30 >= 0 && Int.compare value 0x39 <= 0 then
+            parser.cursor <- parser.cursor + 1
+          else if Int.equal value 0x3b then parser.cursor <- parser.cursor + 1
+          else if Int.equal value 0x4d || Int.equal value 0x6d then (
+            let end_exclusive = parser.cursor + 1 in
+            if delayed_sgr_mouse_shape parser ~start:parser.unit_start
+                ~end_exclusive
+            then emit_sequence_with_escape parser Csi ~start:parser.unit_start
+                   ~end_exclusive
+            else emit_sequence_with_escape parser Unknown ~start:parser.unit_start
+                   ~end_exclusive;
+            set_ground parser;
+            consume_prefix parser end_exclusive)
+          else (
+            emit_sequence_with_escape parser Unknown ~start:parser.unit_start
+              ~end_exclusive:parser.cursor;
+            set_ground parser;
+            consume_prefix parser parser.cursor)
+    | Esc_less_x10_mouse ->
+        let end_exclusive = parser.unit_start + 5 in
+        if Int.compare pending_length end_exclusive < 0 then
+          if not parser.force_flush then scanning := false
+          else (
+            emit_sequence_with_escape parser Unknown ~start:parser.unit_start
+              ~end_exclusive:pending_length;
+            set_ground parser;
+            consume_prefix parser pending_length)
+        else (
+          emit_sequence_with_escape parser Csi ~start:parser.unit_start
+            ~end_exclusive;
+          set_ground parser;
+          consume_prefix parser end_exclusive)
     | Ss3 ->
         if Int.compare parser.cursor pending_length >= 0 then
           if not parser.force_flush then scanning := false
@@ -507,12 +643,14 @@ let drain parser callback =
 let flush_timeout parser =
   if not parser.paste_active && Int.compare (Byte_queue.length parser.pending) 0 > 0 then (
     parser.force_flush <- true;
-    pump_pending parser)
+    pump_pending parser;
+    parser.force_flush <- false)
 
 let reset parser =
   Byte_queue.clear parser.pending;
   Queue.clear parser.events;
   parser.state <- Ground;
+  parser.just_flushed_esc <- false;
   parser.paste_active <- false;
   clear_paste_storage parser;
   reset_unit parser

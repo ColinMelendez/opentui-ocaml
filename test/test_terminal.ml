@@ -248,6 +248,37 @@ let () =
           expect_no_event parser;
           Parser.flush_timeout parser;
           expect_sequence parser Parser.Unknown "\x1b[12");
+      test "timeout state does not leak through bracketed paste" (fun () ->
+          let parser = parser_create () in
+          push_string parser "\x1b[";
+          Parser.flush_timeout parser;
+          expect_sequence parser Parser.Unknown "\x1b[";
+          push_string parser "\x1b[200~body\x1b[201~\x1b[";
+          expect_paste parser "body";
+          expect_no_event parser;
+          Parser.flush_timeout parser;
+          expect_sequence parser Parser.Unknown "\x1b[");
+      test "delayed mouse continuations recover a timed-out escape" (fun () ->
+          let parser = parser_create () in
+          push_string parser "\x1b";
+          Parser.flush_timeout parser;
+          expect_key parser "\x1b";
+          push_string parser "[<0;1;2";
+          expect_no_event parser;
+          push_string parser "M";
+          expect_sequence parser Parser.Csi "\x1b[<0;1;2M";
+          push_string parser "\x1b";
+          Parser.flush_timeout parser;
+          expect_key parser "\x1b";
+          push_string parser "[M !\"";
+          expect_sequence parser Parser.Csi "\x1b[M !\"";
+          push_string parser "\x1b";
+          Parser.flush_timeout parser;
+          expect_key parser "\x1b";
+          push_string parser "[A";
+          expect_key parser "[";
+          expect_key parser "A";
+          expect_no_event parser);
       test "timeout drains buffered UTF-8 continuation bytes" (fun () ->
           let parser = parser_create () in
           push_string parser "\xe0\x80";
