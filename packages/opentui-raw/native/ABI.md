@@ -56,6 +56,10 @@ output, and requires the active-allocation count to remain stable. This is
 diagnostic evidence rather than a fixed allocation threshold; the ReleaseSafe
 runtime artifact intentionally leaves `requested_bytes_valid` false.
 
+The output smoke also allocates an OCaml-owned `bytes` value in the test shim,
+passes its storage directly to `bufferWriteResolvedChars`, and checks `A` and
+`B` from OCaml without converting the result to a string.
+
 ## Build and link
 
 The pinned upstream dynamic library is built with Zig 0.16.0 in

@@ -288,6 +288,22 @@ The editor, audio, image, Ghostty, syntax, and high-level text-buffer exports
 remain outside this slice. Text rendering should use OpenTUI's native grapheme
 and width logic rather than duplicate Unicode width calculations in OCaml.
 
+### Phase 1 exit record
+
+Phase 1 is complete for the pinned OpenTUI revision. The checked-in seam now
+has a source-backed Zig/C ABI probe, a reproducible Dune/Zig link rule, and a
+black-box native smoke that covers renderer/buffer ownership, invalid and
+empty boundary inputs, bounded caller-owned output, synchronous callback byte
+copying, direct writes into OCaml-owned bytes, and a diagnostic repeated-update
+allocation baseline. The test-only C shim owns every raw `u32` handle and
+destroys renderer children before their owner; the public raw package still
+does not expose those handles.
+
+The exit is deliberately narrow. Yoga pointers, native span views and
+reservation cancellation, terminal integration, the stdin parser, and all
+reactive or widget layers remain follow-on work under the Phase 2 and later
+boundaries below.
+
 ### Eio and external data structures
 
 Eio is a good fit for the runtime boundary, not for the raw ABI or the native

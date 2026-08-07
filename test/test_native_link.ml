@@ -7,6 +7,11 @@ let () =
           equal bool true (Test_native_link_support.native_symbol_smoke ()));
       test "runs the memory renderer and buffer ownership round trip" (fun () ->
           equal bool true (Test_native_link_support.memory_renderer_round_trip ()));
+      test "writes native output into OCaml-owned bytes" (fun () ->
+          let output = Test_native_link_support.memory_output_bytes () in
+          equal int 2 (Bytes.length output);
+          equal int 65 (Char.code (Bytes.get output 0));
+          equal int 66 (Char.code (Bytes.get output 1)));
       test "copies synchronous event callback payloads" (fun () ->
           equal bool true (Test_native_link_support.event_callback_copy ()));
       test "records the repeated native buffer update baseline" (fun () ->

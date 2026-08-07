@@ -113,6 +113,37 @@ CAMLprim value opentui_test_memory_renderer_round_trip(value unit_value) {
   CAMLreturn(Val_bool(round_trip_succeeded));
 }
 
+CAMLprim value opentui_test_memory_output_bytes(value unit_value) {
+  CAMLparam1(unit_value);
+  CAMLlocal1(output);
+
+  output = caml_alloc_string(0);
+  const opentui_native_handle renderer = createRenderer(2, 1, 1, 2, NULL);
+  if (renderer != 0) {
+    setUseThread(renderer, false);
+    const opentui_native_handle current = getCurrentBuffer(renderer);
+    if (current != 0) {
+      const uint16_t foreground[4] = {UINT16_C(255), UINT16_C(255), UINT16_C(255), UINT16_C(255)};
+      const uint16_t background[4] = {0, 0, 0, UINT16_C(255)};
+
+      output = caml_alloc_string(2);
+      bufferSetCell(current, 0, 0, UINT32_C(65), foreground, background, 0);
+      bufferSetCell(current, 1, 0, UINT32_C(66), foreground, background, 0);
+      const uint32_t output_length = bufferWriteResolvedChars(
+          current,
+          (uint8_t *)Bytes_val(output),
+          2,
+          false);
+      if (output_length != 2) {
+        output = caml_alloc_string(0);
+      }
+    }
+    destroyRenderer(renderer);
+  }
+
+  CAMLreturn(output);
+}
+
 CAMLprim value opentui_test_event_callback_copy(value unit_value) {
   CAMLparam1(unit_value);
 

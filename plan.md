@@ -13,7 +13,7 @@ support the relevant claim.
 - pin the upstream OpenTUI source as `vendor/opentui`;
 - record the package graph, constraints, and tentative decisions.
 
-## Phase 1 — ABI/build seam and minimal native smoke (in progress)
+## Phase 1 — ABI/build seam and minimal native smoke (complete)
 
 This is the first implementation gate. It intentionally proves a narrow,
 memory-output renderer/buffer/event slice while establishing which state belongs
@@ -140,6 +140,16 @@ draw a cell or text span, write into caller-owned output storage, and observe a
 copied callback payload without exposing raw pointers or requiring a second
 external data-structure library.
 
+**Exit record (2026-08-10):** The pinned revision is covered by
+`packages/opentui-raw/native/ABI.md`, the source-importing Zig probe, and the
+fixed-width C header. The root Dune workflow builds and links the ReleaseSafe
+memory-output artifact with native threaded output disabled. The native smoke
+proves renderer-owned buffer invalidation, deterministic invalid and empty
+inputs, bounded output failure, synchronous callback copying, direct writes
+into OCaml-owned bytes, and a non-gating repeated-update allocation baseline.
+The packed `u32` handles remain confined to the test shim; the public
+placeholder handle module and all higher-level layers remain unchanged.
+
 ## Phase 2 — Complete typed raw boundary and native protocol proofs
 
 - make the root development workflow build the pinned native library for the
@@ -231,13 +241,14 @@ suite, and consume the stable packages without the JavaScript runtime.
 
 ## Immediate next tasks
 
-1. Finish the compile-time ABI probe/header for the selected exports in
-   `vendor/opentui/packages/core/src/zig/lib.zig` and `zig.ts`.
-2. Choose the Yoga ownership wrapper and document the exact renderer-owner,
-   borrowed-buffer, callback, and output-span lifetimes.
-3. Add the root native build seam and one create/destroy smoke test, then add
-   the first buffer/layout/event operations behind it.
-4. Port the small stdin byte-queue/state-machine core with chunk-split tests;
-   keep Eio integration at the terminal runtime boundary.
-5. Replace the placeholder `opentui-raw.Handle` API only after those ABI and
-   ownership tests pass.
+Phase 1 is complete. The next implementation turn should begin Phase 2 with:
+
+1. a fixed-width OCaml-oriented facade for status/error conversion and the
+   selected renderer, buffer, and event domains;
+2. kind-specific raw handle modules and explicit creation/destruction, while
+   keeping the packed registry representation private;
+3. an owned Yoga wrapper and exact six-`f32` layout output;
+4. native span-consumed/release and reservation-cancel operations before any
+   zero-copy view is exposed; and
+5. the reusable stdin byte queue and parser state machine only after the raw
+   protocol boundary is typed.
