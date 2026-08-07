@@ -5,6 +5,9 @@ type t =
   | Native_failure
   | Output_too_small
   | Queue_overflow
+  | No_space
+  | Max_bytes
+  | Busy
 
 let message = function
   | Invalid_argument -> "invalid argument"
@@ -13,6 +16,9 @@ let message = function
   | Native_failure -> "the native OpenTUI operation failed"
   | Output_too_small -> "the output buffer is too small"
   | Queue_overflow -> "the native event queue overflowed"
+  | No_space -> "the native output feed has no writable space"
+  | Max_bytes -> "the native output feed reached its byte limit"
+  | Busy -> "the native output feed has an active operation"
 
 let pp formatter error = Format.pp_print_string formatter (message error)
 
@@ -25,5 +31,8 @@ module Private = struct
     | 3 -> Some Native_failure
     | 4 -> Some Output_too_small
     | 5 -> Some Queue_overflow
+    | 6 -> Some No_space
+    | 7 -> Some Max_bytes
+    | 8 -> Some Busy
     | _ -> Some Native_failure
 end

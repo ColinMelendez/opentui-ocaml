@@ -29,6 +29,9 @@ type capabilities =
   * bool
   * int
 
+type span_feed_options = int32 * int32 * int64 * int * bool * int32
+type span_feed_stats = int64 * int64 * int32 * int32
+
 val renderer_create : int32 -> int32 -> int * Native_token.Renderer.t
 val renderer_destroy : Native_token.Renderer.t -> unit
 val renderer_buffer :
@@ -57,3 +60,20 @@ val renderer_capabilities :
   Native_token.Renderer.t -> int * capabilities option
 val process_capability_response :
   Native_token.Renderer.t -> string -> int
+
+val span_feed_create :
+  span_feed_options -> int * Native_token.Span_feed.t
+val span_feed_close : Native_token.Span_feed.t -> int
+val span_feed_write : Native_token.Span_feed.t -> bytes -> int
+val span_feed_commit : Native_token.Span_feed.t -> int
+val span_feed_reserve :
+  Native_token.Span_feed.t -> int32 ->
+  int * (Native_token.Reservation.t * int32 * bytes) option
+val span_feed_reservation_commit :
+  Native_token.Reservation.t -> bytes -> int32 -> int
+val span_feed_reservation_cancel : Native_token.Reservation.t -> int
+val span_feed_stats :
+  Native_token.Span_feed.t -> int * span_feed_stats option
+val span_feed_drain :
+  Native_token.Span_feed.t -> int * (bytes * Native_token.Span.t) option
+val span_release : Native_token.Span.t -> int

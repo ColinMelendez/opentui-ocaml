@@ -5,6 +5,9 @@ type t =
   | Native_failure
   | Output_too_small
   | Queue_overflow
+  | No_space
+  | Max_bytes
+  | Busy
 
 val message : t -> string
 val pp : Format.formatter -> t -> unit

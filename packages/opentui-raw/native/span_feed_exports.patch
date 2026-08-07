@@ -1,0 +1,38 @@
+--- native-span-feed.zig
++++ native-span-feed.zig
+@@ -373,0 +374,8 @@
++    pub fn cancelReserved(self: *Stream) StreamError!void {
++        if (self.closed) return StreamError.Invalid;
++        if (!self.reserved_active) return StreamError.Invalid;
++        self.reserved_active = false;
++        self.reserved_chunk_index = 0;
++        self.reserved_offset = 0;
++        self.reserved_len = 0;
++    }
+@@ -786,0 +787,6 @@
++pub export fn streamCancelReserved(stream: ?*Stream) i32 {
++    if (stream == null) return Status.err_invalid;
++    const s = stream.?;
++    s.cancelReserved() catch |err| return errorToStatus(err);
++    return Status.ok;
++}
+@@ -806,0 +807,19 @@
++/// Releases one drained span after its borrowed chunk bytes are no longer used.
++/// The pointer, chunk index, and bounds are checked before changing the chunk
++/// state so a stale or malformed span cannot release a different chunk.
++pub export fn streamMarkSpanConsumed(stream: ?*Stream, span_ptr: ?*const SpanInfo) i32 {
++    if (stream == null or span_ptr == null) return Status.err_invalid;
++    const s = stream.?;
++    if (s.closed) return Status.err_invalid;
++    const span = span_ptr.?.*;
++    const chunk_index: usize = @intCast(span.chunk_index);
++    if (chunk_index >= s.chunks.items.len) return Status.err_invalid;
++    const chunk = s.chunks.items[chunk_index];
++    const chunk_len: usize = @intCast(chunk.len);
++    const offset: usize = @intCast(span.offset);
++    const length: usize = @intCast(span.len);
++    if (span.chunk_ptr != @intFromPtr(chunk.ptr)) return Status.err_invalid;
++    if (offset > chunk_len or length > chunk_len - offset) return Status.err_invalid;
++    s.markSpanConsumed(span);
++    return Status.ok;
++}

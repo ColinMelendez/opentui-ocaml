@@ -16,6 +16,9 @@ let same_error left right =
   | Opentui_raw.Error.Native_failure, Opentui_raw.Error.Native_failure -> true
   | Opentui_raw.Error.Output_too_small, Opentui_raw.Error.Output_too_small -> true
   | Opentui_raw.Error.Queue_overflow, Opentui_raw.Error.Queue_overflow -> true
+  | Opentui_raw.Error.No_space, Opentui_raw.Error.No_space -> true
+  | Opentui_raw.Error.Max_bytes, Opentui_raw.Error.Max_bytes -> true
+  | Opentui_raw.Error.Busy, Opentui_raw.Error.Busy -> true
   | _ -> false
 
 let expect_error expected result =
@@ -184,4 +187,83 @@ let () =
             (Opentui_raw.Capabilities.snapshot renderer);
           expect_error Opentui_raw.Error.Closed
             (Opentui_raw.Capabilities.process_response renderer ~response:""));
+      test "span feed copies payloads and release controls chunk reuse" (fun () ->
+          let options =
+            {
+              Opentui_raw.Span_feed.chunk_size = 8l;
+              initial_chunks = 1l;
+              max_bytes = 0L;
+              growth_policy = Opentui_raw.Span_feed.Block;
+              auto_commit_on_full = false;
+              span_queue_capacity = 8l;
+            }
+          in
+          let feed =
+            expect_ok (Opentui_raw.Span_feed.create ~options ())
+          in
+          ignore
+            (expect_ok
+               (Opentui_raw.Span_feed.write feed (Bytes.of_string "hello")));
+          ignore (expect_ok (Opentui_raw.Span_feed.commit feed));
+          let before_drain = expect_ok (Opentui_raw.Span_feed.stats feed) in
+          equal int64 5L before_drain.bytes_written;
+          equal int64 1L before_drain.spans_committed;
+          let span =
+            match expect_ok (Opentui_raw.Span_feed.drain feed) with
+            | [ span ] -> span
+            | _ -> fail "expected one output span"
+          in
+          equal string "hello"
+            (Bytes.to_string (Opentui_raw.Span_feed.Span.bytes span));
+          expect_error Opentui_raw.Error.No_space
+            (Opentui_raw.Span_feed.reserve feed ~min_length:1l);
+          ignore (expect_ok (Opentui_raw.Span_feed.Span.release span));
+          ignore (expect_ok (Opentui_raw.Span_feed.Span.release span));
+          let after_release = expect_ok (Opentui_raw.Span_feed.stats feed) in
+          equal int32 0l after_release.pending_spans;
+          let reservation =
+            expect_ok (Opentui_raw.Span_feed.reserve feed ~min_length:1l)
+          in
+          ignore (expect_ok (Opentui_raw.Span_feed.Reservation.cancel reservation));
+          ignore (expect_ok (Opentui_raw.Span_feed.close feed)));
+      test "span feed reservations make busy state cancellable" (fun () ->
+          let options =
+            {
+              Opentui_raw.Span_feed.chunk_size = 8l;
+              initial_chunks = 1l;
+              max_bytes = 0L;
+              growth_policy = Opentui_raw.Span_feed.Grow;
+              auto_commit_on_full = false;
+              span_queue_capacity = 8l;
+            }
+          in
+          let feed =
+            expect_ok (Opentui_raw.Span_feed.create ~options ())
+          in
+          let cancelled =
+            expect_ok (Opentui_raw.Span_feed.reserve feed ~min_length:4l)
+          in
+          expect_error Opentui_raw.Error.Busy
+            (Opentui_raw.Span_feed.close feed);
+          ignore
+            (expect_ok
+               (Opentui_raw.Span_feed.Reservation.cancel cancelled));
+          let reservation =
+            expect_ok (Opentui_raw.Span_feed.reserve feed ~min_length:4l)
+          in
+          Bytes.blit_string "abc" 0
+            (Opentui_raw.Span_feed.Reservation.contents reservation) 0 3;
+          ignore
+            (expect_ok
+               (Opentui_raw.Span_feed.Reservation.commit reservation
+                  ~used:3l));
+          let span =
+            match expect_ok (Opentui_raw.Span_feed.drain feed) with
+            | [ span ] -> span
+            | _ -> fail "expected one reserved output span"
+          in
+          equal string "abc"
+            (Bytes.to_string (Opentui_raw.Span_feed.Span.bytes span));
+          ignore (expect_ok (Opentui_raw.Span_feed.Span.release span));
+          ignore (expect_ok (Opentui_raw.Span_feed.close feed)))
     ]

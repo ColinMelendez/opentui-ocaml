@@ -85,6 +85,44 @@ typedef struct opentui_external_capabilities {
   uint8_t osc52_support;
 } opentui_external_capabilities;
 
+typedef void *opentui_span_feed_ref;
+
+typedef struct opentui_external_span_feed_options {
+  uint32_t chunk_size;
+  uint32_t initial_chunks;
+  uint64_t max_bytes;
+  uint8_t growth_policy;
+  uint8_t auto_commit_on_full;
+  uint32_t span_queue_capacity;
+} opentui_external_span_feed_options;
+
+typedef struct opentui_external_span_feed_stats {
+  uint64_t bytes_written;
+  uint64_t spans_committed;
+  uint32_t chunks;
+  uint32_t pending_spans;
+} opentui_external_span_feed_stats;
+
+typedef struct opentui_external_span_info {
+  uintptr_t chunk_ptr;
+  uint32_t offset;
+  uint32_t len;
+  uint32_t chunk_index;
+  uint32_t reserved;
+} opentui_external_span_info;
+
+typedef struct opentui_external_reserve_info {
+  uintptr_t ptr;
+  uint32_t len;
+  uint32_t reserved;
+} opentui_external_reserve_info;
+
+typedef void (*opentui_span_feed_callback)(
+    uintptr_t stream_ptr,
+    uint32_t event_id,
+    uintptr_t arg0,
+    uint64_t arg1);
+
 opentui_native_handle createEventSink(opentui_event_callback callback);
 void destroyEventSink(opentui_native_handle sink_handle);
 opentui_native_handle createEditBuffer(uint8_t width_method, opentui_native_handle event_sink_handle);
@@ -161,6 +199,37 @@ void processCapabilityResponse(
     const uint8_t *response_ptr,
     uint32_t response_len);
 
+opentui_span_feed_ref createNativeSpanFeed(
+    const opentui_external_span_feed_options *options);
+int32_t attachNativeSpanFeed(opentui_span_feed_ref stream);
+int32_t streamClose(opentui_span_feed_ref stream);
+void destroyNativeSpanFeed(opentui_span_feed_ref stream);
+int32_t streamWrite(
+    opentui_span_feed_ref stream,
+    const uint8_t *source,
+    uint32_t length);
+int32_t streamCommit(opentui_span_feed_ref stream);
+int32_t streamReserve(
+    opentui_span_feed_ref stream,
+    uint32_t minimum_length,
+    opentui_external_reserve_info *output);
+int32_t streamCommitReserved(opentui_span_feed_ref stream, uint32_t length);
+int32_t streamCancelReserved(opentui_span_feed_ref stream);
+int32_t streamSetOptions(
+    opentui_span_feed_ref stream,
+    const opentui_external_span_feed_options *options);
+int32_t streamGetStats(
+    opentui_span_feed_ref stream,
+    opentui_external_span_feed_stats *output);
+uint32_t streamDrainSpans(
+    opentui_span_feed_ref stream,
+    opentui_external_span_info *output,
+    uint32_t maximum_spans);
+int32_t streamMarkSpanConsumed(
+    opentui_span_feed_ref stream,
+    const opentui_external_span_info *span);
+void streamSetCallback(opentui_span_feed_ref stream, opentui_span_feed_callback callback);
+
 _Static_assert(sizeof(opentui_native_handle) == 4, "OpenTUI handles must be u32");
 _Static_assert(sizeof(bool) == 1, "OpenTUI bool must have one-byte C ABI storage");
 _Static_assert(sizeof(opentui_external_build_options) == 2, "build options ABI drift");
@@ -191,6 +260,25 @@ _Static_assert(offsetof(opentui_external_render_stats, cells_updated) == 40, "re
 _Static_assert(offsetof(opentui_external_render_stats, average_cells_updated) == 44, "render stats offset drift");
 _Static_assert(offsetof(opentui_external_render_stats, render_time_valid) == 48, "render stats offset drift");
 _Static_assert(offsetof(opentui_external_render_stats, stdout_write_time_valid) == 49, "render stats offset drift");
+_Static_assert(sizeof(uintptr_t) == sizeof(void *), "uintptr_t ABI drift");
+_Static_assert(sizeof(opentui_external_span_feed_options) == 24, "span feed options ABI drift");
+_Static_assert(offsetof(opentui_external_span_feed_options, initial_chunks) == 4, "span feed options offset drift");
+_Static_assert(offsetof(opentui_external_span_feed_options, max_bytes) == 8, "span feed options offset drift");
+_Static_assert(offsetof(opentui_external_span_feed_options, growth_policy) == 16, "span feed options offset drift");
+_Static_assert(offsetof(opentui_external_span_feed_options, auto_commit_on_full) == 17, "span feed options offset drift");
+_Static_assert(offsetof(opentui_external_span_feed_options, span_queue_capacity) == 20, "span feed options offset drift");
+_Static_assert(sizeof(opentui_external_span_feed_stats) == 24, "span feed stats ABI drift");
+_Static_assert(offsetof(opentui_external_span_feed_stats, spans_committed) == 8, "span feed stats offset drift");
+_Static_assert(offsetof(opentui_external_span_feed_stats, chunks) == 16, "span feed stats offset drift");
+_Static_assert(offsetof(opentui_external_span_feed_stats, pending_spans) == 20, "span feed stats offset drift");
+_Static_assert(sizeof(opentui_external_span_info) == 24, "span info ABI drift");
+_Static_assert(offsetof(opentui_external_span_info, offset) == 8, "span info offset drift");
+_Static_assert(offsetof(opentui_external_span_info, len) == 12, "span info offset drift");
+_Static_assert(offsetof(opentui_external_span_info, chunk_index) == 16, "span info offset drift");
+_Static_assert(offsetof(opentui_external_span_info, reserved) == 20, "span info offset drift");
+_Static_assert(sizeof(opentui_external_reserve_info) == 16, "reserve info ABI drift");
+_Static_assert(offsetof(opentui_external_reserve_info, len) == 8, "reserve info offset drift");
+_Static_assert(offsetof(opentui_external_reserve_info, reserved) == 12, "reserve info offset drift");
 
 typedef opentui_native_handle (*opentui_create_event_sink_fn)(opentui_event_callback);
 typedef void (*opentui_destroy_event_sink_fn)(opentui_native_handle);
@@ -219,6 +307,17 @@ typedef void (*opentui_yoga_node_get_computed_layout_fn)(opentui_yoga_node_const
 typedef void (*opentui_yoga_node_style_set_value_fn)(opentui_yoga_node_ref, uint32_t, uint32_t, uint32_t, float);
 typedef void (*opentui_get_terminal_capabilities_fn)(opentui_native_handle, opentui_external_capabilities *);
 typedef void (*opentui_process_capability_response_fn)(opentui_native_handle, const uint8_t *, uint32_t);
+typedef opentui_span_feed_ref (*opentui_create_native_span_feed_fn)(const opentui_external_span_feed_options *);
+typedef int32_t (*opentui_span_feed_status_fn)(opentui_span_feed_ref);
+typedef void (*opentui_destroy_native_span_feed_fn)(opentui_span_feed_ref);
+typedef int32_t (*opentui_span_feed_write_fn)(opentui_span_feed_ref, const uint8_t *, uint32_t);
+typedef int32_t (*opentui_span_feed_reserve_fn)(opentui_span_feed_ref, uint32_t, opentui_external_reserve_info *);
+typedef int32_t (*opentui_span_feed_commit_reserved_fn)(opentui_span_feed_ref, uint32_t);
+typedef int32_t (*opentui_span_feed_options_fn)(opentui_span_feed_ref, const opentui_external_span_feed_options *);
+typedef int32_t (*opentui_span_feed_stats_fn)(opentui_span_feed_ref, opentui_external_span_feed_stats *);
+typedef uint32_t (*opentui_span_feed_drain_fn)(opentui_span_feed_ref, opentui_external_span_info *, uint32_t);
+typedef int32_t (*opentui_span_feed_consume_fn)(opentui_span_feed_ref, const opentui_external_span_info *);
+typedef void (*opentui_span_feed_callback_fn)(opentui_span_feed_ref, opentui_span_feed_callback);
 
 _Static_assert(_Generic(&createEventSink, opentui_create_event_sink_fn: 1, default: 0), "createEventSink ABI drift");
 _Static_assert(_Generic(&destroyEventSink, opentui_destroy_event_sink_fn: 1, default: 0), "destroyEventSink ABI drift");
@@ -249,6 +348,20 @@ _Static_assert(_Generic(&yogaNodeGetComputedLayout, opentui_yoga_node_get_comput
 _Static_assert(_Generic(&yogaNodeStyleSetValue, opentui_yoga_node_style_set_value_fn: 1, default: 0), "yogaNodeStyleSetValue ABI drift");
 _Static_assert(_Generic(&getTerminalCapabilities, opentui_get_terminal_capabilities_fn: 1, default: 0), "getTerminalCapabilities ABI drift");
 _Static_assert(_Generic(&processCapabilityResponse, opentui_process_capability_response_fn: 1, default: 0), "processCapabilityResponse ABI drift");
+_Static_assert(_Generic(&createNativeSpanFeed, opentui_create_native_span_feed_fn: 1, default: 0), "createNativeSpanFeed ABI drift");
+_Static_assert(_Generic(&attachNativeSpanFeed, opentui_span_feed_status_fn: 1, default: 0), "attachNativeSpanFeed ABI drift");
+_Static_assert(_Generic(&streamClose, opentui_span_feed_status_fn: 1, default: 0), "streamClose ABI drift");
+_Static_assert(_Generic(&destroyNativeSpanFeed, opentui_destroy_native_span_feed_fn: 1, default: 0), "destroyNativeSpanFeed ABI drift");
+_Static_assert(_Generic(&streamWrite, opentui_span_feed_write_fn: 1, default: 0), "streamWrite ABI drift");
+_Static_assert(_Generic(&streamCommit, opentui_span_feed_status_fn: 1, default: 0), "streamCommit ABI drift");
+_Static_assert(_Generic(&streamReserve, opentui_span_feed_reserve_fn: 1, default: 0), "streamReserve ABI drift");
+_Static_assert(_Generic(&streamCommitReserved, opentui_span_feed_commit_reserved_fn: 1, default: 0), "streamCommitReserved ABI drift");
+_Static_assert(_Generic(&streamCancelReserved, opentui_span_feed_status_fn: 1, default: 0), "streamCancelReserved ABI drift");
+_Static_assert(_Generic(&streamSetOptions, opentui_span_feed_options_fn: 1, default: 0), "streamSetOptions ABI drift");
+_Static_assert(_Generic(&streamGetStats, opentui_span_feed_stats_fn: 1, default: 0), "streamGetStats ABI drift");
+_Static_assert(_Generic(&streamDrainSpans, opentui_span_feed_drain_fn: 1, default: 0), "streamDrainSpans ABI drift");
+_Static_assert(_Generic(&streamMarkSpanConsumed, opentui_span_feed_consume_fn: 1, default: 0), "streamMarkSpanConsumed ABI drift");
+_Static_assert(_Generic(&streamSetCallback, opentui_span_feed_callback_fn: 1, default: 0), "streamSetCallback ABI drift");
 
 #ifdef __cplusplus
 }

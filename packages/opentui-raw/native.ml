@@ -29,6 +29,9 @@ type capabilities =
   * bool
   * int
 
+type span_feed_options = int32 * int32 * int64 * int * bool * int32
+type span_feed_stats = int64 * int64 * int32 * int32
+
 external renderer_create : int32 -> int32 -> int * Native_token.Renderer.t =
   "opentui_raw_renderer_create"
 
@@ -99,3 +102,39 @@ external renderer_capabilities :
 external process_capability_response :
   Native_token.Renderer.t -> string -> int =
   "opentui_raw_process_capability_response"
+
+external span_feed_create :
+  span_feed_options -> int * Native_token.Span_feed.t =
+  "opentui_raw_span_feed_create"
+
+external span_feed_close : Native_token.Span_feed.t -> int =
+  "opentui_raw_span_feed_close"
+
+external span_feed_write : Native_token.Span_feed.t -> bytes -> int =
+  "opentui_raw_span_feed_write"
+
+external span_feed_commit : Native_token.Span_feed.t -> int =
+  "opentui_raw_span_feed_commit"
+
+external span_feed_reserve :
+  Native_token.Span_feed.t -> int32 ->
+  int * (Native_token.Reservation.t * int32 * bytes) option =
+  "opentui_raw_span_feed_reserve"
+
+external span_feed_reservation_commit :
+  Native_token.Reservation.t -> bytes -> int32 -> int =
+  "opentui_raw_span_feed_reservation_commit"
+
+external span_feed_reservation_cancel : Native_token.Reservation.t -> int =
+  "opentui_raw_span_feed_reservation_cancel"
+
+external span_feed_stats :
+  Native_token.Span_feed.t -> int * span_feed_stats option =
+  "opentui_raw_span_feed_stats"
+
+external span_feed_drain :
+  Native_token.Span_feed.t -> int * (bytes * Native_token.Span.t) option =
+  "opentui_raw_span_feed_drain"
+
+external span_release : Native_token.Span.t -> int =
+  "opentui_raw_span_release"

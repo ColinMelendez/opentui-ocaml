@@ -32,6 +32,11 @@ first link seam and the typed raw renderer/buffer/event/Yoga/capability slice:
 | `yogaNodeStyleSetValue` | `yoga.zig` | `void pointer, u32, u32, u32, f32 -> void` | The current typed surface binds point-valued width and height only. Measure callbacks, packed style values, and native renderable configuration remain deferred. |
 | `getTerminalCapabilities` | `lib.zig:986` | `u32, pointer to 64-byte ExternalCapabilities -> void` on supported 64-bit hosts | Zig returns borrowed terminal-name/version pointers and `usize` lengths. The C shim checks the lengths and copies both strings before returning to OCaml. |
 | `processCapabilityResponse` | `lib.zig:1017` | `u32, nullable byte pointer, u32 -> void` | The response is caller-owned and consumed synchronously. An empty OCaml string crosses as a null pointer with length zero. |
+| `createNativeSpanFeed` / `attachNativeSpanFeed` / `destroyNativeSpanFeed` | `lib.zig:358`, `native-span-feed.zig` | pointer to `Options` -> nullable stream pointer; stream pointer -> `i32`/`void` | The raw facade owns the feed behind an abstract generation-checked token and destroys it only after a successful close. The pinned vendor source is copied into a generated build directory before the tracked export patch is applied. |
+| `streamWrite` / `streamCommit` | `native-span-feed.zig` | stream pointer, nullable byte pointer, `u32` -> `i32`; stream pointer -> `i32` | Input bytes are copied synchronously into native chunks. Commit publishes the pending span; it does not expose the chunk address to OCaml. |
+| `streamReserve` / `streamCommitReserved` / `streamCancelReserved` | `native-span-feed.zig` | stream pointer, `u32`, pointer to 16-byte `ReserveInfo` -> `i32`; stream pointer, `u32` -> `i32`; stream pointer -> `i32` | The C facade keeps the native reserve pointer private and stages OCaml bytes before commit. Cancellation clears the reservation without advancing the write cursor; close reports `Busy` while it is active. |
+| `streamDrainSpans` / `streamMarkSpanConsumed` | `native-span-feed.zig` | stream pointer, pointer to 24-byte `SpanInfo`, `u32` -> count; stream pointer, pointer to `SpanInfo` -> `i32` | Drained span records contain borrowed chunk addresses. The facade copies each payload into OCaml bytes and holds a generation-checked release token. Release validates chunk pointer, index, offset, and length before decrementing the native chunk refcount. |
+| `streamGetStats` | `native-span-feed.zig` | stream pointer, pointer to 24-byte `Stats` -> `i32` | The four counters are copied into an OCaml record. The callback surface is not used by `opentui-raw`. |
 
 The first smoke records the selected failure behavior: zero dimensions, an
 invalid buffered destination, and a null event callback return handle `0`;
@@ -63,6 +68,13 @@ does not preserve borrowed terminal pointers: names and versions are copied
 into the returned snapshot, and an invalid or stale renderer produces a
 structured raw error.
 
+The output-feed facade asserts the 24-byte `Options`, `Stats`, and `SpanInfo`
+layouts and the 16-byte `ReserveInfo` layout. `Span_feed.drain` returns copied
+payloads paired with explicit, idempotent release tokens; `Span_feed.Reservation`
+exposes a caller-owned staging buffer with explicit commit or cancel. This is
+the safe ownership proof for the pinned feed, not the eventual zero-copy
+Bigarray/Cstruct view. A closed feed invalidates outstanding copied tokens.
+
 The probe also checks `RGBA = [4]u16`, one-byte Zig `bool`, the callback
 signature, the selected function types, and the offsets and size of
 `ExternalBuildOptions`, `ExternalAllocatorStats`, and the nine-field
@@ -92,9 +104,12 @@ memory-output invocation uses `createRenderer(width, height, 1, 2, NULL)` and
 leaves `setUseThread` off. `ReleaseSafe` is intentional: the upstream Debug
 allocator captures stack traces that are not compatible with the OCaml C-call
 frame used by the runtime smoke. The compile-only ABI probe remains Debug.
-The Dune rule runs the pinned build, runs the source-importing Zig probe, copies
-the host artifact into the Dune native output directory, and links the C smoke
-stub against it with `-lopentui`.
+The Dune rule verifies the audited SHA-256 of the pinned
+`native-span-feed.zig`, copies the source into a generated build directory,
+applies the tracked `span_feed_exports.patch`, runs the ReleaseSafe build and
+source-importing Zig probe against that generated tree, copies the host
+artifact into the Dune native output directory, and links the C facade against
+it with `-lopentui`.
 
 The upstream build pulls Yoga's C++ sources and, on macOS, CoreFoundation,
 CoreAudio, and AudioToolbox. Linux uses the upstream `dl`, `pthread`, and `m`
@@ -105,21 +120,25 @@ selected by the pinned build (`aarch64-macos`, `x86_64-macos`,
 ## Phase 2 typed raw extension
 
 The first Phase 2 extension is implemented in `opentui-raw`. It adds
-generation-checked, owner-scoped Yoga tree/node operations and a copied
-capability snapshot while preserving the original renderer/buffer/event
-ownership model. The OCaml API exposes `Yoga.create`, `Yoga.add_child`,
-`Yoga.calculate`, and typed layout readback; it does not expose `YGNodeRef`,
-`YGConfigRef`, packed style values, or callbacks. Capability responses are
-processed synchronously and can be read as a typed `Capabilities.t` record.
+generation-checked, owner-scoped Yoga tree/node operations, a copied
+capability snapshot, and the audited NativeSpanFeed ownership protocol while
+preserving the original renderer/buffer/event ownership model. The OCaml API
+exposes `Yoga.create`, `Yoga.add_child`, `Yoga.calculate`, typed layout
+readback, `Span_feed.drain`, and explicit reservation commit/cancel; it does not
+expose `YGNodeRef`, `YGConfigRef`, packed style values, native span pointers,
+Bigarray/Cstruct views, or callbacks. Capability responses are processed
+synchronously and can be read as a typed `Capabilities.t` record.
 
 Black-box tests cover exact six-field layout readback, invalid dimensions,
 cross-tree parent rejection, owner invalidation after close, XTVERSION string
-copying, enum decoding, and closed-renderer behavior. The next raw protocol
-increment is the native-owned output span lifetime proof.
+copying, enum decoding, closed-renderer behavior, copied output spans,
+release-driven chunk reuse, and reservation busy/cancel/commit behavior.
 
 ## Deferred from this probe
 
 Yoga custom measurement and native renderable integration, the complete stdin
-parser, native-owned `NativeSpanFeed` views and reserve/commit cancellation,
-raw cell pointers, native renderables, audio, image, editor, and all high-level
-packages remain outside this seam.
+parser, native-owned zero-copy `NativeSpanFeed` views, raw cell pointers,
+native renderables, audio, image, editor, and all high-level packages remain
+outside this seam. The feed's copied payload and reservation ownership protocol
+is implemented here; mapping native chunks into Bigarray/Cstruct views remains
+deferred until a separate lifetime and benchmark decision.

@@ -155,9 +155,10 @@ placeholder handle module and all higher-level layers remain unchanged.
 The first Phase 2 increment extends the typed raw facade with structured
 status/error results, kind-specific renderer and borrowed-buffer domains,
 caller-owned resolved-character output, a bounded copied event queue, owned
-Yoga/layout tokens, and copied terminal capability snapshots. It stays in
-`opentui-raw`; native span views, terminal parsing, `opentui-native`, Lwd, and
-widgets remain later layers.
+Yoga/layout tokens, copied terminal capability snapshots, and the
+copy-first NativeSpanFeed ownership protocol. It stays in `opentui-raw`; native
+zero-copy span views, terminal parsing, `opentui-native`, Lwd, and widgets
+remain later layers.
 
 - reuse the root development workflow and existing Dune/Zig artifact seam while
   extending the typed raw boundary for the host target;
@@ -170,21 +171,23 @@ widgets remain later layers.
   layout struct contains six `f32` values), without publishing `YGNodeRef`;
 - add the capability facade with copied strings and fixed-width lengths;
 - add native span-consumed/release and reservation-cancel operations, then
-  prove scoped Bigarray/Cstruct views, reserve/commit, cancellation, and close
-  behavior;
+  prove copied payload release, reserve/commit, cancellation, and close
+  behavior without exposing native pointers;
 - test the complete native artifact independently of the UI framework.
 
 **Current increment acceptance:** black-box tests create and close a Yoga tree,
 read the six-field layout, reject invalid dimensions and cross-tree parents,
 and observe owner invalidation. They process an XTVERSION response, verify
-typed enum decoding, and observe copied terminal strings. No raw Yoga pointer,
-packed style value, span view, parser state, Lwd value, or widget API crosses
-this increment.
+typed enum decoding, and observe copied terminal strings. They also drain a
+copied output span, prove release-driven chunk reuse, and exercise reservation
+busy/cancel/commit behavior. No raw Yoga pointer, packed style value, native
+span view, parser state, Lwd value, or widget API crosses this increment.
 
 **Phase 2 exit:** an OCaml test can load/link the native artifact, create and
-destroy renderer/buffer/layout resources, exercise the documented
-native-owned view protocol, and prove that failure paths do not leak or
-silently reuse an invalid handle.
+destroy renderer/buffer/layout resources, exercise the documented copy-first
+output-feed ownership protocol, and prove that failure paths do not leak or
+silently reuse an invalid handle. A native zero-copy view remains a separate
+follow-on decision with its own lifetime and benchmark acceptance.
 
 ## Phase 3 — Native and terminal foundations
 
@@ -254,11 +257,10 @@ suite, and consume the stable packages without the JavaScript runtime.
 ## Immediate next tasks
 
 Phase 1 is complete. The first typed Phase 2 increment now includes the owned
-Yoga/layout and copied-capability boundaries described above. The remaining
-implementation sequence is:
+Yoga/layout, copied-capability, and copy-first output-feed boundaries described
+above. The remaining implementation sequence is:
 
-1. add native span-consumed/release and reservation-cancel operations before any
-   zero-copy view is exposed;
+1. decide whether profiling justifies a separately scoped native chunk view;
 2. add the reusable stdin byte queue and parser state machine only after the raw
    protocol boundary is typed; and
 3. compose the stable raw pieces in `opentui-native` before adding terminal,

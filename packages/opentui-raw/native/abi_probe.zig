@@ -1,6 +1,7 @@
 const std = @import("std");
 const opentui = @import("opentui");
 const yoga = opentui.native_yoga;
+const span_feed = opentui.native_span_feed;
 
 var io_threaded: std.Io.Threaded = .init_single_threaded;
 pub const io = io_threaded.io();
@@ -47,6 +48,93 @@ comptime {
     expectOffset(yoga.ExternalYogaLayout, "bottom", 12, "ExternalYogaLayout.bottom");
     expectOffset(yoga.ExternalYogaLayout, "width", 16, "ExternalYogaLayout.width");
     expectOffset(yoga.ExternalYogaLayout, "height", 20, "ExternalYogaLayout.height");
+
+    expectSize(span_feed.Options, 24, "SpanFeed.Options");
+    expectOffset(span_feed.Options, "chunk_size", 0, "SpanFeed.Options.chunk_size");
+    expectOffset(span_feed.Options, "initial_chunks", 4, "SpanFeed.Options.initial_chunks");
+    expectOffset(span_feed.Options, "max_bytes", 8, "SpanFeed.Options.max_bytes");
+    expectOffset(span_feed.Options, "growth_policy", 16, "SpanFeed.Options.growth_policy");
+    expectOffset(span_feed.Options, "auto_commit_on_full", 17, "SpanFeed.Options.auto_commit_on_full");
+    expectOffset(span_feed.Options, "span_queue_capacity", 20, "SpanFeed.Options.span_queue_capacity");
+
+    expectSize(span_feed.Stats, 24, "SpanFeed.Stats");
+    expectOffset(span_feed.Stats, "bytes_written", 0, "SpanFeed.Stats.bytes_written");
+    expectOffset(span_feed.Stats, "spans_committed", 8, "SpanFeed.Stats.spans_committed");
+    expectOffset(span_feed.Stats, "chunks", 16, "SpanFeed.Stats.chunks");
+    expectOffset(span_feed.Stats, "pending_spans", 20, "SpanFeed.Stats.pending_spans");
+
+    expectSize(span_feed.SpanInfo, 24, "SpanFeed.SpanInfo");
+    expectOffset(span_feed.SpanInfo, "chunk_ptr", 0, "SpanFeed.SpanInfo.chunk_ptr");
+    expectOffset(span_feed.SpanInfo, "offset", 8, "SpanFeed.SpanInfo.offset");
+    expectOffset(span_feed.SpanInfo, "len", 12, "SpanFeed.SpanInfo.len");
+    expectOffset(span_feed.SpanInfo, "chunk_index", 16, "SpanFeed.SpanInfo.chunk_index");
+    expectOffset(span_feed.SpanInfo, "reserved", 20, "SpanFeed.SpanInfo.reserved");
+
+    expectSize(span_feed.ReserveInfo, 16, "SpanFeed.ReserveInfo");
+    expectOffset(span_feed.ReserveInfo, "ptr", 0, "SpanFeed.ReserveInfo.ptr");
+    expectOffset(span_feed.ReserveInfo, "len", 8, "SpanFeed.ReserveInfo.len");
+    expectOffset(span_feed.ReserveInfo, "reserved", 12, "SpanFeed.ReserveInfo.reserved");
+
+    expectType(
+        @TypeOf(opentui.createNativeSpanFeed),
+        fn (?*const span_feed.Options) callconv(.c) ?*span_feed.Stream,
+        "createNativeSpanFeed",
+    );
+    expectType(
+        @TypeOf(span_feed.attachNativeSpanFeed),
+        fn (?*span_feed.Stream) callconv(.c) i32,
+        "attachNativeSpanFeed",
+    );
+    expectType(
+        @TypeOf(span_feed.streamClose),
+        fn (?*span_feed.Stream) callconv(.c) i32,
+        "streamClose",
+    );
+    expectType(
+        @TypeOf(span_feed.destroyNativeSpanFeed),
+        fn (?*span_feed.Stream) callconv(.c) void,
+        "destroyNativeSpanFeed",
+    );
+    expectType(
+        @TypeOf(span_feed.streamWrite),
+        fn (?*span_feed.Stream, ?[*]const u8, u32) callconv(.c) i32,
+        "streamWrite",
+    );
+    expectType(
+        @TypeOf(span_feed.streamCommit),
+        fn (?*span_feed.Stream) callconv(.c) i32,
+        "streamCommit",
+    );
+    expectType(
+        @TypeOf(span_feed.streamReserve),
+        fn (?*span_feed.Stream, u32, ?*span_feed.ReserveInfo) callconv(.c) i32,
+        "streamReserve",
+    );
+    expectType(
+        @TypeOf(span_feed.streamCommitReserved),
+        fn (?*span_feed.Stream, u32) callconv(.c) i32,
+        "streamCommitReserved",
+    );
+    expectType(
+        @TypeOf(span_feed.streamSetOptions),
+        fn (?*span_feed.Stream, ?*const span_feed.Options) callconv(.c) i32,
+        "streamSetOptions",
+    );
+    expectType(
+        @TypeOf(span_feed.streamGetStats),
+        fn (?*span_feed.Stream, ?*span_feed.Stats) callconv(.c) i32,
+        "streamGetStats",
+    );
+    expectType(
+        @TypeOf(span_feed.streamDrainSpans),
+        fn (?*span_feed.Stream, ?*span_feed.SpanInfo, u32) callconv(.c) u32,
+        "streamDrainSpans",
+    );
+    expectType(
+        @TypeOf(span_feed.streamSetCallback),
+        fn (?*span_feed.Stream, ?*const span_feed.CallbackFn) callconv(.c) void,
+        "streamSetCallback",
+    );
 
     expectType(
         @TypeOf(yoga.yogaConfigCreate),
@@ -235,6 +323,17 @@ comptime {
         @TypeOf(opentui.processCapabilityResponse),
         fn (opentui.NativeHandle, ?[*]const u8, u32) callconv(.c) void,
         "processCapabilityResponse",
+    );
+
+    expectType(
+        @TypeOf(span_feed.streamCancelReserved),
+        fn (?*span_feed.Stream) callconv(.c) i32,
+        "streamCancelReserved",
+    );
+    expectType(
+        @TypeOf(span_feed.streamMarkSpanConsumed),
+        fn (?*span_feed.Stream, ?*const span_feed.SpanInfo) callconv(.c) i32,
+        "streamMarkSpanConsumed",
     );
 }
 

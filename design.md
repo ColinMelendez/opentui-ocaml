@@ -164,7 +164,7 @@ implementation in
 | Terminal capabilities | `ExternalCapabilities` is an `extern struct` with one-byte booleans/enums, two borrowed terminal string pointers with `usize` lengths, and terminal state codes. `getTerminalCapabilities` returns pointers into the renderer's terminal state. | The raw package asserts the 64-byte supported-host layout, checks lengths, copies the two strings, and decodes the pinned enum values into a typed snapshot. Capability responses consume caller-owned bytes synchronously; terminal querying and mode lifecycle remain in `opentui-terminal`. |
 | Native event sink | A C-callable callback receives borrowed name/data pointers and lengths synchronously. Event names are dynamic byte strings. | The raw package callback copies bytes into a bounded native queue before returning; OCaml polls owned packets and receives an explicit overflow error. It does not invoke arbitrary handlers or re-enter the renderer from the callback. Background callbacks still require a separate OCaml runtime-lock and queue design. |
 | Stdin parser | The TypeScript reference has a mutable byte queue with start/end offsets and amortized compaction, a tagged protocol state machine, a bounded 64 KiB pending prefix, a 20 ms ESC timeout, an event queue, a bracketed-paste collector, and mouse-button state. | Audit this state machine in Phase 1, then port it after the native smoke gate as mutable OCaml parser state with one reusable `Bigarray.Array1` of bytes and scalar cursors. Keep one reusable `Cstruct.t` view for Eio reads; do not convert each read to `Bytes` or `string`. Preserve chunk-shape invariance, split UTF-8 handling, ESC timeout behavior, split paste markers, and bounded overflow behavior. Do not allocate a fresh parser-state variant for every byte. |
-| Native output feed | `NativeSpanFeed` owns fixed-size chunks, a span ring, reserve/commit operations, chunk reference counts, and an optional callback. A span remains borrowed until the consumer marks it consumed. | Make this the Phase 2 native-owned zero-copy proof: map each stable chunk once, expose payloads as scoped byte views, and release the span through a native operation. Use `streamReserve`/`streamCommitReserved` for direct OCaml-produced output only after adding native cancellation and consumed/release exports. Never return a borrowed span as an ordinary `bytes` value without copying or an explicit lifetime. |
+| Native output feed | `NativeSpanFeed` owns fixed-size chunks, a span ring, reserve/commit operations, chunk reference counts, and an optional callback. A span remains borrowed until the consumer marks it consumed. | The first Phase 2 raw seam copies drained payloads into OCaml bytes and pairs them with an idempotent native release token. Reservations use an OCaml-owned staging buffer with explicit commit/cancel; the native reserve pointer stays private. Native chunk views through Bigarray/Cstruct remain a later, separately benchmarked API. |
 | Foreign buffer view | OCaml Bigarrays can hold external/native storage and `Cstruct` can provide zero-copy subviews, but the underlying address can become invalid when a Zig owner resizes or destroys it. | Keep the Bigarray/Cstruct value behind an abstract `Native_view.t` containing the owner and generation/borrow token. Initially reject resize/destroy while views are active; deferred reclamation is a later optimization. Do not publish raw pointers or naked Bigarrays from `opentui-raw`. |
 | Cross-fiber handoff | The UI state and native entrypoints need a single owner, while terminal reads may need to wait independently. | Use a bounded event/command handoff at the runtime boundary. Its items own their bytes and policy distinguishes lossless key/paste/resize events from coalescible mouse motion. The handoff is not part of the per-cell render path. |
 
@@ -304,26 +304,29 @@ allocation baseline. The test-only C shim owns every raw `u32` handle and
 destroys renderer children before their owner; the public raw package still
 does not expose those handles.
 
-The exit is deliberately narrow. Native span views and reservation
-cancellation, terminal integration, the stdin parser, and all reactive or
-widget layers remain follow-on work under the Phase 2 and later boundaries
-below. The first typed Phase 2 raw extension now covers the owned Yoga/layout
-and copied capability boundary without changing that separation.
+The exit is deliberately narrow. Native zero-copy span views, terminal
+integration, the stdin parser, and all reactive or widget layers remain
+follow-on work under the Phase 2 and later boundaries below. The first typed
+Phase 2 raw extension now covers the owned Yoga/layout, copied capability, and
+copied output-feed ownership boundaries without changing that separation.
 
 ### Phase 2 typed raw progress
 
 The current raw extension keeps the package layers explicit. `opentui-raw`
-contains only the C ABI declarations, status conversion, token registry, and
+contains only the C ABI declarations, status conversion, token registries, and
 small typed operations needed to establish ownership. `Yoga.Node.layout`
-returns an OCaml record copied from the six-`f32` native output, while
+returns an OCaml record copied from the six-`f32` native output,
 `Capabilities.snapshot` copies terminal name/version bytes and decodes the
-source-defined enum codes. Neither module exposes a pointer, packed native
-handle, callback, or borrowed string.
+source-defined enum codes, and `Span_feed.drain` copies native payloads before
+returning an explicit release token. Neither module exposes a pointer, packed
+native handle, callback, or borrowed string; native zero-copy views remain
+deferred.
 
 Black-box tests cover layout values, invalid dimensions, cross-tree rejection,
-close invalidation, XTVERSION copying, enum decoding, and closed-renderer
-errors. Native-owned output spans, the reusable terminal byte queue, parser
-state, `opentui-native`, Lwd, and widgets remain later layers.
+close invalidation, XTVERSION copying, enum decoding, closed-renderer errors,
+copied output spans, release-driven chunk reuse, and reservation
+busy/cancel/commit behavior. The reusable terminal byte queue, parser state,
+native zero-copy views, `opentui-native`, Lwd, and widgets remain later layers.
 
 ### Eio and external data structures
 
@@ -392,18 +395,17 @@ which side owns the storage and how long the native code may retain it.
    reject resize/destroy; stable arenas and deferred reclamation can be added
    only if profiling justifies their complexity.
 
-4. **Native reservation/commit.** `NativeSpanFeed` already has the strongest
-   candidate seam: `streamReserve` returns writable space in a native chunk and
-   `streamCommitReserved` publishes the bytes without a memcpy. An OCaml wrapper
-   can expose this as a scoped `Cstruct.t`/native-view reservation. Commit or
-   cancel must be explicit, and the feed must remain alive until the reservation
-   closes. The current upstream reserve ABI has commit but no cancel operation;
-   add a native cancel export before exposing reservations to OCaml, otherwise
-   an exception or abandoned view can leave the feed permanently busy. The
-   current Zig `FeedBackend` still stages a complete frame in
+4. **Native reservation/commit.** `NativeSpanFeed` has the strongest candidate
+   seam: `streamReserve` returns writable space in a native chunk and
+   `streamCommitReserved` publishes the bytes without a memcpy. The raw seam
+   now adds the missing native cancel export and proves the lifecycle through an
+   OCaml-owned staging buffer; the native reserve pointer never becomes an
+   OCaml value. Commit or cancel is explicit, and close reports `Busy` while a
+   reservation is active. A future zero-copy wrapper may expose a scoped
+   `Cstruct.t`/native view only after it retains the feed owner and release
+   token. The current Zig `FeedBackend` still stages a complete frame in
    `frameBytes` and then calls `writeAtomic`, so using the reserve API for the
-   renderer itself would require a chunk-aware frame writer; the existing API is
-   still useful for proving the ownership model.
+   renderer itself would require a chunk-aware frame writer.
 
 The optimized cell buffer is deliberately not the first native-owned view. Its
 `char`, `fg`, `bg`, and `attributes` arrays are native SoA storage, but resize
