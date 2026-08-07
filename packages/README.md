@@ -14,8 +14,9 @@ opentui-raw
 `opentui-terminal` is kept beside the native layer rather than below it because terminal input/output policy should remain usable without importing the renderer's object model. An application can compose the terminal, native, and core layers at its boundary.
 
 The first terminal-side slice is now `opentui-terminal`'s reusable
-`Byte_queue`. It owns bounded `Bigarray.Array1` input storage and cursor
-compaction, but it does not yet define terminal modes, escape-sequence events,
-the full stdin parser, or output lifecycle.
+`Byte_queue` and framing `Stdin_parser`. It owns bounded `Bigarray.Array1`
+input storage, cursor compaction, split-safe protocol framing, and owned paste
+payloads, but it does not yet define semantic key naming/modifiers, mouse
+decoding, terminal modes, or output lifecycle.
 
 The graph is a design target, not a promise to create a package for every subsystem. The `Buffer` module currently in `opentui-raw` is only the ABI-level borrowed view needed to exercise the pinned renderer; it is not the retained scene or renderable model. Yoga/layout and native renderables should initially be modules of `opentui-native`; they become separate packages only if they have a stable independent consumer.

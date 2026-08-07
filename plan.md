@@ -261,15 +261,16 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. add the parser state machine on top of the completed reusable stdin byte queue
-   only after the raw protocol boundary is typed; and
+2. extend `opentui-terminal` with semantic key/mouse decoding and timer/mode
+   coordination only after the framing contract is exercised; and
 3. compose the stable raw pieces in `opentui-native` before adding terminal,
    core, Lwd, or widget layers.
 
-The reusable stdin queue foundation is now implemented as
-`opentui-terminal.Byte_queue`. Its acceptance contract is a reusable
-`Bigarray.Array1`-backed queue that compacts consumed prefixes before growing,
-enforces a configured maximum atomically, accepts caller-owned byte input
-without converting it to a string, and reports invalid ranges as structured
-errors. Escape-sequence parsing, terminal modes, and output lifecycle remain
-outside this increment.
+The reusable stdin queue and framing parser are now implemented as
+`opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their
+acceptance contract is a reusable `Bigarray.Array1`-backed queue that compacts
+consumed prefixes before growing, enforces a configured maximum atomically,
+preserves split UTF-8 and protocol units across pushes, flushes incomplete
+prefixes only when the caller invokes `flush_timeout`, and copies paste/event
+payloads before returning them. Semantic key/mouse decoding, terminal modes,
+and output lifecycle remain outside this increment.
