@@ -1,4 +1,5 @@
 (library
  (name opentui_terminal)
  (public_name opentui-terminal)
- (modules byte_queue stdin_parser key_decoder mouse_decoder terminal_modes))
+ (modules byte_queue stdin_parser key_decoder mouse_decoder terminal_modes
+  input_decoder))

@@ -227,6 +227,13 @@ after its output sink accepts the sequence. Idempotence and reset ordering are
 covered, while Eio flow ownership, raw-mode toggling, capability probes, and
 event dispatch remain outside this increment.
 
+**Input composition increment:** `opentui-terminal.Input_decoder` now tries
+the stateful mouse decoder before the common key decoder and returns one typed
+terminal event family while preserving copied opaque sequences and paste
+payloads. Its reset boundary clears only mouse decoder state; timers, flow
+reads, mode commits, output writes, and event dispatch remain outside this
+increment.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -285,8 +292,8 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. add terminal timer coordination and an input-event composition boundary
-   around the framing, semantic key/mouse, and mode layers; and
+2. add terminal timer coordination around the now-complete framing, input
+   composition, semantic key/mouse, and mode layers; and
 3. extend `opentui-native` with the smallest Yoga/renderable composition before
    adding terminal, core, Lwd, or widget layers.
 

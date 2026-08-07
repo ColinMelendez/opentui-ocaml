@@ -353,6 +353,11 @@ boundary. `Mouse_decoder.decode` examines only complete CSI sequence events and
 leaves non-mouse frames to the caller's other decoders. `Terminal_modes` does
 not write to a flow or mutate global terminal state.
 
+`Input_decoder` is the terminal composition boundary: it tries mouse semantics
+before common key semantics, then returns copied opaque sequence or paste
+events. Resetting it clears only decoder-owned mouse state; mode, timer, flow,
+and dispatch ownership stay outside the package.
+
 ### Eio and external data structures
 
 Eio is a good fit for the runtime boundary, not for the raw ABI or the native
