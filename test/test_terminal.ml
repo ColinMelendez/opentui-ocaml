@@ -284,7 +284,13 @@ let () =
             ~shift:false ~meta:true ~ctrl:false;
           push_string parser "\x1b\x1b[A";
           expect_named (Decoder.decode (read_parser_event parser)) "up"
-            ~shift:false ~meta:true ~ctrl:false);
+            ~shift:false ~meta:true ~ctrl:false;
+          push_string parser "\x1b\x1bOA";
+          expect_named (Decoder.decode (read_parser_event parser)) "up"
+            ~shift:false ~meta:true ~ctrl:false;
+          push_string parser "\x1b[1;9A";
+          expect_decoded_sequence (Decoder.decode (read_parser_event parser))
+            Parser.Csi "\x1b[1;9A");
       test "semantic decoding preserves unknown protocol ownership" (fun () ->
           let raw = Bytes.of_string "\x1b[M !\"" in
           let decoded =

@@ -87,6 +87,10 @@ let modifiers_of_wire value =
       ctrl = not (Int.equal (bits land 4) 0);
     }
 
+let wire_modifier_supported value =
+  if Int.compare value 1 < 0 then true
+  else Int.equal ((value - 1) land lnot 7) 0
+
 let combine_modifiers left right =
   {
     shift = left.shift || right.shift;
@@ -256,7 +260,9 @@ let modify_other_key params count =
   else
     let modifier = modifiers_of_wire params.(1) in
     let char_code = params.(2) in
-    if Int.compare char_code 255 > 0 then None
+    if not (wire_modifier_supported params.(1))
+       || Int.compare char_code 255 > 0
+    then None
     else
       match char_code with
       | 8 | 127 -> Some (named_event Backspace modifier)
@@ -268,43 +274,45 @@ let modify_other_key params count =
           Some (character_event (Bytes.make 1 (Char.chr char_code)) modifier)
 
 let csi_key_from_params final params count =
-  let modifier =
-    if Int.compare count 2 >= 0 && Int.equal params.(0) 27 then
-      modifiers_of_wire params.(1)
-    else if Int.compare count 2 >= 0 then modifiers_of_wire params.(count - 1)
-    else no_modifiers
+  let modifier_wire =
+    if Int.compare count 2 >= 0 && Int.equal params.(0) 27 then params.(1)
+    else if Int.compare count 2 >= 0 then params.(count - 1)
+    else 1
   in
-  if Int.equal final (Char.code '~') then
-    if Int.equal count 0 then None
-    else if Int.equal params.(0) 27 then modify_other_key params count
-    else
-      (match numeric_key params.(0) with
-      | Some named -> Some (named_event named modifier)
-      | None -> None)
-  else if Int.equal final (Char.code '$') then
-    if Int.equal count 0 then None
-    else
-      (match rxvt_key params.(0) with
-      | Some named -> Some (named_event named (combine_modifiers modifier { no_modifiers with shift = true }))
-      | None -> None)
-  else if Int.equal final (Char.code '^') then
-    if Int.equal count 0 then None
-    else
-      (match rxvt_key params.(0) with
-      | Some named -> Some (named_event named (combine_modifiers modifier { no_modifiers with ctrl = true }))
-      | None -> None)
+  if not (wire_modifier_supported modifier_wire) then None
   else
-    match final_key final with
-    | Some named ->
-        let final_modifier =
-          if Int.compare final (Char.code 'a') >= 0
-             && Int.compare final (Char.code 'e') <= 0
-          then { no_modifiers with shift = true }
-          else no_modifiers
-        in
-        Some
-          (named_event named (combine_modifiers modifier final_modifier))
-    | None -> None
+    let modifier = modifiers_of_wire modifier_wire in
+    if Int.equal final (Char.code '~') then
+      if Int.equal count 0 then None
+      else if Int.equal params.(0) 27 then modify_other_key params count
+      else
+        (match numeric_key params.(0) with
+        | Some named -> Some (named_event named modifier)
+        | None -> None)
+    else if Int.equal final (Char.code '$') then
+      if Int.equal count 0 then None
+      else
+        (match rxvt_key params.(0) with
+        | Some named -> Some (named_event named (combine_modifiers modifier { no_modifiers with shift = true }))
+        | None -> None)
+    else if Int.equal final (Char.code '^') then
+      if Int.equal count 0 then None
+      else
+        (match rxvt_key params.(0) with
+        | Some named -> Some (named_event named (combine_modifiers modifier { no_modifiers with ctrl = true }))
+        | None -> None)
+    else
+      match final_key final with
+      | Some named ->
+          let final_modifier =
+            if Int.compare final (Char.code 'a') >= 0
+               && Int.compare final (Char.code 'e') <= 0
+            then { no_modifiers with shift = true }
+            else no_modifiers
+          in
+          Some
+            (named_event named (combine_modifiers modifier final_modifier))
+      | None -> None
 
 let csi_key_core bytes =
   match exact_csi_key bytes with
@@ -325,7 +333,7 @@ let csi_key_core bytes =
           | None -> None
           | Some (params, count) -> csi_key_from_params final params count
 
-let csi_key bytes =
+let leading_escape_count bytes =
   let length = Bytes.length bytes in
   let leading_escapes = ref 0 in
   while
@@ -334,18 +342,28 @@ let csi_key bytes =
   do
     leading_escapes := !leading_escapes + 1
   done;
-  if Int.equal !leading_escapes 1 then csi_key_core bytes
-  else if Int.compare !leading_escapes 2 >= 0
-          && Int.compare !leading_escapes length < 0
-          && Int.equal (Bytes.get_uint8 bytes !leading_escapes) 0x5b
+  !leading_escapes
+
+let normalize_leading_escapes bytes leading_escapes =
+  let length = Bytes.length bytes in
+  let normalized_length = length - (leading_escapes - 1) in
+  let normalized = Bytes.create normalized_length in
+  Bytes.set_uint8 normalized 0 0x1b;
+  for index = leading_escapes to length - 1 do
+    Bytes.set_uint8 normalized (index - leading_escapes + 1)
+      (Bytes.get_uint8 bytes index)
+  done;
+  normalized
+
+let csi_key bytes =
+  let length = Bytes.length bytes in
+  let leading_escapes = leading_escape_count bytes in
+  if Int.equal leading_escapes 1 then csi_key_core bytes
+  else if Int.compare leading_escapes 2 >= 0
+          && Int.compare leading_escapes length < 0
+          && Int.equal (Bytes.get_uint8 bytes leading_escapes) 0x5b
   then
-    let normalized_length = length - (!leading_escapes - 1) in
-    let normalized = Bytes.create normalized_length in
-    Bytes.set_uint8 normalized 0 0x1b;
-    for index = !leading_escapes to length - 1 do
-      Bytes.set_uint8 normalized (index - !leading_escapes + 1)
-        (Bytes.get_uint8 bytes index)
-    done;
+    let normalized = normalize_leading_escapes bytes leading_escapes in
     (match csi_key_core normalized with
     | Some (Key { key; modifiers }) ->
         Some
@@ -359,7 +377,7 @@ let csi_key bytes =
     | Some (Paste _) -> None)
   else None
 
-let ss3_key bytes =
+let ss3_key_core bytes =
   let length = Bytes.length bytes in
   if not (Int.equal length 3)
      || not (Int.equal (Bytes.get_uint8 bytes 0) 0x1b)
@@ -413,6 +431,28 @@ let ss3_key bytes =
         in
         Some (character_event (Bytes.make 1 digit) no_modifiers)
     | _ -> None
+
+let ss3_key bytes =
+  let length = Bytes.length bytes in
+  let leading_escapes = leading_escape_count bytes in
+  if Int.equal leading_escapes 1 then ss3_key_core bytes
+  else if Int.compare leading_escapes 2 >= 0
+          && Int.compare leading_escapes length < 0
+          && Int.equal (Bytes.get_uint8 bytes leading_escapes) 0x4f
+  then
+    let normalized = normalize_leading_escapes bytes leading_escapes in
+    match ss3_key_core normalized with
+    | Some (Key { key; modifiers }) ->
+        Some
+          (Key
+             {
+               key;
+               modifiers = { modifiers with meta = true };
+             })
+    | None -> None
+    | Some (Sequence _) -> None
+    | Some (Paste _) -> None
+  else None
 
 let unknown_key bytes =
   let length = Bytes.length bytes in
