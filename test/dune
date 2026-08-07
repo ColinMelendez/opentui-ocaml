@@ -3,6 +3,11 @@
  (modules test_raw)
  (libraries opentui-raw windtrap))
 
+(test
+ (name test_terminal)
+ (modules test_terminal)
+ (libraries opentui-terminal windtrap))
+
 (library
  (name test_native_link_support)
  (modules test_native_link_support)

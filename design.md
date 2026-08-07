@@ -324,9 +324,17 @@ deferred.
 
 Black-box tests cover layout values, invalid dimensions, cross-tree rejection,
 close invalidation, XTVERSION copying, enum decoding, closed-renderer errors,
-copied output spans, release-driven chunk reuse, and reservation
-busy/cancel/commit behavior. The reusable terminal byte queue, parser state,
-native zero-copy views, `opentui-native`, Lwd, and widgets remain later layers.
+copied output spans, release-driven chunk reuse, reservation
+busy/cancel/commit behavior, and the reusable terminal byte queue. The parser
+state, native zero-copy views, `opentui-native`, Lwd, and widgets remain later
+layers.
+
+The first terminal-side foundation is `opentui-terminal.Byte_queue`. It owns a
+bounded reusable `Bigarray.Array1` and logical start/end cursors, compacts a
+consumed prefix before growing, and makes an over-limit append fail without
+changing the queue. It is independent of `opentui-raw`; terminal modes, the
+full parser, Eio flow integration, and output lifecycle remain separate
+follow-on modules.
 
 ### Eio and external data structures
 
