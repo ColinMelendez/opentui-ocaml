@@ -22,6 +22,14 @@ typedef struct opentui_external_build_options {
   bool gpa_memory_limit_tracking;
 } opentui_external_build_options;
 
+typedef struct opentui_external_allocator_stats {
+  uint64_t total_requested_bytes;
+  uint64_t active_allocations;
+  uint64_t small_allocations;
+  uint64_t large_allocations;
+  bool requested_bytes_valid;
+} opentui_external_allocator_stats;
+
 typedef struct opentui_external_render_stats {
   double last_frame_time;
   double average_frame_time;
@@ -83,11 +91,17 @@ void bufferSetCell(
 void getRenderStats(
     opentui_native_handle renderer_handle,
     opentui_external_render_stats *output);
+void getAllocatorStats(opentui_external_allocator_stats *output);
 
 _Static_assert(sizeof(opentui_native_handle) == 4, "OpenTUI handles must be u32");
 _Static_assert(sizeof(bool) == 1, "OpenTUI bool must have one-byte C ABI storage");
 _Static_assert(sizeof(opentui_external_build_options) == 2, "build options ABI drift");
+_Static_assert(sizeof(opentui_external_allocator_stats) == 40, "allocator stats ABI drift");
 _Static_assert(sizeof(opentui_external_render_stats) == 56, "render stats ABI drift");
+_Static_assert(offsetof(opentui_external_allocator_stats, active_allocations) == 8, "allocator stats offset drift");
+_Static_assert(offsetof(opentui_external_allocator_stats, small_allocations) == 16, "allocator stats offset drift");
+_Static_assert(offsetof(opentui_external_allocator_stats, large_allocations) == 24, "allocator stats offset drift");
+_Static_assert(offsetof(opentui_external_allocator_stats, requested_bytes_valid) == 32, "allocator stats offset drift");
 _Static_assert(offsetof(opentui_external_render_stats, average_frame_time) == 8, "render stats offset drift");
 _Static_assert(offsetof(opentui_external_render_stats, render_time) == 16, "render stats offset drift");
 _Static_assert(offsetof(opentui_external_render_stats, stdout_write_time) == 24, "render stats offset drift");
@@ -112,6 +126,7 @@ typedef uint32_t (*opentui_buffer_write_fn)(opentui_native_handle, uint8_t *, ui
 typedef void (*opentui_buffer_draw_text_fn)(opentui_native_handle, const uint8_t *, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
 typedef void (*opentui_buffer_set_cell_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
 typedef void (*opentui_get_render_stats_fn)(opentui_native_handle, opentui_external_render_stats *);
+typedef void (*opentui_get_allocator_stats_fn)(opentui_external_allocator_stats *);
 
 _Static_assert(_Generic(&createEventSink, opentui_create_event_sink_fn: 1, default: 0), "createEventSink ABI drift");
 _Static_assert(_Generic(&destroyEventSink, opentui_destroy_event_sink_fn: 1, default: 0), "destroyEventSink ABI drift");
@@ -130,6 +145,7 @@ _Static_assert(_Generic(&bufferWriteResolvedChars, opentui_buffer_write_fn: 1, d
 _Static_assert(_Generic(&bufferDrawText, opentui_buffer_draw_text_fn: 1, default: 0), "bufferDrawText ABI drift");
 _Static_assert(_Generic(&bufferSetCell, opentui_buffer_set_cell_fn: 1, default: 0), "bufferSetCell ABI drift");
 _Static_assert(_Generic(&getRenderStats, opentui_get_render_stats_fn: 1, default: 0), "getRenderStats ABI drift");
+_Static_assert(_Generic(&getAllocatorStats, opentui_get_allocator_stats_fn: 1, default: 0), "getAllocatorStats ABI drift");
 
 #ifdef __cplusplus
 }

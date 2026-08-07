@@ -136,6 +136,13 @@ comptime {
         "ExternalBuildOptions.gpa_memory_limit_tracking",
     );
 
+    expectSize(opentui.ExternalAllocatorStats, 40, "ExternalAllocatorStats");
+    expectOffset(opentui.ExternalAllocatorStats, "total_requested_bytes", 0, "ExternalAllocatorStats.total_requested_bytes");
+    expectOffset(opentui.ExternalAllocatorStats, "active_allocations", 8, "ExternalAllocatorStats.active_allocations");
+    expectOffset(opentui.ExternalAllocatorStats, "small_allocations", 16, "ExternalAllocatorStats.small_allocations");
+    expectOffset(opentui.ExternalAllocatorStats, "large_allocations", 24, "ExternalAllocatorStats.large_allocations");
+    expectOffset(opentui.ExternalAllocatorStats, "requested_bytes_valid", 32, "ExternalAllocatorStats.requested_bytes_valid");
+
     expectSize(opentui.ExternalRenderStats, 56, "ExternalRenderStats");
     expectOffset(opentui.ExternalRenderStats, "last_frame_time", 0, "ExternalRenderStats.last_frame_time");
     expectOffset(opentui.ExternalRenderStats, "average_frame_time", 8, "ExternalRenderStats.average_frame_time");
@@ -146,6 +153,12 @@ comptime {
     expectOffset(opentui.ExternalRenderStats, "average_cells_updated", 44, "ExternalRenderStats.average_cells_updated");
     expectOffset(opentui.ExternalRenderStats, "render_time_valid", 48, "ExternalRenderStats.render_time_valid");
     expectOffset(opentui.ExternalRenderStats, "stdout_write_time_valid", 49, "ExternalRenderStats.stdout_write_time_valid");
+
+    expectType(
+        @TypeOf(opentui.getAllocatorStats),
+        fn (*opentui.ExternalAllocatorStats) callconv(.c) void,
+        "getAllocatorStats",
+    );
 }
 
 export fn opentui_phase1_abi_probe_marker() void {}

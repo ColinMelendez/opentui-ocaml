@@ -24,6 +24,7 @@ first link seam and the smallest renderer/buffer/event slice:
 | `bufferSetCell` | `lib.zig:1245` | `u32, coordinates, u32 character, two color pointers, u32 attributes -> void` | The cell is written in native SoA storage; no native cell view crosses the boundary. |
 | `bufferWriteResolvedChars` | `lib.zig:1219` | `u32, nullable caller output pointer, `u32` capacity, `bool` -> `u32` | Native writes into caller-owned bounded storage and returns the byte count; a capacity smaller than the resolved output returns `0`. |
 | `getRenderStats` | `lib.zig:788` | `u32, pointer to ExternalRenderStats -> void` | Caller supplies output storage; the Zig probe checks the nine-field C-compatible layout. |
+| `getAllocatorStats` | `lib.zig:617` | `pointer to ExternalAllocatorStats -> void` | Active allocation counters are sampled for a diagnostic baseline. `total_requested_bytes` is valid only when the build enables GPA safe stats. |
 
 The first smoke records the selected failure behavior: zero dimensions, an
 invalid buffered destination, and a null event callback return handle `0`;
@@ -40,10 +41,20 @@ module in this patch.
 
 The probe also checks `RGBA = [4]u16`, one-byte Zig `bool`, the callback
 signature, the selected function types, and the offsets and size of
-`ExternalBuildOptions` and the nine-field `ExternalRenderStats`. The C header repeats the
-fixed-width and layout assertions and uses `_Generic` function-pointer checks
-so the C compiler cannot silently accept a declaration with a different
-calling shape.
+`ExternalBuildOptions`, `ExternalAllocatorStats`, and the nine-field
+`ExternalRenderStats`. The C header repeats the fixed-width and layout
+assertions and uses `_Generic` function-pointer checks so the C compiler cannot
+silently accept a declaration with a different calling shape.
+
+## Repeated update baseline
+
+The native smoke also samples `getAllocatorStats` around 1,024 ASCII
+`bufferSetCell` calls on an 8x1 memory renderer followed by one
+`bufferWriteResolvedChars` call. It reports the native-call counts and both
+active-allocation samples to OCaml, verifies the resolved `C` through `J`
+output, and requires the active-allocation count to remain stable. This is
+diagnostic evidence rather than a fixed allocation threshold; the ReleaseSafe
+runtime artifact intentionally leaves `requested_bytes_valid` false.
 
 ## Build and link
 

@@ -1,4 +1,5 @@
 #include <caml/mlvalues.h>
+#include <caml/alloc.h>
 #include <caml/memory.h>
 
 #include <stdbool.h>
@@ -6,6 +7,8 @@
 #include <string.h>
 
 #include "opentui_abi.h"
+
+static const uint32_t baseline_set_cell_calls = UINT32_C(1024);
 
 enum {
   event_name_capacity = 64,
@@ -139,4 +142,58 @@ CAMLprim value opentui_test_event_callback_copy(value unit_value) {
   destroyEventSink(event_sink);
 
   CAMLreturn(Val_bool(copied_payload));
+}
+
+CAMLprim value opentui_test_buffer_update_baseline(value unit_value) {
+  CAMLparam1(unit_value);
+  CAMLlocal1(result);
+
+  uint32_t executed_set_cell_calls = 0;
+  uint32_t executed_write_calls = 0;
+  uint64_t active_allocations_before = 0;
+  uint64_t active_allocations_after = 0;
+  bool output_valid = false;
+
+  const opentui_native_handle renderer = createRenderer(8, 1, 1, 2, NULL);
+  if (renderer != 0) {
+    setUseThread(renderer, false);
+    const opentui_native_handle current = getCurrentBuffer(renderer);
+    if (current != 0) {
+      const uint16_t foreground[4] = {UINT16_C(255), UINT16_C(255), UINT16_C(255), UINT16_C(255)};
+      const uint16_t background[4] = {0, 0, 0, UINT16_C(255)};
+      uint8_t output[8] = {0};
+      opentui_external_allocator_stats before;
+      opentui_external_allocator_stats after;
+
+      getAllocatorStats(&before);
+      for (uint32_t call = 0; call < baseline_set_cell_calls; call += 1) {
+        const uint32_t x = call % UINT32_C(8);
+        const uint32_t character = UINT32_C(65) + (call % UINT32_C(26));
+        bufferSetCell(current, x, 0, character, foreground, background, 0);
+        executed_set_cell_calls += 1;
+      }
+
+      const uint32_t output_length = bufferWriteResolvedChars(current, output, sizeof(output), false);
+      executed_write_calls = 1;
+      getAllocatorStats(&after);
+
+      output_valid = output_length == sizeof(output);
+      for (uint32_t offset = 0; offset < sizeof(output); offset += 1) {
+        const uint32_t character = UINT32_C(65) +
+            ((baseline_set_cell_calls - UINT32_C(8) + offset) % UINT32_C(26));
+        output_valid = output_valid && output[offset] == character;
+      }
+      active_allocations_before = before.active_allocations;
+      active_allocations_after = after.active_allocations;
+    }
+    destroyRenderer(renderer);
+  }
+
+  result = caml_alloc_tuple(5);
+  Store_field(result, 0, Val_int(executed_set_cell_calls));
+  Store_field(result, 1, Val_int(executed_write_calls));
+  Store_field(result, 2, caml_copy_int64(active_allocations_before));
+  Store_field(result, 3, caml_copy_int64(active_allocations_after));
+  Store_field(result, 4, Val_bool(output_valid));
+  CAMLreturn(result);
 }
