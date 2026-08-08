@@ -51,7 +51,7 @@
   invariants or operations to protect.
 - do not introduce a new abstraction to group data that existing types and
   composable functions can express clearly.
-- use exceptions only for impossible or programmer-local invalid construction,
+- avoid exceptions; use exceptions only for impossible or programmer-local invalid construction,
   such as invalid static identifiers in provider definitions. At boundaries
   that read user input, config files, environment variables, stores, composed
   provider sets, permissions, or other runtime state, use structured
@@ -62,15 +62,22 @@
   diagnostics, but do not make callers or tests depend on parsing human-readable
   strings.
 - prefer using effects and direct style vs monads.
+- prefer using loops to recursion. Intermediate float values can be optimized to be unboxed in loops,
+  but not across recursion.
 - do not use the Obj module, it bypasses the type system and can lead to seg faults.
 - do not use the marshal module, as it can lead to unsafe behavior. Use a typed
   codec (a wire or cbor encoder and decoder, or a hand-written printer and parser) instead. If a trusted in-process boundary truly needs it, isolate it in one module and document why.
 - avoid using polymorphic structural comparisons (=), (<>), (<), (>), (<=), (>=)
-- do not use the Str module, as it has a problematic API. Use the Re module instead for regular expressions. Re provides a better API, is more performant, and doesn't have global state issues.
+- do not use the Str module, as it has a problematic API. Use the `Tyre` module instead for regular
+  expressions. `Tyre` provides a better API, performance, type safety, and avoids global state.
+- avoid using ppx in general, unless they are required for embedding some important dsl into
+  the language. ppx makes ocaml harder to read and slower and more awkward to compile.
+- use the `Dtoa` library for converting floats to strings. The native implementation can have
+  platform-specific inconsistencies due to depending on the host machine's c libraries.
+- no not use `float array`, use `floatarray` instead for consistent boxing and performance.
 
 ## test guidelines
 
 - host-level tests SHOULD NOT be unit tests, they should be blackbox integration tests
   testing user facing behavior and contracts.
 - make sure you are inside the nix shell before building and running tests.
-- if on a mac environment, The tests can be run on linux with the script under `./scripts/runtest-linux.sh`.
