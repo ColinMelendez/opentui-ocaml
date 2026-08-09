@@ -398,6 +398,8 @@ sink seam. An I/O, cancellation, or invalid-progress failure poisons the
 wrapper against retries because the sink may contain only a prefix. It does
 not close the sink, serialize concurrent callers, create fibers, or take
 ownership of terminal restoration.
+The PTY smoke is host-gated; this workspace has no `/dev/pts`, so its test is
+reported as skipped here while remaining runnable on a PTY-capable Unix host.
 
 ### Eio and external data structures
 

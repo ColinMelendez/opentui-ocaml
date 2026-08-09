@@ -18,6 +18,25 @@ module Partial_sink = struct
   let copy wrote ~src = Eio.Flow.Pi.simple_copy ~single_write wrote ~src
 end
 
+module Tty_sink = struct
+  type t = Eio_unix.Fd.t
+
+  let single_write fd buffers =
+    let rec write_first = function
+      | [] -> 0
+      | buffer :: rest when Int.equal (Cstruct.length buffer) 0 ->
+          write_first rest
+      | buffer :: _ ->
+          let bytes = Cstruct.to_bytes buffer in
+          Eio_unix.Fd.use_exn "write" fd (fun unix_fd ->
+              Eio_unix.await_writable unix_fd;
+              Unix.single_write unix_fd bytes 0 (Bytes.length bytes))
+    in
+    write_first buffers
+
+  let copy fd ~src = Eio.Flow.Pi.simple_copy ~single_write fd ~src
+end
+
 let expect_ok result =
   match result with
   | Ok () -> ()
@@ -72,5 +91,31 @@ let () =
           equal int 6 count;
           equal string "\x1b[?25l"
             (Cstruct.to_string (Cstruct.sub buffer 0 count));
-          equal bool false (Output.cursor_visible output))
+          equal bool false (Output.cursor_visible output));
+      test "writes a mode transition through a Unix PTY when available"
+        (fun () ->
+          if not (Sys.file_exists "/dev/pts") then
+            skip ~reason:"the host does not expose /dev/pts" ()
+          else
+            try
+              Eio_main.run @@ fun _env ->
+              Eio.Switch.run @@ fun sw ->
+              let pty = Eio_unix.Pty.open_pty ~sw () in
+              let sink_handler = Eio.Flow.Pi.sink (module Tty_sink) in
+              let sink =
+                Eio.Resource.T (Eio_unix.Pty.tty pty, sink_handler)
+              in
+              let source = Eio_unix.Pty.source pty in
+              let output = Output.create ~sink in
+              expect_ok (Output.set_cursor_visible output false);
+              let buffer = Cstruct.create 32 in
+              let count = Eio.Flow.single_read source buffer in
+              equal int 6 count;
+              equal string "\x1b[?25l"
+                (Cstruct.to_string (Cstruct.sub buffer 0 count));
+              equal bool false (Output.cursor_visible output)
+            with
+            | Unix.Unix_error
+                ((Unix.ENOTTY | Unix.EOPNOTSUPP | Unix.ENOENT), _, _) ->
+                skip ~reason:"the host PTY implementation is unavailable" ())
     ]

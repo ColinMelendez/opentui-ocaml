@@ -269,8 +269,9 @@ synchronous sink for arbitrary frame bytes, and maps Eio I/O failures without
 creating fibers or taking ownership of sink closure/restoration. Any I/O,
 cancellation, or invalid-progress failure poisons the wrapper against retries
 because the sink may contain only a prefix. The focused runtime smoke uses an
-Eio pipe; pseudo-terminal coverage remains pending because this workspace does
-not expose `/dev/pts`.
+Eio pipe. A PTY smoke is host-gated and skips with an explicit reason because
+this workspace does not expose `/dev/pts`; it remains runnable on a
+PTY-capable Unix host.
 
 ## Phase 4 — Retained `opentui-core`
 
