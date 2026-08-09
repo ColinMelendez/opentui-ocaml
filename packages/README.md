@@ -8,8 +8,8 @@ opentui-raw
 │   └── opentui-core     retained OpenTUI scene model over the native layer
 │       └── opentui-lwd  fine-grained reactive bindings (later)
 │           └── opentui-widgets (later)
-└── opentui-terminal     terminal mode, input decoding, and output lifecycle
-    └── opentui-terminal-eio  optional Eio/Cstruct flow boundary
+└── opentui-terminal     terminal modes, input framing, and decoding
+    └── opentui-terminal-eio  optional Eio/Cstruct input/output boundary
 ```
 
 `opentui-terminal` is kept beside the native layer rather than below it because terminal input/output policy should remain usable without importing the renderer's object model. An application can compose the terminal, native, and core layers at its boundary.
@@ -20,11 +20,12 @@ stateful `Mouse_decoder`, writer-free `Terminal_modes`, compositional
 `Input_decoder`, and pure `Input_coordinator`. It owns
 bounded `Bigarray.Array1` input storage, cursor compaction, split-safe protocol
 framing, common semantic key naming/modifiers, SGR/X10 mouse semantics, and
-owned event/paste payloads. Output lifecycle and Eio integration remain
-separate follow-on modules.
+owned event/paste payloads. The pure package leaves Eio flow ownership and
+output lifecycle to the optional runtime package.
 
 `opentui-terminal-eio` is the optional runtime package for Eio/Cstruct flow
-reads. It reuses the pure coordinator's deadline and event queue without
+reads and output. It reuses the pure coordinator's deadline and event queue,
+and binds writer-free mode transitions to a caller-owned Eio sink without
 adding Eio to the parser package.
 
 The first `opentui-native` slice composes `opentui-raw` behind an imperative

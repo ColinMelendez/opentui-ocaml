@@ -262,6 +262,16 @@ the caller's monotonic clock, exposes typed events and its deadline, and maps
 explicit EOF/I/O failure. It does not create parser, timer, dispatch, mode, or
 output fibers.
 
+**Eio output increment:** `opentui-terminal-eio.Output_flow` now binds the
+writer-free terminal mode transitions to a caller-owned Eio sink. It writes
+transition bytes before committing the remembered mode state, exposes the same
+synchronous sink for arbitrary frame bytes, and maps Eio I/O failures without
+creating fibers or taking ownership of sink closure/restoration. Any I/O,
+cancellation, or invalid-progress failure poisons the wrapper against retries
+because the sink may contain only a prefix. The focused runtime smoke uses an
+Eio pipe; pseudo-terminal coverage remains pending because this workspace does
+not expose `/dev/pts`.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -320,8 +330,8 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. add terminal output lifecycle and pseudo-terminal integration around the
-   now-complete mode, framing, input, timer, and Eio flow layers; and
+2. complete pseudo-terminal integration around the now-complete mode, framing,
+   input, timer, and Eio flow layers; and
 3. extend `opentui-native` only where a measured renderable or frame-loop
    contract remains missing before adding terminal, core, Lwd, or widget
    layers.
@@ -335,5 +345,7 @@ prefixes only when the caller invokes `flush_timeout`, and copies paste/event
 payloads before returning them. `Key_decoder` now composes above that framing
 boundary for common semantic keys and copies its character/unknown/paste
 payloads. `Mouse_decoder` now adds stateful SGR/X10 semantics while leaving
-terminal output lifecycle outside this increment. `Terminal_modes` now adds
-writer-free mode transitions without taking ownership of an output flow.
+terminal output lifecycle to the separate runtime boundary. `Terminal_modes`
+now adds writer-free mode transitions without taking ownership of an output
+flow. The optional Eio package now provides the corresponding caller-owned
+output sink seam; pseudo-terminal integration remains separate.

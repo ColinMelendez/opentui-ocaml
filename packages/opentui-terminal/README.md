@@ -48,4 +48,5 @@ output.
 
 The package does not yet own event dispatch, output lifecycle, or native
 zero-copy views. The optional `opentui-terminal-eio` package supplies the
-Cstruct/Eio flow boundary without adding that dependency here.
+Cstruct/Eio input boundary and caller-owned output sink without adding that
+dependency here.

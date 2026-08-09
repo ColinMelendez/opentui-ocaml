@@ -14,3 +14,11 @@ output flow.
 
 The adapter does not create a parser, event-dispatch fiber, timer fiber, output
 writer, renderer, retained scene, Lwd binding, or widget.
+
+`Output_flow` binds the writer-free `Terminal_modes` transitions to a
+caller-owned Eio sink. It writes a transition's bytes before committing the
+remembered mode state, exposes synchronous writes for arbitrary frame bytes,
+and maps Eio I/O failures to a structured result. Any I/O, cancellation, or
+invalid-progress failure poisons the wrapper against retries because the sink
+may contain only a prefix. It does not close or serialize the sink, create
+fibers, or own terminal restoration.

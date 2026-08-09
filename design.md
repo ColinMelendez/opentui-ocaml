@@ -80,8 +80,8 @@ layers, not one package per Zig file:
 | --- | --- | --- |
 | `opentui-raw` | ABI values, generation-checked handles, foreign calls, ownership | current |
 | `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | foundation increment |
-| `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, resize, output lifecycle | foundation |
-| `opentui-terminal-eio` | Eio/Cstruct flow reads over the pure terminal coordinator | Phase 3 runtime boundary |
+| `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, resize | foundation |
+| `opentui-terminal-eio` | Eio/Cstruct flow input and mode/output lifecycle over the pure terminal foundation | Phase 3 runtime boundary |
 | `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
 | `opentui-widgets` | reusable controls and application-facing conveniences | later |
@@ -340,8 +340,9 @@ unknown protocol events. `Mouse_decoder` adds SGR/X10 semantic events and owns
 only the pressed-button state needed to classify SGR drag motion. Terminal
 modes are represented by writer-free `Terminal_modes` transitions: an owned
 ANSI byte sequence is paired with an immutable next state, so a caller can
-commit the state only after its output sink accepts the sequence. Eio flow
-integration and output lifecycle remain separate follow-on modules.
+commit the state only after its output sink accepts the sequence. The optional
+`opentui-terminal-eio` package owns the Eio flow and output sink boundary;
+pseudo-terminal integration remains a separate follow-on.
 
 `opentui-terminal.Stdin_parser` is the framing layer above that queue. It does
 not decode semantic key names or mouse state. `Key` and `Sequence` payloads are
@@ -388,6 +389,15 @@ staging buffer, reads one caller-requested flow chunk, and feeds the pure
 monotonic clock and maps explicit EOF and Eio I/O failure to structured
 results, while the caller still owns fibers, switches, timeout wakeups, mode
 commits, and output.
+
+Its `Output_flow` holds a caller-owned Eio sink reference and the last terminal
+mode state successfully written to that sink. Mode operations write the owned
+`Terminal_modes` bytes first and update the remembered state only after the
+complete sink write returns; arbitrary frame bytes use the same synchronous
+sink seam. An I/O, cancellation, or invalid-progress failure poisons the
+wrapper against retries because the sink may contain only a prefix. It does
+not close the sink, serialize concurrent callers, create fibers, or take
+ownership of terminal restoration.
 
 ### Eio and external data structures
 
