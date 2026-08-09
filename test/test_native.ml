@@ -66,6 +66,18 @@ let () =
           let next_frame = expect_ok (Renderer.begin_frame renderer) in
           ignore (expect_ok (Renderer.present next_frame ~force:true));
           Renderer.close renderer);
+      test "resize is serialized with the imperative frame" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let frame = expect_ok (Renderer.begin_frame renderer) in
+          expect_error Opentui_native.Error.Frame_already_open
+            (Renderer.resize renderer ~width:3l ~height:2l);
+          ignore (expect_ok (Renderer.present frame ~force:true));
+          ignore
+            (expect_ok (Renderer.resize renderer ~width:3l ~height:2l));
+          expect_error
+            (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
+            (Renderer.resize renderer ~width:0l ~height:2l);
+          Renderer.close renderer);
       test "closed renderer invalidates its frame token" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
           let frame = expect_ok (Renderer.begin_frame renderer) in

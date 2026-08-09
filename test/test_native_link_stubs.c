@@ -105,6 +105,11 @@ CAMLprim value opentui_test_memory_renderer_round_trip(value unit_value) {
   round_trip_succeeded = round_trip_succeeded && too_small_length == 0 && output_length == 2 &&
       empty_output_length == 0 && output[0] == 'A' && output[1] == 'B';
 
+  resizeRenderer(renderer, 3, 2);
+  round_trip_succeeded = round_trip_succeeded &&
+      getBufferWidth(current) == 3 && getBufferHeight(current) == 2 &&
+      getBufferWidth(next) == 3 && getBufferHeight(next) == 2;
+
   destroyRenderer(renderer);
   round_trip_succeeded = round_trip_succeeded && getCurrentBuffer(renderer) == 0 &&
       getNextBuffer(renderer) == 0 && getBufferWidth(current) == 0 && getBufferHeight(current) == 0 &&

@@ -242,6 +242,11 @@ comptime {
         "setUseThread",
     );
     expectType(
+        @TypeOf(opentui.resizeRenderer),
+        fn (opentui.NativeHandle, u32, u32) callconv(.c) void,
+        "resizeRenderer",
+    );
+    expectType(
         @TypeOf(opentui.destroyRenderer),
         fn (opentui.NativeHandle) callconv(.c) void,
         "destroyRenderer",

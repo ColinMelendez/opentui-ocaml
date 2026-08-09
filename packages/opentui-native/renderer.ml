@@ -55,6 +55,14 @@ let create ~width ~height =
   | Ok raw -> Ok { raw; closed = false; active_frame = false }
   | Error error -> Error (Error.Native error)
 
+let resize renderer ~width ~height =
+  if renderer.closed then Error Error.Closed
+  else if renderer.active_frame then Error Error.Frame_already_open
+  else
+    match Opentui_raw.Renderer.resize renderer.raw ~width ~height with
+    | Ok () -> Ok ()
+    | Error error -> Error (Error.Native error)
+
 let close renderer =
   if not renderer.closed then (
     renderer.closed <- true;

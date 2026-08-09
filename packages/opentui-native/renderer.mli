@@ -32,6 +32,7 @@ module Frame : sig
 end
 
 val create : width:int32 -> height:int32 -> (t, Error.t) result
+val resize : t -> width:int32 -> height:int32 -> (unit, Error.t) result
 val close : t -> unit
 val begin_frame : t -> (Frame.t, Error.t) result
 val present : Frame.t -> force:bool -> (render_status, Error.t) result

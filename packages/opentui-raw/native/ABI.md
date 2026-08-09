@@ -17,6 +17,7 @@ first link seam and the typed raw renderer/buffer/event/Yoga/capability slice:
 | `editBufferInsertText` | `lib.zig:2017` | `u32, nullable byte pointer + u32 -> void` | The text is consumed synchronously and emits native events synchronously when an event sink is attached. |
 | `createRenderer` | `lib.zig:648` | `u32, u32, u8, u8, nullable pointer -> u32` | A zero dimension or invalid destination returns handle `0`. The renderer owns its current/next buffers. |
 | `setUseThread` | `lib.zig:711` | `u32, bool -> void` | Phase 1 always passes `false`; all raw entrypoints remain on one native owner. |
+| `resizeRenderer` | `lib.zig:1497` | `u32, u32, u32 -> void` | The pinned export resizes the renderer's current and next buffers in place, so their borrowed handles remain valid on success. It catches and discards `CliRenderer.resize` errors; the raw facade validates positive dimensions and reads both buffer dimensions back, but hidden hit-grid or other internal allocation failures remain unobservable from this upstream signature. |
 | `destroyRenderer` | `lib.zig:721` | `u32 -> void` | Destruction invalidates renderer-owned borrowed buffer handles before renderer deinitialization. |
 | `getCurrentBuffer` / `getNextBuffer` | `lib.zig:808`, `lib.zig:813` | `u32 -> u32` | Returned optimized-buffer handles are borrowed children of the renderer. |
 | `render` | `lib.zig:845` | `u32, bool -> u8` | The renderer returns the pinned `rendered`/`skipped`/`failed` values `0`/`1`/`2`; the OCaml facade maps them to a typed result without exposing the native enum. |

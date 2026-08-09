@@ -145,6 +145,10 @@ opentui_native_handle createRenderer(
     uint8_t remote_mode,
     void *feed_ptr);
 void setUseThread(opentui_native_handle renderer_handle, bool use_thread);
+void resizeRenderer(
+    opentui_native_handle renderer_handle,
+    uint32_t width,
+    uint32_t height);
 void destroyRenderer(opentui_native_handle renderer_handle);
 opentui_native_handle getCurrentBuffer(opentui_native_handle renderer_handle);
 opentui_native_handle getNextBuffer(opentui_native_handle renderer_handle);
@@ -294,6 +298,7 @@ typedef void (*opentui_destroy_edit_buffer_fn)(opentui_native_handle);
 typedef void (*opentui_edit_buffer_insert_text_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 typedef opentui_native_handle (*opentui_create_renderer_fn)(uint32_t, uint32_t, uint8_t, uint8_t, void *);
 typedef void (*opentui_set_use_thread_fn)(opentui_native_handle, bool);
+typedef void (*opentui_resize_renderer_fn)(opentui_native_handle, uint32_t, uint32_t);
 typedef void (*opentui_destroy_renderer_fn)(opentui_native_handle);
 typedef opentui_native_handle (*opentui_get_buffer_fn)(opentui_native_handle);
 typedef uint8_t (*opentui_render_fn)(opentui_native_handle, bool);
@@ -334,6 +339,7 @@ _Static_assert(_Generic(&destroyEditBuffer, opentui_destroy_edit_buffer_fn: 1, d
 _Static_assert(_Generic(&editBufferInsertText, opentui_edit_buffer_insert_text_fn: 1, default: 0), "editBufferInsertText ABI drift");
 _Static_assert(_Generic(&createRenderer, opentui_create_renderer_fn: 1, default: 0), "createRenderer ABI drift");
 _Static_assert(_Generic(&setUseThread, opentui_set_use_thread_fn: 1, default: 0), "setUseThread ABI drift");
+_Static_assert(_Generic(&resizeRenderer, opentui_resize_renderer_fn: 1, default: 0), "resizeRenderer ABI drift");
 _Static_assert(_Generic(&destroyRenderer, opentui_destroy_renderer_fn: 1, default: 0), "destroyRenderer ABI drift");
 _Static_assert(_Generic(&getCurrentBuffer, opentui_get_buffer_fn: 1, default: 0), "getCurrentBuffer ABI drift");
 _Static_assert(_Generic(&getNextBuffer, opentui_get_buffer_fn: 1, default: 0), "getNextBuffer ABI drift");

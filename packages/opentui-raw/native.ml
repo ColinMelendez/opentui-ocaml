@@ -35,6 +35,10 @@ type span_feed_stats = int64 * int64 * int32 * int32
 external renderer_create : int32 -> int32 -> int * Native_token.Renderer.t =
   "opentui_raw_renderer_create"
 
+external renderer_resize :
+  Native_token.Renderer.t -> int32 -> int32 -> int =
+  "opentui_raw_renderer_resize"
+
 external renderer_destroy : Native_token.Renderer.t -> unit =
   "opentui_raw_renderer_destroy"
 

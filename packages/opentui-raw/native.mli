@@ -33,6 +33,7 @@ type span_feed_options = int32 * int32 * int64 * int * bool * int32
 type span_feed_stats = int64 * int64 * int32 * int32
 
 val renderer_create : int32 -> int32 -> int * Native_token.Renderer.t
+val renderer_resize : Native_token.Renderer.t -> int32 -> int32 -> int
 val renderer_destroy : Native_token.Renderer.t -> unit
 val renderer_buffer :
   Native_token.Renderer.t -> bool -> int * Native_token.Buffer.t

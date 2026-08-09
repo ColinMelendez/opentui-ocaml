@@ -16,6 +16,13 @@ let create ~width ~height =
   | 0 -> Ok { handle; owner = Native_owner.Private.create () }
   | _ -> Error (error_of_status status)
 
+let resize renderer ~width ~height =
+  if not (Native_owner.is_open renderer.owner) then Error Error.Closed
+  else
+    match Native.renderer_resize renderer.handle width height with
+    | 0 -> Ok ()
+    | status -> Error (error_of_status status)
+
 let close renderer =
   if Native_owner.is_open renderer.owner then begin
     Native.renderer_destroy renderer.handle;

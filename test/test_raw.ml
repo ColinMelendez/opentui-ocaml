@@ -68,6 +68,23 @@ let () =
             (Opentui_raw.Renderer.create ~width:0l ~height:1l);
           expect_error Opentui_raw.Error.Invalid_argument
             (Opentui_raw.Color.rgba ~red:256 ~green:0 ~blue:0 ~alpha:255));
+      test "renderer resize preserves borrowed buffer handles" (fun () ->
+          let renderer =
+            expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l)
+          in
+          let current = expect_ok (Opentui_raw.Renderer.current_buffer renderer) in
+          let next = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.resize renderer ~width:3l ~height:2l));
+          equal int32 3l (expect_ok (Opentui_raw.Buffer.width current));
+          equal int32 2l (expect_ok (Opentui_raw.Buffer.height current));
+          equal int32 3l (expect_ok (Opentui_raw.Buffer.width next));
+          equal int32 2l (expect_ok (Opentui_raw.Buffer.height next));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Renderer.resize renderer ~width:0l ~height:2l);
+          equal int32 3l (expect_ok (Opentui_raw.Buffer.width current));
+          Opentui_raw.Renderer.close renderer);
       test "small output is reported without raising" (fun () ->
           let renderer = expect_ok (Opentui_raw.Renderer.create ~width:1l ~height:1l) in
           let buffer = expect_ok (Opentui_raw.Renderer.current_buffer renderer) in

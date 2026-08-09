@@ -54,6 +54,19 @@ static bool buffer_is_valid(opentui_native_handle handle) {
   return handle != 0 && getBufferWidth(handle) != 0;
 }
 
+static bool renderer_buffers_have_dimensions(
+    opentui_native_handle renderer,
+    uint32_t width,
+    uint32_t height) {
+  opentui_native_handle current = getCurrentBuffer(renderer);
+  opentui_native_handle next = getNextBuffer(renderer);
+  return current != 0 && next != 0
+      && getBufferWidth(current) == width
+      && getBufferHeight(current) == height
+      && getBufferWidth(next) == width
+      && getBufferHeight(next) == height;
+}
+
 static bool read_color(value color, uint16_t output[4]) {
   if (!Is_block(color) || Wosize_val(color) != 4) {
     return false;
@@ -103,6 +116,33 @@ CAMLprim value opentui_raw_renderer_create(value width_value, value height_value
 
   setUseThread(handle, false);
   CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_OK, handle));
+}
+
+CAMLprim value opentui_raw_renderer_resize(
+    value handle_value,
+    value width_value,
+    value height_value) {
+  CAMLparam3(handle_value, width_value, height_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t width = Int32_val(width_value);
+  int32_t height = Int32_val(height_value);
+  if (handle == 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (width <= 0 || height <= 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  if (getCurrentBuffer(handle) == 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  resizeRenderer(handle, (uint32_t)width, (uint32_t)height);
+  if (!renderer_buffers_have_dimensions(
+          handle, (uint32_t)width, (uint32_t)height)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_NATIVE_FAILURE));
+  }
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
 CAMLprim value opentui_raw_renderer_destroy(value handle_value) {

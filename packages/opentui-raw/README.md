@@ -15,6 +15,14 @@ from a native callback. Queue overflow is reported as a structured error.
 Because the pinned callback ABI has no context pointer, only one event sink may
 be active at a time.
 
+`Renderer.resize` validates positive dimensions at the raw boundary and resizes
+the pinned renderer's current and next buffers in place. Existing borrowed
+buffer handles therefore remain valid and observe the new dimensions when the
+facade's postcondition check succeeds. The upstream `resizeRenderer` export has
+a `void` return and swallows allocation failures; the facade reports an
+observable current/next buffer mismatch as `Native_failure`, but hidden
+hit-grid or other internal allocation failures remain unobservable.
+
 The raw Yoga binding owns a generation-checked tree/node registry and copies
 the exact six-field layout result. The capability binding copies terminal
 strings and decodes the pinned enum codes into a typed snapshot. The

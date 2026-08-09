@@ -10,6 +10,13 @@ The package also exposes `Layout`, an owner-scoped composition over the raw
 Yoga tree. Its opaque nodes support validated width/height updates and copied
 six-field layout results; closing the layout invalidates its nodes.
 
+`Renderer.resize` delegates the audited raw resize operation and is only
+allowed when no imperative frame is open. Resizing preserves the native
+renderer and its borrowed buffer ownership; a successful operation verifies
+that both native buffers expose the new dimensions. The pinned export still
+swallows hidden hit-grid and other internal allocation failures, so those
+failures cannot be reported through this layer.
+
 `Text_renderable` is the first imperative leaf over those seams. It owns a
 copied text value and holds an owner-scoped layout-node reference, then obtains
 the node's copied origin and draws through a caller-owned `Renderer.Frame`.

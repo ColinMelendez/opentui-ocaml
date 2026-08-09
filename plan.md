@@ -255,6 +255,16 @@ checks, layout close errors, frame lifetime, and text ownership remain explicit;
 child trees, measure callbacks, retained scene identity, terminal policy, and
 reactive layers remain outside this increment.
 
+**Native resize increment:** the audited `resizeRenderer` export now crosses
+the raw C/Zig boundary with its pinned `u32, u32, u32 -> void` signature.
+`opentui-raw.Renderer.resize` validates dimensions and preserves borrowed buffer
+handles while the native buffers resize in place. `opentui-native.Renderer`
+serializes resize against its imperative frame token. The pinned upstream
+export still swallows native allocation failures; the raw facade verifies both
+buffer dimensions after the call and reports an observable mismatch, while
+hidden hit-grid or other internal failures remain outside the pinned ABI's
+visibility.
+
 **Eio flow increment:** `opentui-terminal-eio.Input_flow` now provides a
 separate optional Eio/Cstruct boundary. It owns reusable read/staging buffers,
 maps one `single_read` into the pure input coordinator, stamps deadlines from
@@ -335,7 +345,7 @@ above. The remaining implementation sequence is:
    input, timer, and Eio flow layers; and
 3. extend `opentui-native` only where a measured renderable or frame-loop
    contract remains missing before adding terminal, core, Lwd, or widget
-   layers.
+   layers; the next candidate is a small caller-owned frame-loop seam.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their
