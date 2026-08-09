@@ -48,6 +48,14 @@ module Frame = struct
         map_native
           (Opentui_raw.Buffer.draw_text frame.buffer ~text ~x ~y ~foreground
              ~background ~attributes)
+
+  let write_resolved_chars frame ~output ~add_line_breaks =
+    match ensure_open frame with
+    | Error error -> Error error
+    | Ok () ->
+        map_native
+          (Opentui_raw.Buffer.write_resolved_chars frame.buffer ~output
+             ~add_line_breaks)
 end
 
 let create ~width ~height =

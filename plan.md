@@ -265,6 +265,14 @@ buffer dimensions after the call and reports an observable mismatch, while
 hidden hit-grid or other internal failures remain outside the pinned ABI's
 visibility.
 
+**Native frame-output increment:** `opentui-native.Renderer.Frame` now exposes
+bounded resolved-character output into caller-owned `bytes`. Its all-or-nothing
+byte count and insufficient-capacity error remain explicit; callers must hand
+an exact-sized value or the returned prefix to `Output_flow`, whose whole-byte
+write contract remains unchanged. The frame token checks its lifetime before
+writing, while output flushing remains composed by the caller; no sink, fiber,
+or frame manager is introduced at this layer.
+
 **Eio flow increment:** `opentui-terminal-eio.Input_flow` now provides a
 separate optional Eio/Cstruct boundary. It owns reusable read/staging buffers,
 maps one `single_read` into the pure input coordinator, stamps deadlines from

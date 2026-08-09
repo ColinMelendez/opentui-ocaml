@@ -20,6 +20,8 @@ let same_error left right =
       (match left, right with
       | Opentui_raw.Error.Invalid_argument,
         Opentui_raw.Error.Invalid_argument -> true
+      | Opentui_raw.Error.Output_too_small,
+        Opentui_raw.Error.Output_too_small -> true
       | _ -> false)
   | _ -> false
 
@@ -50,10 +52,25 @@ let () =
                (Renderer.Frame.draw_text frame ~text:"B" ~x:1l ~y:0l
                   ~foreground:Opentui_raw.Color.white
                   ~background:Opentui_raw.Color.black ~attributes:0l));
+          let output = Bytes.create 2 in
+          let written =
+            expect_ok
+              (Renderer.Frame.write_resolved_chars frame ~output
+                 ~add_line_breaks:false)
+          in
+          equal int32 2l written;
+          equal string "AB" (Bytes.to_string output);
+          expect_error
+            (Opentui_native.Error.Native Opentui_raw.Error.Output_too_small)
+            (Renderer.Frame.write_resolved_chars frame
+               ~output:(Bytes.create 1) ~add_line_breaks:false);
           (match expect_ok (Renderer.present frame ~force:true) with
           | Renderer.Rendered -> ()
           | Renderer.Skipped -> fail "expected the memory frame to render"
           | Renderer.Failed -> fail "the native frame failed");
+          expect_error Opentui_native.Error.Frame_not_open
+            (Renderer.Frame.write_resolved_chars frame ~output
+               ~add_line_breaks:false);
           Renderer.close renderer);
       test "frame ownership rejects overlap and reuse" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in

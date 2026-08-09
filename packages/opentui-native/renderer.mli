@@ -29,6 +29,16 @@ module Frame : sig
     background:Opentui_raw.Color.t ->
     attributes:int32 ->
     (unit, Error.t) result
+
+  (** [Ok count] reports the number of output bytes written. On success, the
+      defined output is the prefix [output[0, count)]. Insufficient capacity
+      returns [Error (Error.Native Output_too_small)] rather than a short
+      write. *)
+  val write_resolved_chars :
+    t ->
+    output:bytes ->
+    add_line_breaks:bool ->
+    (int32, Error.t) result
 end
 
 val create : width:int32 -> height:int32 -> (t, Error.t) result
