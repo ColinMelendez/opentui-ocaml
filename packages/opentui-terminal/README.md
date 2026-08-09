@@ -6,7 +6,7 @@ does not depend on the renderer or `opentui-raw`.
 The first slice contains `Byte_queue`, `Stdin_parser`, `Key_decoder`,
 `Mouse_decoder`, `Terminal_modes`, `Input_decoder`, and `Input_coordinator`.
 `Terminal_size` validates externally supplied positive column/row dimensions
-for a future resize-event handoff; it does not read the terminal, install a
+for the bounded resize-event handoff; it does not read the terminal, install a
 signal handler, or depend on the renderer.
 `Byte_queue` is a
 reusable `Bigarray.Array1`-backed queue for stdin bytes. It advances logical
@@ -48,6 +48,16 @@ monotonic-millisecond deadline for incomplete input. The caller supplies the
 clock, calls `fire_timeout` when that deadline is due, and drains typed events;
 the package does not create timer fibers, own an Eio flow, or write terminal
 output.
+
+`Event_queue` is the pure bounded handoff for a runtime owner that combines
+decoded input with externally supplied `Terminal_size` values. It preserves
+FIFO order and rejects lossless input when full. A pending resize is replaced
+by the latest resize, and a pending mouse-motion (`Move`/`Drag`) event is
+replaced by the latest motion, so those high-rate values do not consume
+multiple slots. Other input events remain lossless. The queue owns only the
+event references it receives; input payload ownership is established by
+`Input_decoder`, and the queue does not wake fibers, read signals, or dispatch
+events.
 
 The package does not yet own event dispatch, output lifecycle, or native
 zero-copy views. The optional `opentui-terminal-eio` package supplies the

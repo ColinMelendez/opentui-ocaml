@@ -80,7 +80,7 @@ layers, not one package per Zig file:
 | --- | --- | --- |
 | `opentui-raw` | ABI values, generation-checked handles, foreign calls, ownership | current |
 | `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | foundation increment |
-| `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, resize | foundation |
+| `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, validated resize payloads, bounded event handoff | foundation |
 | `opentui-terminal-eio` | Eio/Cstruct flow input and mode/output lifecycle over the pure terminal foundation | Phase 3 runtime boundary |
 | `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
@@ -167,7 +167,7 @@ implementation in
 | Stdin parser | The TypeScript reference has a mutable byte queue with start/end offsets and amortized compaction, a tagged protocol state machine, a bounded 64 KiB pending prefix, a 20 ms ESC timeout, an event queue, a bracketed-paste collector, and mouse-button state. | `opentui-terminal` owns the reusable queue and a framing parser with scalar cursors. It emits owned ground `Key` bytes, raw `Sequence` frames for CSI/SS3/OSC/DCS/APC/unknown units, and owned `Paste` bodies. A timeout-flushed lone ESC has a narrow delayed SGR/X10 mouse recovery path; it reconstructs valid continuations as owned CSI frames without decoding mouse state. `Key_decoder` is a pure layer above framing for common control, UTF-8, meta, CSI, SS3, modifier, and modifyOtherKeys keys; unknown sequences remain copied protocol events. `Mouse_decoder` is a stateful semantic layer for complete SGR/X10 frames: it preserves high X10 bytes, tracks SGR buttons for drag classification, and returns no event for non-mouse frames. The caller's timer coordinator invokes `flush_timeout`; protocol-context probes, terminal modes, and Eio flow integration remain later modules. Preserve chunk-shape invariance, split UTF-8 handling, ESC timeout behavior, split paste markers, delayed mouse recovery, bounded overflow behavior, and byte-accurate X10 decoding. Do not allocate a fresh parser-state variant for every byte. |
 | Native output feed | `NativeSpanFeed` owns fixed-size chunks, a span ring, reserve/commit operations, chunk reference counts, and an optional callback. A span remains borrowed until the consumer marks it consumed. | The first Phase 2 raw seam copies drained payloads into OCaml bytes and pairs them with an idempotent native release token. Reservations use an OCaml-owned staging buffer with explicit commit/cancel; the native reserve pointer stays private. Native chunk views through Bigarray/Cstruct remain a later, separately benchmarked API. |
 | Foreign buffer view | OCaml Bigarrays can hold external/native storage and `Cstruct` can provide zero-copy subviews, but the underlying address can become invalid when a Zig owner resizes or destroys it. | Keep the Bigarray/Cstruct value behind an abstract `Native_view.t` containing the owner and generation/borrow token. Initially reject resize/destroy while views are active; deferred reclamation is a later optimization. Do not publish raw pointers or naked Bigarrays from `opentui-raw`. |
-| Cross-fiber handoff | The UI state and native entrypoints need a single owner, while terminal reads may need to wait independently. | Use a bounded event/command handoff at the runtime boundary. Its items own their bytes and policy distinguishes lossless key/paste/resize events from coalescible mouse motion. The handoff is not part of the per-cell render path. |
+| Cross-fiber handoff | The UI state and native entrypoints need a single owner, while terminal reads may need to wait independently. | Use a bounded event/command handoff at the runtime boundary. Its items own their bytes and policy distinguishes lossless key/paste/opaque protocol/button/scroll events from coalescible resize and mouse motion (`Move`/`Drag`). The handoff is not part of the per-cell render path. |
 
 The first raw handle representation should therefore be a small immediate value
 with distinct abstract modules such as `Renderer.t`, `Buffer.t`, and
@@ -343,11 +343,15 @@ ANSI byte sequence is paired with an immutable next state, so a caller can
 commit the state only after its output sink accepts the sequence. The
 `Terminal_size` module validates positive externally supplied column/row values;
 neither it nor the mode module reads terminal state or owns a resize signal
-source. The optional `opentui-terminal-eio` package owns the Eio flow and
-output sink boundary; pseudo-terminal integration and resize-event sourcing
-remain separate follow-ons.
+source. `Event_queue` is the pure bounded handoff for already-owned input
+events and resize payloads: non-motion input events remain lossless, a pending
+resize is replaced by the latest value, and a pending mouse-motion (`Move`/
+`Drag`) event is replaced by the latest motion. It reports `Full` when a
+non-coalescible event has no slot. The optional `opentui-terminal-eio` package
+owns the Eio flow and output sink boundary; pseudo-terminal integration,
+resize-event sourcing, wakeups, and dispatch remain separate follow-ons.
 
-`opentui-terminal.Stdin_parser` is the framing layer above that queue. It does
+`opentui-terminal.Stdin_parser` is the framing layer above `Byte_queue`. It does
 not decode semantic key names or mouse state. `Key` and `Sequence` payloads are
 copied before they enter the parser event queue, and paste bodies bypass the
 bounded pending queue through chunked owned storage so a large paste does not

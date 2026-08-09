@@ -42,6 +42,8 @@ module Parser = Opentui_terminal.Stdin_parser
 module Decoder = Opentui_terminal.Key_decoder
 module Mouse = Opentui_terminal.Mouse_decoder
 module Size = Opentui_terminal.Terminal_size
+module Input = Opentui_terminal.Input_decoder
+module Events = Opentui_terminal.Event_queue
 
 let parser_create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
   match Parser.create ?initial_capacity ?max_pending_bytes ?timeout_ms () with
@@ -227,6 +229,221 @@ let () =
           match Size.create ~columns:80 ~rows:(-1) with
           | Error Size.Invalid_dimensions -> ()
           | Ok _ -> fail "negative rows were accepted");
+      test "event handoff preserves input order and latest resize" (fun () ->
+          let queue =
+            match Events.create ~capacity:2 () with
+            | Ok value -> value
+            | Error error -> fail (Events.message error)
+          in
+          let modifiers =
+            { Decoder.shift = false; meta = false; ctrl = false }
+          in
+          let input =
+            Events.Input
+              (Input.Key { key = Decoder.Named Decoder.Return; modifiers })
+          in
+          let first_size =
+            match Size.create ~columns:80 ~rows:24 with
+            | Ok value -> value
+            | Error error -> fail (Size.message error)
+          in
+          let latest_size =
+            match Size.create ~columns:100 ~rows:40 with
+            | Ok value -> value
+            | Error error -> fail (Size.message error)
+          in
+          (match Events.push queue input with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match Events.push queue (Events.Resize first_size) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match Events.push queue (Events.Resize latest_size) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          equal int 2 (Events.length queue);
+          (match Events.read queue with
+          | Some
+              (Events.Input
+                (Input.Key
+                  {
+                    key = Decoder.Named Decoder.Return;
+                    modifiers = actual;
+                  })) ->
+              expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
+          | Some _ -> fail "resize coalescing changed input order"
+          | None -> fail "input event was lost");
+          (match Events.read queue with
+          | Some (Events.Resize actual) ->
+              equal bool true (Size.equal latest_size actual)
+          | Some _ -> fail "expected the coalesced resize event"
+          | None -> fail "resize event was lost");
+          match Events.read queue with
+          | None -> ()
+          | Some _ -> fail "event handoff contained an extra event");
+      test "event handoff reports lossless overflow and coalesces motion" (fun () ->
+          let queue =
+            match Events.create ~capacity:1 () with
+            | Ok value -> value
+            | Error error -> fail (Events.message error)
+          in
+          let modifiers =
+            { Decoder.shift = false; meta = false; ctrl = false }
+          in
+          let key key = Events.Input (Input.Key { key; modifiers }) in
+          (match Events.push queue (key (Decoder.Named Decoder.Return)) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match Events.push queue (key (Decoder.Named Decoder.Tab)) with
+          | Error Events.Full -> ()
+          | Error Events.Invalid_capacity -> fail "unexpected capacity error"
+          | Ok () -> fail "lossless input overflow was accepted");
+          equal int 1 (Events.length queue);
+          let motion_queue =
+            match Events.create ~capacity:2 () with
+            | Ok value -> value
+            | Error error -> fail (Events.message error)
+          in
+          let first_motion =
+            {
+              Mouse.kind = Mouse.Drag;
+              button = 0;
+              x = 1;
+              y = 2;
+              modifiers =
+                { Mouse.shift = false; alt = false; ctrl = false };
+              scroll = None;
+            }
+          in
+          let latest_motion =
+            {
+              Mouse.kind = Mouse.Move;
+              button = 0;
+              x = 9;
+              y = 10;
+              modifiers = { Mouse.shift = true; alt = false; ctrl = false };
+              scroll = None;
+            }
+          in
+          (match
+             Events.push motion_queue (Events.Input (Input.Mouse first_motion))
+           with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match
+             Events.push motion_queue (key (Decoder.Named Decoder.Tab))
+           with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          let second_drag =
+            {
+              first_motion with
+              x = 4;
+              y = 5;
+            }
+          in
+          (match
+             Events.push motion_queue (Events.Input (Input.Mouse second_drag))
+           with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match
+             Events.push motion_queue (Events.Input (Input.Mouse latest_motion))
+           with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          equal int 2 (Events.length motion_queue);
+          (match Events.read motion_queue with
+          | Some (Events.Input (Input.Mouse actual)) ->
+              expect_mouse actual ~kind:Mouse.Move ~button:0 ~x:9 ~y:10
+                ~shift:true ~alt:false ~ctrl:false
+          | Some _ -> fail "expected the coalesced motion event"
+          | None -> fail "motion event was lost");
+          match Events.read motion_queue with
+          | Some
+              (Events.Input
+                (Input.Key
+                  { key = Decoder.Named Decoder.Tab; modifiers = actual })) ->
+              expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
+          | Some _ -> fail "motion coalescing changed the following event"
+          | None -> fail "following input event was lost");
+      test "event handoff clear releases every pending event" (fun () ->
+          let queue =
+            match Events.create ~capacity:2 () with
+            | Ok value -> value
+            | Error error -> fail (Events.message error)
+          in
+          let size =
+            match Size.create ~columns:80 ~rows:24 with
+            | Ok value -> value
+            | Error error -> fail (Size.message error)
+          in
+          (match Events.push queue (Events.Resize size) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          equal int 1 (Events.length queue);
+          Events.clear queue;
+          equal int 0 (Events.length queue);
+          match Events.read queue with
+          | None -> ()
+          | Some _ -> fail "clear left a pending event");
+      test "event handoff validates capacity and wraps FIFO order" (fun () ->
+          (match Events.create ~capacity:0 () with
+          | Error Events.Invalid_capacity -> ()
+          | Error Events.Full -> fail "zero capacity reported as full"
+          | Ok _ -> fail "zero capacity was accepted");
+          (match Events.create ~capacity:(-1) () with
+          | Error Events.Invalid_capacity -> ()
+          | Error Events.Full -> fail "negative capacity reported as full"
+          | Ok _ -> fail "negative capacity was accepted");
+          let queue =
+            match Events.create ~capacity:2 () with
+            | Ok value -> value
+            | Error error -> fail (Events.message error)
+          in
+          let modifiers =
+            { Decoder.shift = false; meta = false; ctrl = false }
+          in
+          let key named =
+            Events.Input (Input.Key { key = Decoder.Named named; modifiers })
+          in
+          equal int 2 (Events.capacity queue);
+          (match Events.push queue (key Decoder.Return) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match Events.push queue (key Decoder.Tab) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match Events.read queue with
+          | Some
+              (Events.Input
+                (Input.Key
+                  { key = Decoder.Named Decoder.Return; modifiers = actual })) ->
+              expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
+          | Some _ -> fail "unexpected first wrapped event"
+          | None -> fail "first wrapped event was lost");
+          (match Events.push queue (key Decoder.Backspace) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match Events.read queue with
+          | Some
+              (Events.Input
+                (Input.Key
+                  { key = Decoder.Named Decoder.Tab; modifiers = actual })) ->
+              expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
+          | Some _ -> fail "ring wrap changed FIFO order"
+          | None -> fail "second wrapped event was lost");
+          match Events.read queue with
+          | Some
+              (Events.Input
+                (Input.Key
+                  {
+                    key = Decoder.Named Decoder.Backspace;
+                    modifiers = actual;
+                  })) ->
+              expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
+          | Some _ -> fail "ring wrap lost the newest event"
+          | None -> fail "newest wrapped event was lost");
       test "bigarray input, consume, and compaction preserve byte order" (fun () ->
           let module Queue = Opentui_terminal.Byte_queue in
           let queue =

@@ -293,9 +293,18 @@ PTY-capable Unix host.
 
 **Terminal size increment:** `opentui-terminal.Terminal_size` now validates
 positive externally supplied columns and rows and provides a copied immutable
-value with explicit equality. It is a payload boundary for future resize-event
-handoffs; it does not read terminal state, install signal handlers, dispatch
-events, or depend on `opentui-native`.
+value with explicit equality. It is the payload boundary for the bounded
+resize-event handoff; it does not read terminal state, install signal
+handlers, dispatch events, or depend on `opentui-native`.
+
+**Bounded event-handoff increment:** `opentui-terminal.Event_queue` now owns a
+pure bounded FIFO for decoded input events and externally supplied terminal
+sizes. Lossless input reports `Full` rather than being silently dropped;
+pending resize and mouse-motion (`Move`/`Drag`) values coalesce to their
+latest payload while preserving the pending slot's position. The queue
+allocates its ring once and does not own Eio fibers, signal sources, wakeups,
+dispatch, or native resources. Those runtime policies remain the next Phase 3
+work.
 
 ## Phase 4 — Retained `opentui-core`
 
