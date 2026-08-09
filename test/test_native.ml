@@ -2,6 +2,7 @@ open Windtrap
 
 module Renderer = Opentui_native.Renderer
 module Layout = Opentui_native.Layout
+module Text_renderable = Opentui_native.Text_renderable
 
 let expect_ok result =
   match result with
@@ -126,4 +127,42 @@ let () =
             (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
             (Layout.Node.set_dimensions root ~width:Float.nan ~height:1.0);
           Layout.close layout);
+      test "a text renderable draws through the layout and frame seams" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:4l ~height:1l) in
+          let layout = expect_ok (Layout.create ()) in
+          let root = expect_ok (Layout.root layout) in
+          let node = expect_ok (Layout.add_child ~parent:root) in
+          ignore
+            (expect_ok
+               (Layout.Node.set_dimensions node ~width:2.0 ~height:1.0));
+          ignore
+            (expect_ok
+               (Layout.calculate layout ~width:4.0 ~height:1.0
+                  ~direction:Layout.Ltr));
+          let renderable = Text_renderable.create ~node ~text:"A" in
+          equal string "A" (Text_renderable.text renderable);
+          Text_renderable.set_text renderable ~text:"B";
+          equal string "B" (Text_renderable.text renderable);
+          let frame = expect_ok (Renderer.begin_frame renderer) in
+          ignore
+            (expect_ok
+               (Renderer.Frame.clear frame
+                  ~background:Opentui_raw.Color.black));
+          ignore
+            (expect_ok
+               (Text_renderable.draw renderable frame
+                  ~foreground:Opentui_raw.Color.white
+                  ~background:Opentui_raw.Color.black ~attributes:0l));
+          ignore (expect_ok (Renderer.present frame ~force:true));
+          expect_error Opentui_native.Error.Frame_not_open
+            (Text_renderable.draw renderable frame
+               ~foreground:Opentui_raw.Color.white
+               ~background:Opentui_raw.Color.black ~attributes:0l);
+          let next_frame = expect_ok (Renderer.begin_frame renderer) in
+          Layout.close layout;
+          expect_error Opentui_native.Error.Closed
+            (Text_renderable.draw renderable next_frame
+               ~foreground:Opentui_raw.Color.white
+               ~background:Opentui_raw.Color.black ~attributes:0l);
+          Renderer.close renderer)
     ]

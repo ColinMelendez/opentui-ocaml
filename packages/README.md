@@ -26,7 +26,9 @@ The first `opentui-native` slice composes `opentui-raw` behind an imperative
 renderer/frame lifecycle and an owner-scoped `Layout` tree. Its opaque frame
 token owns the next-buffer editing window and is consumed by `present`; its
 layout nodes own only copied Yoga dimensions/results. It does not expose native
-handles or introduce terminal, retained-scene, measure-callback, Lwd, or widget
-policy.
+handles, and its `Text_renderable` leaf only holds a layout-node reference and
+maps its copied origin to a caller-owned frame. It does not introduce terminal,
+retained-scene,
+measure-callback, Lwd, or widget policy.
 
 The graph is a design target, not a promise to create a package for every subsystem. The `Buffer` module currently in `opentui-raw` is only the ABI-level borrowed view needed to exercise the pinned renderer; it is not the retained scene or renderable model. Yoga/layout and native renderables should initially be modules of `opentui-native`; they become separate packages only if they have a stable independent consumer.

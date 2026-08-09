@@ -372,6 +372,14 @@ direction type, and layout readback is copied into a native-package record.
 Closing the layout invalidates every node; measure callbacks, packed styles,
 native renderable state, and retained scene identity remain later contracts.
 
+`opentui-native.Text_renderable` is the smallest imperative leaf above that
+layout and renderer composition. It owns a copied text value and holds an
+opaque owner-scoped layout-node reference; `Layout` remains responsible for
+that node's lifetime. Each `draw` borrows the caller-owned frame for one
+operation, converts the copied layout origin through checked coordinates, and
+delegates text bytes to the native frame. It does not own children, callbacks,
+or a retained scene.
+
 ### Eio and external data structures
 
 Eio is a good fit for the runtime boundary, not for the raw ABI or the native

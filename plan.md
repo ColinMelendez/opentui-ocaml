@@ -247,6 +247,14 @@ composed above `opentui-raw`; measure callbacks, packed styles, retained
 renderables, terminal policy, and reactive layers remain outside this
 increment.
 
+**Native text-renderable increment:** `opentui-native.Text_renderable` now
+owns one copied text value and holds one opaque owner-scoped layout-node
+reference, reads the copied layout origin, and draws through a caller-owned
+imperative frame. Layout remains responsible for node lifetime. Coordinate
+checks, layout close errors, frame lifetime, and text ownership remain explicit;
+child trees, measure callbacks, retained scene identity, terminal policy, and
+reactive layers remain outside this increment.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
