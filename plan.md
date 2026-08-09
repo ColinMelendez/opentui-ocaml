@@ -240,6 +240,13 @@ incomplete prefix. `fire_timeout` flushes only when that deadline is due and
 then drains typed events; Eio fibers, flow reads, output writes, mode commits,
 and dispatch remain outside the package.
 
+**Native layout increment:** `opentui-native.Layout` now owns a raw Yoga tree
+and wraps its nodes in an owner-scoped opaque domain. Validated dimensions,
+calculation direction, copied layout results, and close invalidation are
+composed above `opentui-raw`; measure callbacks, packed styles, retained
+renderables, terminal policy, and reactive layers remain outside this
+increment.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -300,8 +307,8 @@ above. The remaining implementation sequence is:
 1. decide whether profiling justifies a separately scoped native chunk view;
 2. add Eio flow integration around the now-complete framing, input composition,
    timer, semantic key/mouse, and mode layers; and
-3. extend `opentui-native` with the smallest Yoga/renderable composition before
-   adding terminal, core, Lwd, or widget layers.
+3. extend `opentui-native` with the smallest renderable composition over the
+   now-owned layout layer before adding terminal, core, Lwd, or widget layers.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their

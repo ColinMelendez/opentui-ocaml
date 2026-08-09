@@ -1,6 +1,7 @@
 open Windtrap
 
 module Renderer = Opentui_native.Renderer
+module Layout = Opentui_native.Layout
 
 let expect_ok result =
   match result with
@@ -76,4 +77,53 @@ let () =
           expect_error
             (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
             (Renderer.create ~width:0l ~height:1l));
+      test "an owner-scoped layout composes raw Yoga nodes" (fun () ->
+          let layout =
+            expect_ok (Layout.create ())
+          in
+          let root = expect_ok (Layout.root layout) in
+          let child = expect_ok (Layout.add_child ~parent:root) in
+          ignore
+            (expect_ok
+               (Layout.Node.set_dimensions child ~width:10.0 ~height:5.0));
+          ignore
+            (expect_ok
+               (Layout.calculate layout ~width:100.0 ~height:40.0
+                  ~direction:Layout.Ltr));
+          let root_layout = expect_ok (Layout.Node.layout root) in
+          equal (float 0.0001) 100.0 root_layout.Layout.width;
+          equal (float 0.0001) 40.0 root_layout.Layout.height;
+          let child_layout = expect_ok (Layout.Node.layout child) in
+          equal (float 0.0001) 10.0 child_layout.Layout.width;
+          equal (float 0.0001) 5.0 child_layout.Layout.height;
+          Layout.close layout;
+          expect_error Opentui_native.Error.Closed
+            (Layout.Node.layout child);
+          expect_error Opentui_native.Error.Closed (Layout.root layout));
+      test "layout rejects invalid dimensions before mutating Yoga" (fun () ->
+          let layout = expect_ok (Layout.create ()) in
+          let root = expect_ok (Layout.root layout) in
+          let child = expect_ok (Layout.add_child ~parent:root) in
+          ignore
+            (expect_ok
+               (Layout.Node.set_dimensions child ~width:3.0 ~height:4.0));
+          expect_error
+            (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
+            (Layout.Node.set_dimensions child ~width:10.0
+               ~height:Float.max_float);
+          expect_error
+            (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
+            (Layout.calculate layout ~width:(-1.0) ~height:1.0
+               ~direction:Layout.Inherit);
+          ignore
+            (expect_ok
+               (Layout.calculate layout ~width:100.0 ~height:40.0
+                  ~direction:Layout.Inherit));
+          let child_layout = expect_ok (Layout.Node.layout child) in
+          equal (float 0.0001) 3.0 child_layout.Layout.width;
+          equal (float 0.0001) 4.0 child_layout.Layout.height;
+          expect_error
+            (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
+            (Layout.Node.set_dimensions root ~width:Float.nan ~height:1.0);
+          Layout.close layout);
     ]

@@ -365,6 +365,13 @@ caller supplies monotonic milliseconds and invokes `fire_timeout` only when the
 deadline is due. It does not create Eio fibers, own a flow, commit terminal
 modes, or write output.
 
+`opentui-native.Layout` is the first higher-level Yoga composition. It owns one
+raw Yoga tree and wraps its nodes in an owner-scoped opaque domain. Dimension
+updates are validated before raw mutation, calculation maps the small native
+direction type, and layout readback is copied into a native-package record.
+Closing the layout invalidates every node; measure callbacks, packed styles,
+native renderable state, and retained scene identity remain later contracts.
+
 ### Eio and external data structures
 
 Eio is a good fit for the runtime boundary, not for the raw ABI or the native

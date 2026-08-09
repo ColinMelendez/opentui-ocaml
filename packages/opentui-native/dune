@@ -1,5 +1,5 @@
 (library
  (name opentui_native)
  (public_name opentui-native)
- (modules error renderer)
+ (modules error renderer layout)
  (libraries opentui-raw))
