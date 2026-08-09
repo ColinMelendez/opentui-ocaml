@@ -255,6 +255,13 @@ checks, layout close errors, frame lifetime, and text ownership remain explicit;
 child trees, measure callbacks, retained scene identity, terminal policy, and
 reactive layers remain outside this increment.
 
+**Eio flow increment:** `opentui-terminal-eio.Input_flow` now provides a
+separate optional Eio/Cstruct boundary. It owns reusable read/staging buffers,
+maps one `single_read` into the pure input coordinator, stamps deadlines from
+the caller's monotonic clock, exposes typed events and its deadline, and maps
+explicit EOF/I/O failure. It does not create parser, timer, dispatch, mode, or
+output fibers.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -313,10 +320,11 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. add Eio flow integration around the now-complete framing, input composition,
-   timer, semantic key/mouse, and mode layers; and
-3. extend `opentui-native` with the smallest renderable composition over the
-   now-owned layout layer before adding terminal, core, Lwd, or widget layers.
+2. add terminal output lifecycle and pseudo-terminal integration around the
+   now-complete mode, framing, input, timer, and Eio flow layers; and
+3. extend `opentui-native` only where a measured renderable or frame-loop
+   contract remains missing before adding terminal, core, Lwd, or widget
+   layers.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their

@@ -46,5 +46,6 @@ clock, calls `fire_timeout` when that deadline is due, and drains typed events;
 the package does not create timer fibers, own an Eio flow, or write terminal
 output.
 
-The package does not yet own event dispatch, output lifecycle, Eio integration,
-or native zero-copy views.
+The package does not yet own event dispatch, output lifecycle, or native
+zero-copy views. The optional `opentui-terminal-eio` package supplies the
+Cstruct/Eio flow boundary without adding that dependency here.

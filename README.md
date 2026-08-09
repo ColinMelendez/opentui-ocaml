@@ -12,7 +12,7 @@ For a fresh checkout, initialize the pinned upstream source with:
 git submodule update --init --recursive
 ```
 
-The repository is organized as a Dune monorepo. Local packages live under [`packages/`](packages/), while external OCaml dependencies are resolved by Dune's package-management mode. [`opentui-raw`](packages/opentui-raw/) establishes the narrow native boundary, and [`opentui-terminal`](packages/opentui-terminal/) provides the independent terminal-side input foundation before any retained-tree or reactive UI layer is added.
+The repository is organized as a Dune monorepo. Local packages live under [`packages/`](packages/), while external OCaml dependencies are resolved by Dune's package-management mode. [`opentui-raw`](packages/opentui-raw/) establishes the narrow native boundary, and [`opentui-terminal`](packages/opentui-terminal/) provides the independent terminal-side input foundation before any retained-tree or reactive UI layer is added. The optional [`opentui-terminal-eio`](packages/opentui-terminal-eio/) package adds the Eio/Cstruct flow boundary separately.
 
 ## Development
 

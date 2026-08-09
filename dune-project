@@ -26,6 +26,23 @@
   (windtrap :with-test)))
 
 (package
+ (name opentui-terminal-eio)
+ (synopsis "Eio flow adapter for the OpenTUI terminal foundation")
+ (description
+  "A separate Eio/Cstruct flow boundary over opentui-terminal. It supplies reusable input storage and caller-clocked timeout coordination without moving Eio into the parser package or owning terminal output policy.")
+ (license ISC)
+ (authors "Colin <cwrmcolin@gmail.com>")
+ (maintainers "Colin <cwrmcolin@gmail.com>")
+ (depends
+  (ocaml (>= 5.2))
+  opentui-terminal
+  eio
+  cstruct
+  mtime
+  (eio_main :with-test)
+  (windtrap :with-test)))
+
+(package
  (name opentui-native)
  (synopsis "Imperative native renderer foundation for OpenTUI")
  (description

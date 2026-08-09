@@ -81,6 +81,7 @@ layers, not one package per Zig file:
 | `opentui-raw` | ABI values, generation-checked handles, foreign calls, ownership | current |
 | `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | foundation increment |
 | `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, resize, output lifecycle | foundation |
+| `opentui-terminal-eio` | Eio/Cstruct flow reads over the pure terminal coordinator | Phase 3 runtime boundary |
 | `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
 | `opentui-widgets` | reusable controls and application-facing conveniences | later |
@@ -379,6 +380,14 @@ that node's lifetime. Each `draw` borrows the caller-owned frame for one
 operation, converts the copied layout origin through checked coordinates, and
 delegates text bytes to the native frame. It does not own children, callbacks,
 or a retained scene.
+
+`opentui-terminal-eio` is a separate optional runtime package. Its
+`Input_flow` owns one reusable Cstruct read buffer and one reusable byte
+staging buffer, reads one caller-requested flow chunk, and feeds the pure
+`Input_coordinator`. It stamps parser deadlines from the caller's Eio
+monotonic clock and maps explicit EOF and Eio I/O failure to structured
+results, while the caller still owns fibers, switches, timeout wakeups, mode
+commits, and output.
 
 ### Eio and external data structures
 

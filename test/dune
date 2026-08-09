@@ -19,6 +19,11 @@
  (libraries opentui-terminal windtrap))
 
 (test
+ (name test_terminal_eio)
+ (modules test_terminal_eio)
+ (libraries opentui-terminal-eio eio_main windtrap))
+
+(test
  (name test_terminal_coordinator)
  (modules test_terminal_coordinator)
  (libraries opentui-terminal windtrap))
