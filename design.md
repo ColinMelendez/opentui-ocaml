@@ -372,7 +372,12 @@ parser, one input decoder, and an output event queue; each successful push
 refreshes a single deadline when framing leaves an incomplete prefix. The
 caller supplies monotonic milliseconds and invokes `fire_timeout` only when the
 deadline is due. It does not create Eio fibers, own a flow, commit terminal
-modes, or write output.
+modes, or write output. `transfer_one` moves at most one already-owned event
+into the separate bounded `Event_queue`; if that queue reports `Full`, the
+source event remains pending for a later retry. A pending `Move`/`Drag` may be
+accepted and replace the pending slot even when the queue is at capacity; this
+transfer path carries input only, so a successful coalescing push consumes the
+source, while resize coalescing applies to direct `Event_queue` pushes.
 
 `opentui-native.Layout` is the first higher-level Yoga composition. It owns one
 raw Yoga tree and wraps its nodes in an owner-scoped opaque domain. Dimension
@@ -402,8 +407,10 @@ or a retained scene.
 staging buffer, reads one caller-requested flow chunk, and feeds the pure
 `Input_coordinator`. It stamps parser deadlines from the caller's Eio
 monotonic clock and maps explicit EOF and Eio I/O failure to structured
-results, while the caller still owns fibers, switches, timeout wakeups, mode
-commits, and output.
+results. Its one-event transfer helper preserves source ownership only across
+a bounded destination `Full`; a successful `Move`/`Drag` coalescing push
+consumes the source event. The caller still owns fibers, switches, timeout
+wakeups, mode commits, and output.
 
 Its `Output_flow` holds a caller-owned Eio sink reference and the last terminal
 mode state successfully written to that sink. Mode operations write the owned

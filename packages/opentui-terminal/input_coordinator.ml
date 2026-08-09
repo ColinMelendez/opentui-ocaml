@@ -72,6 +72,16 @@ let drain coordinator callback =
     callback (Queue.take coordinator.events)
   done
 
+let transfer_one coordinator ~queue =
+  if Queue.is_empty coordinator.events then Ok false
+  else
+    let event = Queue.peek coordinator.events in
+    match Event_queue.push queue (Event_queue.Input event) with
+    | Error error -> Error error
+    | Ok () ->
+        ignore (Queue.take coordinator.events);
+        Ok true
+
 let fire_timeout coordinator ~now_ms =
   match coordinator.deadline with
   | Some deadline when Int64.compare now_ms deadline >= 0 ->

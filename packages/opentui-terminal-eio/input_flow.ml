@@ -78,6 +78,9 @@ let read input = Opentui_terminal.Input_coordinator.read input.coordinator
 let drain input callback =
   Opentui_terminal.Input_coordinator.drain input.coordinator callback
 
+let transfer_one input ~queue =
+  Opentui_terminal.Input_coordinator.transfer_one input.coordinator ~queue
+
 let fire_timeout input ~clock =
   Opentui_terminal.Input_coordinator.fire_timeout input.coordinator
     ~now_ms:(now_ms clock)

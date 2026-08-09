@@ -36,5 +36,9 @@ val push_bytes :
 
 val read : t -> event option
 val drain : t -> (event -> unit) -> unit
+val transfer_one :
+  t ->
+  queue:Event_queue.t ->
+  (bool, Event_queue.error) result
 val fire_timeout : t -> now_ms:int64 -> unit
 val reset : t -> unit

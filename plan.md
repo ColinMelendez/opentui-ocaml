@@ -315,6 +315,14 @@ allocates its ring once and does not own Eio fibers, signal sources, wakeups,
 dispatch, or native resources. Those runtime policies remain the next Phase 3
 work.
 
+**Eio event-transfer increment:** `Input_coordinator.transfer_one` and
+`opentui-terminal-eio.Input_flow.transfer_one` now move at most one
+already-owned decoded input event into the bounded `Event_queue`. A destination
+that reports `Full` leaves the source event pending for retry. A successful
+`Move`/`Drag` coalescing push at capacity consumes the source; resize
+coalescing remains a direct `Event_queue` concern. The helper does not create
+fibers, wakeups, signal sources, dispatch, or output ownership.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;

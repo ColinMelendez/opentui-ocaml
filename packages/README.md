@@ -25,8 +25,9 @@ output lifecycle to the optional runtime package.
 
 `opentui-terminal-eio` is the optional runtime package for Eio/Cstruct flow
 reads and output. It reuses the pure coordinator's deadline and event queue,
-and binds writer-free mode transitions to a caller-owned Eio sink without
-adding Eio to the parser package.
+and can transfer one pending event at a time into the pure bounded handoff. It
+binds writer-free mode transitions to a caller-owned Eio sink without adding
+Eio to the parser package.
 
 The first `opentui-native` slice composes `opentui-raw` behind an imperative
 renderer/frame lifecycle and an owner-scoped `Layout` tree. Its opaque frame

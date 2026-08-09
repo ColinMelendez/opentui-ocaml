@@ -7,7 +7,11 @@ caller-clocked `Input_coordinator`.
 
 `Input_flow` allocates one reusable Cstruct read buffer and one reusable byte
 staging buffer. `read_once` reads one flow chunk, feeds it into the coordinator,
-and returns only the read result; callers drain typed events separately. The
+and returns only the read result; callers can drain typed events separately or
+transfer one pending event at a time into the pure bounded `Event_queue`.
+`transfer_one` leaves the source event pending only when that destination
+reports `Full`; a successful `Move`/`Drag` coalescing push at capacity consumes
+the source event. Resize values are pushed directly to `Event_queue`. The
 caller supplies an Eio monotonic clock, invokes `fire_timeout` when the exposed
 deadline is due, and owns the surrounding fibers, switch, terminal modes, and
 output flow.
