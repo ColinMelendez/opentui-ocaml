@@ -82,6 +82,7 @@ layers, not one package per Zig file:
 | `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | foundation increment |
 | `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, validated resize payloads, bounded event handoff | foundation |
 | `opentui-terminal-eio` | Eio/Cstruct flow input and mode/output lifecycle over the pure terminal foundation | Phase 3 runtime boundary |
+| `opentui-terminal-eio-unix` | caller-invoked Unix terminal-size probe over `Eio_unix` | Phase 3 Unix boundary |
 | `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
 | `opentui-widgets` | reusable controls and application-facing conveniences | later |

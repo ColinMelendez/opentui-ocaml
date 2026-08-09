@@ -9,7 +9,8 @@ opentui-raw
 │       └── opentui-lwd  fine-grained reactive bindings (later)
 │           └── opentui-widgets (later)
 └── opentui-terminal     terminal modes, input framing, and decoding
-    └── opentui-terminal-eio  optional Eio/Cstruct input/output boundary
+    ├── opentui-terminal-eio      optional Eio/Cstruct input/output boundary
+    └── opentui-terminal-eio-unix Unix terminal-size probe
 ```
 
 `opentui-terminal` is kept beside the native layer rather than below it because terminal input/output policy should remain usable without importing the renderer's object model. An application can compose the terminal, native, and core layers at its boundary.
@@ -28,6 +29,10 @@ reads and output. It reuses the pure coordinator's deadline and event queue,
 and can transfer one pending event at a time into the pure bounded handoff. It
 binds writer-free mode transitions to a caller-owned Eio sink without adding
 Eio to the parser package.
+
+`opentui-terminal-eio-unix` is a separate Unix-only size-source package. Its
+caller-invoked probe validates `Terminal_size` values and maps OS errors; it
+does not own signals, fibers, event dispatch, or terminal restoration.
 
 The host-gated `test_native_terminal_pty` smoke composes the optional Eio
 boundary with native frames through a Unix PTY. It is an acceptance test for

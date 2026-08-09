@@ -3,6 +3,7 @@ open Windtrap
 module Native = Opentui_native.Renderer
 module Output = Opentui_terminal_eio.Output_flow
 module Input_flow = Opentui_terminal_eio.Input_flow
+module Size_source = Opentui_terminal_eio_unix.Terminal_size_source
 module Input = Opentui_terminal.Input_decoder
 module Events = Opentui_terminal.Event_queue
 module Modes = Opentui_terminal.Terminal_modes
@@ -57,10 +58,10 @@ let expect_input_ok result =
   | Ok value -> value
   | Error error -> fail (Input_flow.message error)
 
-let expect_size result =
+let expect_size_source result =
   match result with
   | Ok value -> value
-  | Error error -> fail (Size.message error)
+  | Error error -> fail (Size_source.message error)
 
 let read_exact source length =
   let result = Bytes.create length in
@@ -76,8 +77,7 @@ let read_exact source length =
   Bytes.to_string result
 
 let terminal_size pty =
-  let window = Eio_unix.Pty.get_window_size (Eio_unix.Pty.tty pty) in
-  expect_size (Size.create ~columns:window.cols ~rows:window.rows)
+  expect_size_source (Size_source.get (Eio_unix.Pty.tty pty))
 
 let set_window_size pty ~columns ~rows =
   Eio_unix.Pty.set_window_size (Eio_unix.Pty.pty pty)

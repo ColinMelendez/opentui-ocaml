@@ -331,6 +331,13 @@ sizes, native resize, and two frame flushes. The test remains the acceptance
 boundary; it does not add a terminal session manager, resize signal source,
 wakeup policy, or dispatcher.
 
+**Unix terminal-size increment:** `opentui-terminal-eio-unix` now provides a
+caller-invoked `Eio_unix` window-size probe. It copies positive columns and
+rows into the pure `Terminal_size` value and maps OS query failures without
+installing `SIGWINCH`, creating wakeups, pushing events, or owning a file
+descriptor. The PTY smoke uses this probe before handing the size to
+`Event_queue`.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;

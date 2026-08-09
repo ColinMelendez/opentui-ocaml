@@ -14,6 +14,19 @@
   (windtrap :with-test)))
 
 (package
+ (name opentui-terminal-eio-unix)
+ (synopsis "Unix terminal-size source for the OpenTUI Eio boundary")
+ (description
+  "A small Unix-only terminal-size probe over Eio_unix. It validates the copied terminal-size payload without installing signal handlers or owning runtime policy.")
+ (license ISC)
+ (authors "Colin <cwrmcolin@gmail.com>")
+ (maintainers "Colin <cwrmcolin@gmail.com>")
+ (depends
+  (ocaml (>= 5.2))
+  opentui-terminal
+  eio))
+
+(package
  (name opentui-terminal)
  (synopsis "Reusable OCaml terminal input foundations for OpenTUI")
  (description

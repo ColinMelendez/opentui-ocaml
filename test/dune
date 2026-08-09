@@ -50,9 +50,15 @@
   opentui-native
   opentui-terminal
   opentui-terminal-eio
+  opentui-terminal-eio-unix
   eio_main
   eio.unix
   windtrap))
+
+(test
+ (name test_terminal_eio_unix)
+ (modules test_terminal_eio_unix)
+ (libraries opentui-terminal-eio-unix eio_main eio.unix windtrap))
 
 (library
  (name test_native_link_support)
