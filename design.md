@@ -419,9 +419,14 @@ complete sink write returns; arbitrary frame bytes use the same synchronous
 sink seam. An I/O, cancellation, or invalid-progress failure poisons the
 wrapper against retries because the sink may contain only a prefix. It does
 not close the sink, serialize concurrent callers, create fibers, or take
-ownership of terminal restoration.
-The PTY smoke is host-gated; this workspace has no `/dev/pts`, so its test is
-reported as skipped here while remaining runnable on a PTY-capable Unix host.
+ownership of terminal restoration. The host-gated PTY composition smoke now
+exercises those caller-owned seams together: it enters and restores terminal
+modes, feeds input through `Input_flow` into `Event_queue`, reads a validated
+window size, resizes the native renderer, and flushes two frames. This
+workspace has no `/dev/pts`, so the smoke is reported as skipped here while
+remaining runnable on a PTY-capable Unix host. It does not introduce a
+terminal session manager, resize signal source, wakeup policy, or event
+dispatcher.
 
 ### Eio and external data structures
 

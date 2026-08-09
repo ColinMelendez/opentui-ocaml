@@ -323,6 +323,14 @@ that reports `Full` leaves the source event pending for retry. A successful
 coalescing remains a direct `Event_queue` concern. The helper does not create
 fibers, wakeups, signal sources, dispatch, or output ownership.
 
+**PTY/native composition increment:** the host-gated
+`test_native_terminal_pty` smoke now composes the caller-owned mode, input,
+resize, native frame, and output seams through a Unix PTY. It verifies mode
+entry and restoration, input transfer into `Event_queue`, validated window
+sizes, native resize, and two frame flushes. The test remains the acceptance
+boundary; it does not add a terminal session manager, resize signal source,
+wakeup policy, or dispatcher.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -381,11 +389,11 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. complete pseudo-terminal integration around the now-complete mode, framing,
-   input, timer, and Eio flow layers; and
-3. extend `opentui-native` only where a measured renderable or frame-loop
-   contract remains missing before adding terminal, core, Lwd, or widget
-   layers; the next candidate is a small caller-owned frame-loop seam.
+2. add actual runtime policy around the proven PTY composition only when its
+   ownership is explicit: resize sourcing, wakeups, dispatch, and restoration;
+   and
+3. extend `opentui-native` only where a measured renderable contract remains
+   missing before adding terminal, core, Lwd, or widget layers.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their

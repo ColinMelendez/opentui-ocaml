@@ -29,6 +29,12 @@ and can transfer one pending event at a time into the pure bounded handoff. It
 binds writer-free mode transitions to a caller-owned Eio sink without adding
 Eio to the parser package.
 
+The host-gated `test_native_terminal_pty` smoke composes the optional Eio
+boundary with native frames through a Unix PTY. It is an acceptance test for
+caller-owned mode restoration, input/resize handoff, native resize, and output;
+it does not add a terminal session manager or move dispatch policy into this
+package.
+
 The first `opentui-native` slice composes `opentui-raw` behind an imperative
 renderer/frame lifecycle and an owner-scoped `Layout` tree. Its opaque frame
 token owns the next-buffer editing window and is consumed by `present`; its
