@@ -4,7 +4,7 @@ This package is the terminal-side foundation kept beside `opentui-native`. It
 does not depend on the renderer or `opentui-raw`.
 
 The first slice contains `Byte_queue`, `Stdin_parser`, `Key_decoder`,
-`Mouse_decoder`, `Terminal_modes`, and `Input_decoder`.
+`Mouse_decoder`, `Terminal_modes`, `Input_decoder`, and `Input_coordinator`.
 `Byte_queue` is a
 reusable `Bigarray.Array1`-backed queue for stdin bytes. It advances logical
 cursors without copying on every consume, compacts before growing, and rejects
@@ -39,6 +39,12 @@ pinned native terminal policy.
 semantics first, then common key semantics, and preserves opaque protocol and
 paste events. Its `reset` operation clears the mouse button state without
 coupling the package to mode or output ownership.
+
+`Input_coordinator` owns the parser/decoder composition and exposes a single
+monotonic-millisecond deadline for incomplete input. The caller supplies the
+clock, calls `fire_timeout` when that deadline is due, and drains typed events;
+the package does not create timer fibers, own an Eio flow, or write terminal
+output.
 
 The package does not yet own event dispatch, output lifecycle, Eio integration,
 or native zero-copy views.

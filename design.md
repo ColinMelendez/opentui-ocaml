@@ -358,6 +358,13 @@ before common key semantics, then returns copied opaque sequence or paste
 events. Resetting it clears only decoder-owned mouse state; mode, timer, flow,
 and dispatch ownership stay outside the package.
 
+`Input_coordinator` is the pure timer seam above that composition. It owns one
+parser, one input decoder, and an output event queue; each successful push
+refreshes a single deadline when framing leaves an incomplete prefix. The
+caller supplies monotonic milliseconds and invokes `fire_timeout` only when the
+deadline is due. It does not create Eio fibers, own a flow, commit terminal
+modes, or write output.
+
 ### Eio and external data structures
 
 Eio is a good fit for the runtime boundary, not for the raw ABI or the native

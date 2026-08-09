@@ -234,6 +234,12 @@ payloads. Its reset boundary clears only mouse decoder state; timers, flow
 reads, mode commits, output writes, and event dispatch remain outside this
 increment.
 
+**Terminal timer increment:** `opentui-terminal.Input_coordinator` now owns the
+parser/decoder composition and exposes one caller-clocked deadline for an
+incomplete prefix. `fire_timeout` flushes only when that deadline is due and
+then drains typed events; Eio fibers, flow reads, output writes, mode commits,
+and dispatch remain outside the package.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -292,8 +298,8 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. add terminal timer coordination around the now-complete framing, input
-   composition, semantic key/mouse, and mode layers; and
+2. add Eio flow integration around the now-complete framing, input composition,
+   timer, semantic key/mouse, and mode layers; and
 3. extend `opentui-native` with the smallest Yoga/renderable composition before
    adding terminal, core, Lwd, or widget layers.
 
