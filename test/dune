@@ -38,6 +38,11 @@
  (modules test_native)
  (libraries opentui-native windtrap))
 
+(test
+ (name test_native_terminal)
+ (modules test_native_terminal)
+ (libraries opentui-native opentui-terminal-eio eio_main windtrap))
+
 (library
  (name test_native_link_support)
  (modules test_native_link_support)
