@@ -41,6 +41,7 @@ let queue_contents queue =
 module Parser = Opentui_terminal.Stdin_parser
 module Decoder = Opentui_terminal.Key_decoder
 module Mouse = Opentui_terminal.Mouse_decoder
+module Size = Opentui_terminal.Terminal_size
 
 let parser_create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
   match Parser.create ?initial_capacity ?max_pending_bytes ?timeout_ms () with
@@ -206,6 +207,26 @@ let expect_scroll event direction delta =
 let () =
   run "opentui-terminal"
     [
+      test "terminal size validates positive columns and rows" (fun () ->
+          let size =
+            match Size.create ~columns:80 ~rows:24 with
+            | Ok value -> value
+            | Error error -> fail (Size.message error)
+          in
+          equal int 80 (Size.columns size);
+          equal int 24 (Size.rows size);
+          let same_size =
+            match Size.create ~columns:80 ~rows:24 with
+            | Ok value -> value
+            | Error error -> fail (Size.message error)
+          in
+          equal bool true (Size.equal size same_size);
+          (match Size.create ~columns:0 ~rows:24 with
+          | Error Size.Invalid_dimensions -> ()
+          | Ok _ -> fail "zero columns were accepted");
+          match Size.create ~columns:80 ~rows:(-1) with
+          | Error Size.Invalid_dimensions -> ()
+          | Ok _ -> fail "negative rows were accepted");
       test "bigarray input, consume, and compaction preserve byte order" (fun () ->
           let module Queue = Opentui_terminal.Byte_queue in
           let queue =

@@ -291,6 +291,12 @@ Eio pipe. A PTY smoke is host-gated and skips with an explicit reason because
 this workspace does not expose `/dev/pts`; it remains runnable on a
 PTY-capable Unix host.
 
+**Terminal size increment:** `opentui-terminal.Terminal_size` now validates
+positive externally supplied columns and rows and provides a copied immutable
+value with explicit equality. It is a payload boundary for future resize-event
+handoffs; it does not read terminal state, install signal handlers, dispatch
+events, or depend on `opentui-native`.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;

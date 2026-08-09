@@ -5,6 +5,9 @@ does not depend on the renderer or `opentui-raw`.
 
 The first slice contains `Byte_queue`, `Stdin_parser`, `Key_decoder`,
 `Mouse_decoder`, `Terminal_modes`, `Input_decoder`, and `Input_coordinator`.
+`Terminal_size` validates externally supplied positive column/row dimensions
+for a future resize-event handoff; it does not read the terminal, install a
+signal handler, or depend on the renderer.
 `Byte_queue` is a
 reusable `Bigarray.Array1`-backed queue for stdin bytes. It advances logical
 cursors without copying on every consume, compacts before growing, and rejects

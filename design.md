@@ -340,9 +340,12 @@ unknown protocol events. `Mouse_decoder` adds SGR/X10 semantic events and owns
 only the pressed-button state needed to classify SGR drag motion. Terminal
 modes are represented by writer-free `Terminal_modes` transitions: an owned
 ANSI byte sequence is paired with an immutable next state, so a caller can
-commit the state only after its output sink accepts the sequence. The optional
-`opentui-terminal-eio` package owns the Eio flow and output sink boundary;
-pseudo-terminal integration remains a separate follow-on.
+commit the state only after its output sink accepts the sequence. The
+`Terminal_size` module validates positive externally supplied column/row values;
+neither it nor the mode module reads terminal state or owns a resize signal
+source. The optional `opentui-terminal-eio` package owns the Eio flow and
+output sink boundary; pseudo-terminal integration and resize-event sourcing
+remain separate follow-ons.
 
 `opentui-terminal.Stdin_parser` is the framing layer above that queue. It does
 not decode semantic key names or mouse state. `Key` and `Sequence` payloads are
