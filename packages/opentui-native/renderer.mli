@@ -46,3 +46,9 @@ val resize : t -> width:int32 -> height:int32 -> (unit, Error.t) result
 val close : t -> unit
 val begin_frame : t -> (Frame.t, Error.t) result
 val present : Frame.t -> force:bool -> (render_status, Error.t) result
+
+val run_frame :
+  t ->
+  force:bool ->
+  draw:(Frame.t -> (unit, Error.t) result) ->
+  (render_status, Error.t) result

@@ -255,6 +255,15 @@ checks, layout close errors, frame lifetime, and text ownership remain explicit;
 child trees, measure callbacks, retained scene identity, terminal policy, and
 reactive layers remain outside this increment.
 
+**Native frame-loop increment:** `opentui-native.Renderer.run_frame` now
+composes one caller-owned imperative frame from `begin_frame`, a
+result-returning draw callback, and `present`. A structured draw error abandons
+the active token and clears the pinned transparent default into the native next
+buffer so the renderer remains reusable; callback exceptions receive the same
+cleanup before being re-raised. Successful callbacks return the typed native
+render status. The combinator does not own a loop, clock, terminal sink, event
+dispatch, retained scene, or reactive layer.
+
 **Native resize increment:** the audited `resizeRenderer` export now crosses
 the raw C/Zig boundary with its pinned `u32, u32, u32 -> void` signature.
 `opentui-raw.Renderer.resize` validates dimensions and preserves borrowed buffer

@@ -1,5 +1,6 @@
 type renderer = {
   raw : Opentui_raw.Renderer.t;
+  clear_background : Opentui_raw.Color.t;
   mutable closed : bool;
   mutable active_frame : bool;
 }
@@ -59,9 +60,15 @@ module Frame = struct
 end
 
 let create ~width ~height =
-  match Opentui_raw.Renderer.create ~width ~height with
-  | Ok raw -> Ok { raw; closed = false; active_frame = false }
+  match
+    Opentui_raw.Color.rgba ~red:0 ~green:0 ~blue:0 ~alpha:0
+  with
   | Error error -> Error (Error.Native error)
+  | Ok clear_background ->
+      (match Opentui_raw.Renderer.create ~width ~height with
+      | Ok raw ->
+          Ok { raw; clear_background; closed = false; active_frame = false }
+      | Error error -> Error (Error.Native error))
 
 let resize renderer ~width ~height =
   if renderer.closed then Error Error.Closed
@@ -99,3 +106,22 @@ let present frame ~force =
     | Ok Opentui_raw.Renderer.Rendered -> Ok Rendered
     | Ok Opentui_raw.Renderer.Skipped -> Ok Skipped
     | Ok Opentui_raw.Renderer.Failed -> Ok Failed
+
+let discard frame =
+  if frame.active then (
+    ignore
+      (Opentui_raw.Buffer.clear frame.buffer
+         ~background:frame.owner.clear_background);
+    frame.active <- false;
+    frame.owner.active_frame <- false)
+
+let run_frame renderer ~force ~draw =
+  match begin_frame renderer with
+  | Error error -> Error error
+  | Ok frame ->
+      Fun.protect
+        ~finally:(fun () -> discard frame)
+        (fun () ->
+          match draw frame with
+          | Error error -> Error error
+          | Ok () -> present frame ~force)

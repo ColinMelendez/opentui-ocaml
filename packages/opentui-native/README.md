@@ -6,6 +6,13 @@ opens the renderer's next native buffer, permits basic clear/cell/text updates,
 and is consumed by `Renderer.present`, which maps the native rendered/skipped/
 failed status to a typed OCaml result.
 
+`Renderer.run_frame` is the small caller-owned composition seam for one
+imperative frame. It opens a frame, passes it to a result-returning draw
+callback, presents after `Ok ()`, and abandons the frame after a structured
+draw error or callback exception so the renderer can be reused. Abandonment
+clears the pinned transparent default into the native next buffer; it does not
+own a loop, clock, terminal sink, event dispatch, or retained scene.
+
 The package also exposes `Layout`, an owner-scoped composition over the raw
 Yoga tree. Its opaque nodes support validated width/height updates and copied
 six-field layout results; closing the layout invalidates its nodes.

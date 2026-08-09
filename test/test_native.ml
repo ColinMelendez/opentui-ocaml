@@ -83,6 +83,53 @@ let () =
           let next_frame = expect_ok (Renderer.begin_frame renderer) in
           ignore (expect_ok (Renderer.present next_frame ~force:true));
           Renderer.close renderer);
+      test "run_frame composes drawing and present" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          (match
+             Renderer.run_frame renderer ~force:true ~draw:(fun frame ->
+                 Renderer.Frame.clear frame
+                   ~background:Opentui_raw.Color.black)
+           with
+          | Ok Renderer.Rendered -> ()
+          | Ok Renderer.Skipped -> fail "expected the memory frame to render"
+          | Ok Renderer.Failed -> fail "the native frame failed"
+          | Error error -> fail (Opentui_native.Error.message error));
+          Renderer.close renderer);
+      test "run_frame abandons a failed draw for reuse" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          expect_error Opentui_native.Error.Frame_not_open
+            (Renderer.run_frame renderer ~force:true ~draw:(fun frame ->
+                 ignore
+                   (expect_ok
+                      (Renderer.Frame.set_cell frame ~x:0l ~y:0l
+                         ~character:88l ~foreground:Opentui_raw.Color.white
+                         ~background:Opentui_raw.Color.black ~attributes:0l));
+                 Error Opentui_native.Error.Frame_not_open));
+          let frame = expect_ok (Renderer.begin_frame renderer) in
+          let output = Bytes.create 1 in
+          equal int32 1l
+            (expect_ok
+               (Renderer.Frame.write_resolved_chars frame ~output
+                  ~add_line_breaks:false));
+          equal string " " (Bytes.to_string output);
+          ignore (expect_ok (Renderer.present frame ~force:true));
+          Renderer.close renderer);
+      test "run_frame releases a frame when drawing raises" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let raised =
+            try
+              ignore
+                (Renderer.run_frame renderer ~force:true ~draw:(fun frame ->
+                     ignore frame;
+                     raise Exit));
+              false
+            with
+            | Exit -> true
+          in
+          equal bool true raised;
+          let frame = expect_ok (Renderer.begin_frame renderer) in
+          ignore (expect_ok (Renderer.present frame ~force:true));
+          Renderer.close renderer);
       test "resize is serialized with the imperative frame" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
           let frame = expect_ok (Renderer.begin_frame renderer) in

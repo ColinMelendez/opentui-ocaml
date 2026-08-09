@@ -381,6 +381,14 @@ direction type, and layout readback is copied into a native-package record.
 Closing the layout invalidates every node; measure callbacks, packed styles,
 native renderable state, and retained scene identity remain later contracts.
 
+`Renderer.run_frame` is the small caller-owned composition seam for one
+imperative frame: it presents only after a result-returning draw callback
+returns `Ok ()`, and abandons the active token after a structured draw error
+or callback exception so the renderer can be reused. Abandonment clears the
+pinned transparent default into the native next buffer. It does not own
+terminal input/output, clocks, event dispatch, retained scene identity, or
+reactive scheduling.
+
 `opentui-native.Text_renderable` is the smallest imperative leaf above that
 layout and renderer composition. It owns a copied text value and holds an
 opaque owner-scoped layout-node reference; `Layout` remains responsible for
