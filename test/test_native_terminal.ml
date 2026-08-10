@@ -28,18 +28,18 @@ let () =
           ignore
             (expect_renderer_ok
                (Native_renderer.Frame.clear frame
-                  ~background:Opentui_raw.Color.black));
+                  ~background:Opentui_native.Color.black));
           ignore
             (expect_renderer_ok
                (Native_renderer.Frame.set_cell frame ~x:0l ~y:0l ~character:65l
-                  ~foreground:Opentui_raw.Color.white
-                  ~background:Opentui_raw.Color.black ~attributes:0l));
+                  ~foreground:Opentui_native.Color.white
+                  ~background:Opentui_native.Color.black ~attributes:0l));
           ignore
             (expect_renderer_ok
                (Native_renderer.Frame.set_cell frame ~x:1l ~y:0l ~character:66l
-                  ~foreground:Opentui_raw.Color.white
-                  ~background:Opentui_raw.Color.black ~attributes:0l));
-          let resolved = Bytes.create 2 in
+                  ~foreground:Opentui_native.Color.white
+                  ~background:Opentui_native.Color.black ~attributes:0l));
+          let resolved = Bytes.create 4 in
           let written =
             expect_renderer_ok
               (Native_renderer.Frame.write_resolved_chars frame ~output:resolved
@@ -47,7 +47,9 @@ let () =
           in
           equal int32 2l written;
           expect_output_ok (Output.set_cursor_visible output false);
-          expect_output_ok (Output.write output resolved);
+          expect_output_ok
+            (Output.write_subbytes output ~bytes:resolved ~off:0
+               ~len:(Int32.to_int written));
           (match
              expect_renderer_ok (Native_renderer.present frame ~force:true)
            with

@@ -1,0 +1,4 @@
+(executable
+ (name profile)
+ (modules profile)
+ (libraries opentui-native opentui-terminal-eio eio_main mtime.clock))

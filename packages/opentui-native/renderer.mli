@@ -7,7 +7,7 @@ module Frame : sig
 
   val clear :
     t ->
-    background:Opentui_raw.Color.t ->
+    background:Color.t ->
     (unit, Error.t) result
 
   val set_cell :
@@ -15,8 +15,8 @@ module Frame : sig
     x:int32 ->
     y:int32 ->
     character:int32 ->
-    foreground:Opentui_raw.Color.t ->
-    background:Opentui_raw.Color.t ->
+    foreground:Color.t ->
+    background:Color.t ->
     attributes:int32 ->
     (unit, Error.t) result
 
@@ -25,8 +25,8 @@ module Frame : sig
     text:string ->
     x:int32 ->
     y:int32 ->
-    foreground:Opentui_raw.Color.t ->
-    background:Opentui_raw.Color.t ->
+    foreground:Color.t ->
+    background:Color.t ->
     attributes:int32 ->
     (unit, Error.t) result
 

@@ -5,10 +5,12 @@ This package is the optional Eio/Cstruct runtime boundary over
 continues to own framing, semantic decoding, mode transitions, and the pure
 caller-clocked `Input_coordinator`.
 
-`Input_flow` allocates one reusable Cstruct read buffer and one reusable byte
-staging buffer. `read_once` reads one flow chunk, feeds it into the coordinator,
-and returns only the read result; callers can drain typed events separately or
-transfer one pending event at a time into the pure bounded `Event_queue`.
+`Input_flow` allocates one reusable Cstruct read buffer and keeps one
+character-typed Bigarray view over that same storage. `read_once` reads one
+flow chunk and feeds it into the coordinator without an intermediate `bytes`
+staging copy, then returns only the read result; callers can drain typed events
+separately or transfer one pending event at a time into the pure bounded
+`Event_queue`.
 `transfer_one` leaves the source event pending only when that destination
 reports `Full`; a successful `Move`/`Drag` coalescing push at capacity consumes
 the source event. `transfer_one_and_notify` additionally advances a caller-owned
@@ -33,9 +35,11 @@ part of this package.
 `Output_flow` binds the writer-free `Terminal_modes` transitions to a
 caller-owned Eio sink. It writes a transition's bytes before committing the
 remembered mode state, exposes synchronous writes for arbitrary frame bytes,
-and maps Eio I/O failures to a structured result. Any I/O, cancellation, or
-invalid-progress failure poisons the wrapper against retries because the sink
-may contain only a prefix. It does not close or serialize the sink, create
-fibers, or own terminal restoration. `Terminal_session` in the Unix package
-composes that writer with a saved termios record when a real terminal scope is
-needed.
+and maps Eio I/O failures to a structured result. `write_subbytes` validates
+and writes a caller-selected byte range, so a native resolved-output count can
+be handed to the sink without flushing undefined trailing scratch bytes. Any
+I/O, cancellation, or invalid-progress failure poisons the wrapper against
+retries because the sink may contain only a prefix. It does not close or
+serialize the sink, create fibers, or own terminal restoration.
+`Terminal_session` in the Unix package composes that writer with a saved
+termios record when a real terminal scope is needed.

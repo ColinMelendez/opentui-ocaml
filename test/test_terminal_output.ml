@@ -56,6 +56,8 @@ let () =
           | Error Output.Flow_error -> ()
           | Error Output.Desynchronized ->
               fail "initial flow error was not reported"
+          | Error Output.Invalid_range ->
+              fail "mode transition produced an invalid range"
           | Ok () -> fail "a partial sink was reported as successful");
           (match Output.screen output with
           | Modes.Main -> ()
@@ -64,6 +66,8 @@ let () =
           | Error Output.Desynchronized -> ()
           | Error Output.Flow_error ->
               fail "desynchronized output remained retryable"
+          | Error Output.Invalid_range ->
+              fail "poisoned output reported an invalid range"
           | Ok () -> fail "desynchronized output accepted a retry"));
       test "writes mode transitions and commits after the sink accepts them"
         (fun () ->
@@ -80,6 +84,21 @@ let () =
           equal string "\x1b[?1049h" (Buffer.contents buffer);
           expect_ok (Output.write output (Bytes.of_string "frame"));
           equal string "\x1b[?1049hframe" (Buffer.contents buffer));
+      test "writes only the requested byte subrange" (fun () ->
+          Eio_main.run @@ fun _env ->
+          let buffer = Buffer.create 16 in
+          let sink = Eio.Flow.buffer_sink buffer in
+          let output = Output.create ~sink in
+          let bytes = Bytes.of_string "discardpayloadtail" in
+          expect_ok
+            (Output.write_subbytes output ~bytes ~off:7 ~len:7);
+          equal string "payload" (Buffer.contents buffer);
+          match Output.write_subbytes output ~bytes ~off:18 ~len:1 with
+          | Error Output.Invalid_range -> ()
+          | Error Output.Flow_error -> fail "invalid range became a flow error"
+          | Error Output.Desynchronized ->
+              fail "invalid range poisoned healthy output"
+          | Ok () -> fail "invalid range was accepted");
       test "writes a mode transition through an Eio OS pipe" (fun () ->
           Eio_main.run @@ fun _env ->
           Eio.Switch.run @@ fun sw ->

@@ -404,22 +404,24 @@ delegates text bytes to the native frame. It does not own children, callbacks,
 or a retained scene.
 
 `opentui-terminal-eio` is a separate optional runtime package. Its
-`Input_flow` owns one reusable Cstruct read buffer and one reusable byte
-staging buffer, reads one caller-requested flow chunk, and feeds the pure
-`Input_coordinator`. It stamps parser deadlines from the caller's Eio
-monotonic clock and maps explicit EOF and Eio I/O failure to structured
-results. Its one-event transfer helper preserves source ownership only across
-a bounded destination `Full`; a successful `Move`/`Drag` coalescing push
-consumes the source event. The `transfer_one_and_notify` helper adds a
-caller-owned revision wakeup only after a successful transfer. The caller
-still owns fibers, switches, timeout policy, mode commits, and output.
+`Input_flow` owns one reusable Cstruct read buffer and one character-typed
+Bigarray view over that same storage. It reads one caller-requested flow chunk
+and feeds the pure `Input_coordinator` without a second Eio staging buffer.
+It stamps parser deadlines from the caller's Eio monotonic clock and maps
+explicit EOF and Eio I/O failure to structured results. Its one-event transfer
+helper preserves source ownership only across a bounded destination `Full`; a
+successful `Move`/`Drag` coalescing push consumes the source event. The
+`transfer_one_and_notify` helper adds a caller-owned revision wakeup only
+after a successful transfer. The caller still owns fibers, switches, timeout
+policy, mode commits, and output.
 
 Its `Output_flow` holds a caller-owned Eio sink reference and the last terminal
 mode state successfully written to that sink. Mode operations write the owned
 `Terminal_modes` bytes first and update the remembered state only after the
 complete sink write returns; arbitrary frame bytes use the same synchronous
-sink seam. An I/O, cancellation, or invalid-progress failure poisons the
-wrapper against retries because the sink may contain only a prefix. It does
+sink seam. `write_subbytes` validates the native resolved-output prefix
+before writing it. An I/O, cancellation, or invalid-progress failure poisons
+the wrapper against retries because the sink may contain only a prefix. It does
 not close the sink, serialize concurrent callers, create fibers, or take
 ownership of terminal restoration. `Wakeup` is a single-domain revision
 condition, and its `push` helper couples a successful bounded queue insertion

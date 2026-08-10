@@ -26,6 +26,14 @@ val push :
   len:int ->
   (unit, error) result
 
+val push_chars :
+  t ->
+  now_ms:int64 ->
+  source:Byte_queue.char_buffer ->
+  off:int ->
+  len:int ->
+  (unit, error) result
+
 val push_bytes :
   t ->
   now_ms:int64 ->

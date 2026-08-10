@@ -10,7 +10,7 @@ type error =
 type t = {
   coordinator : Opentui_terminal.Input_coordinator.t;
   flow_buffer : Cstruct.t;
-  staging : bytes;
+  flow_storage : Opentui_terminal.Byte_queue.char_buffer;
 }
 
 let message = function
@@ -34,11 +34,12 @@ let create ?(buffer_size = default_buffer_size) ?initial_capacity
     with
     | Error error -> Error (Parser_error error)
     | Ok coordinator ->
+        let flow_buffer = Cstruct.create buffer_size in
         Ok
           {
             coordinator;
-            flow_buffer = Cstruct.create buffer_size;
-            staging = Bytes.create buffer_size;
+            flow_buffer;
+            flow_storage = Cstruct.to_bigarray flow_buffer;
           }
 
 let timeout_ms input =
@@ -51,24 +52,17 @@ let now_ms clock =
   let nanoseconds = Mtime.to_uint64_ns (Eio.Time.Mono.now clock) in
   Int64.div nanoseconds 1_000_000L
 
-let copy_flow_bytes input count =
-  for index = 0 to count - 1 do
-    Bytes.set_uint8 input.staging index
-      (Cstruct.get_uint8 input.flow_buffer index)
-  done
-
 let read_once input ~clock ~source =
   try
     let count = Eio.Flow.single_read source input.flow_buffer in
     if Int.equal count 0 then Ok End_of_input
-    else (
-      copy_flow_bytes input count;
+    else
       match
-        Opentui_terminal.Input_coordinator.push_bytes input.coordinator
-          ~now_ms:(now_ms clock) ~source:input.staging ~off:0 ~len:count
+        Opentui_terminal.Input_coordinator.push_chars input.coordinator
+          ~now_ms:(now_ms clock) ~source:input.flow_storage ~off:0 ~len:count
       with
       | Ok () -> Ok (Bytes_read count)
-      | Error error -> Error (Parser_error error))
+      | Error error -> Error (Parser_error error)
   with
   | End_of_file -> Ok End_of_input
   | Eio.Io _ -> Error Flow_error

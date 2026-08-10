@@ -99,12 +99,12 @@ let render_text renderer output ~text ~width =
     Native.run_frame renderer ~force:true ~draw:(fun frame ->
         ignore
           (expect_native_ok
-             (Native.Frame.clear frame ~background:Opentui_raw.Color.black));
+             (Native.Frame.clear frame ~background:Opentui_native.Color.black));
         ignore
           (expect_native_ok
              (Native.Frame.draw_text frame ~text ~x:0l ~y:0l
-                ~foreground:Opentui_raw.Color.white
-                ~background:Opentui_raw.Color.black ~attributes:0l));
+                ~foreground:Opentui_native.Color.white
+                ~background:Opentui_native.Color.black ~attributes:0l));
         let bytes = Bytes.create width in
         let written =
           expect_native_ok
@@ -112,7 +112,9 @@ let render_text renderer output ~text ~width =
                ~add_line_breaks:false)
         in
         equal int32 (Int32.of_int width) written;
-        expect_output_ok (Output.write output bytes);
+        expect_output_ok
+          (Output.write_subbytes output ~bytes ~off:0
+             ~len:(Int32.to_int written));
         Ok ())
   with
   | Ok Native.Rendered -> ()

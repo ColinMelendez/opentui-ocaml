@@ -26,6 +26,13 @@ val buffer_capacity : t -> int
 val push :
   t -> source:Byte_queue.buffer -> off:int -> len:int -> (unit, error) result
 
+val push_chars :
+  t ->
+  source:Byte_queue.char_buffer ->
+  off:int ->
+  len:int ->
+  (unit, error) result
+
 val push_bytes : t -> source:bytes -> off:int -> len:int -> (unit, error) result
 
 val read : t -> event option

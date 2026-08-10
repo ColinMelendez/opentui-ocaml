@@ -59,6 +59,10 @@ let push coordinator ~now_ms ~source ~off ~len =
   accept_push coordinator ~now_ms (fun () ->
       Stdin_parser.push coordinator.parser ~source ~off ~len)
 
+let push_chars coordinator ~now_ms ~source ~off ~len =
+  accept_push coordinator ~now_ms (fun () ->
+      Stdin_parser.push_chars coordinator.parser ~source ~off ~len)
+
 let push_bytes coordinator ~now_ms ~source ~off ~len =
   accept_push coordinator ~now_ms (fun () ->
       Stdin_parser.push_bytes coordinator.parser ~source ~off ~len)

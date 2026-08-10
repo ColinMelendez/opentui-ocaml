@@ -1,6 +1,9 @@
 type buffer =
   (int, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
 
+type char_buffer =
+  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
 type t = {
   mutable storage : buffer;
   mutable start : int;
@@ -112,6 +115,10 @@ let append_with queue ~source_size ~get ~off ~len =
 let append queue ~source ~off ~len =
   append_with queue ~source_size:(Bigarray.Array1.dim source)
     ~get:(Bigarray.Array1.get source) ~off ~len
+
+let append_chars queue ~source ~off ~len =
+  append_with queue ~source_size:(Bigarray.Array1.dim source)
+    ~get:(fun index -> Char.code (Bigarray.Array1.get source index)) ~off ~len
 
 let append_bytes queue ~source ~off ~len =
   append_with queue ~source_size:(Bytes.length source)

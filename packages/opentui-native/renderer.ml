@@ -1,6 +1,6 @@
 type renderer = {
   raw : Opentui_raw.Renderer.t;
-  clear_background : Opentui_raw.Color.t;
+  clear_background : Color.t;
   mutable closed : bool;
   mutable active_frame : bool;
 }
@@ -32,7 +32,9 @@ module Frame = struct
     match ensure_open frame with
     | Error error -> Error error
     | Ok () ->
-        map_native (Opentui_raw.Buffer.clear frame.buffer ~background)
+        map_native
+          (Opentui_raw.Buffer.clear frame.buffer
+             ~background:(Color.Private.to_raw background))
 
   let set_cell frame ~x ~y ~character ~foreground ~background ~attributes =
     match ensure_open frame with
@@ -40,15 +42,17 @@ module Frame = struct
     | Ok () ->
         map_native
           (Opentui_raw.Buffer.set_cell frame.buffer ~x ~y ~character
-             ~foreground ~background ~attributes)
+             ~foreground:(Color.Private.to_raw foreground)
+             ~background:(Color.Private.to_raw background) ~attributes)
 
   let draw_text frame ~text ~x ~y ~foreground ~background ~attributes =
     match ensure_open frame with
     | Error error -> Error error
     | Ok () ->
         map_native
-          (Opentui_raw.Buffer.draw_text frame.buffer ~text ~x ~y ~foreground
-             ~background ~attributes)
+          (Opentui_raw.Buffer.draw_text frame.buffer ~text ~x ~y
+             ~foreground:(Color.Private.to_raw foreground)
+             ~background:(Color.Private.to_raw background) ~attributes)
 
   let write_resolved_chars frame ~output ~add_line_breaks =
     match ensure_open frame with
@@ -61,9 +65,9 @@ end
 
 let create ~width ~height =
   match
-    Opentui_raw.Color.rgba ~red:0 ~green:0 ~blue:0 ~alpha:0
+    Color.rgba ~red:0 ~green:0 ~blue:0 ~alpha:0
   with
-  | Error error -> Error (Error.Native error)
+  | Error error -> Error error
   | Ok clear_background ->
       (match Opentui_raw.Renderer.create ~width ~height with
       | Ok raw ->
@@ -111,7 +115,8 @@ let discard frame =
   if frame.active then (
     ignore
       (Opentui_raw.Buffer.clear frame.buffer
-         ~background:frame.owner.clear_background);
+         ~background:
+           (Color.Private.to_raw frame.owner.clear_background));
     frame.active <- false;
     frame.owner.active_frame <- false)
 

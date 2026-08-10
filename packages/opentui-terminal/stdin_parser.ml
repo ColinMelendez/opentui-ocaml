@@ -626,6 +626,13 @@ let push parser ~source ~off ~len =
     ~append:(fun ~off ~len -> Byte_queue.append parser.pending ~source ~off ~len)
     ~off ~len
 
+let push_chars parser ~source ~off ~len =
+  push_with parser ~source_size:(Bigarray.Array1.dim source)
+    ~get:(fun index -> Char.code (Bigarray.Array1.get source index))
+    ~append:(fun ~off ~len ->
+      Byte_queue.append_chars parser.pending ~source ~off ~len)
+    ~off ~len
+
 let push_bytes parser ~source ~off ~len =
   push_with parser ~source_size:(Bytes.length source) ~get:(Bytes.get_uint8 source)
     ~append:(fun ~off ~len ->

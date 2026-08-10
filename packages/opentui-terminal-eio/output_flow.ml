@@ -1,6 +1,6 @@
 module Modes = Opentui_terminal.Terminal_modes
 
-type error = Flow_error | Desynchronized
+type error = Invalid_range | Flow_error | Desynchronized
 
 type t = {
   sink : Eio.Flow.sink_ty Eio.Resource.t;
@@ -11,6 +11,7 @@ type t = {
 and status = Healthy | Poisoned
 
 let message = function
+  | Invalid_range -> "terminal Eio output byte range is invalid"
   | Flow_error -> "terminal Eio output flow failed"
   | Desynchronized -> "terminal Eio output flow state is desynchronized"
 
@@ -28,32 +29,52 @@ let cursor_visible output = Modes.cursor_visible output.state
 let mouse_mode output = Modes.mouse_mode output.state
 let bracketed_paste output = Modes.bracketed_paste output.state
 
-let desynchronize output error =
-  output.status <- Poisoned;
-  Error error
+let valid_range bytes ~off ~len =
+  Int.compare off 0 >= 0
+  && Int.compare len 0 >= 0
+  && Int.compare off (Bytes.length bytes) <= 0
+  && Int.compare len (Bytes.length bytes - off) <= 0
 
-let write output bytes =
-  match output.status with
-  | Poisoned -> Error Desynchronized
-  | Healthy ->
-      if Int.equal (Bytes.length bytes) 0 then Ok ()
-      else
-        let rec write_remaining buffer =
-          if Int.equal (Cstruct.length buffer) 0 then Ok ()
-          else
-            try
-              let available = Cstruct.length buffer in
-              let written = Eio.Flow.single_write output.sink [ buffer ] in
-              if Int.compare written 0 <= 0 || Int.compare written available > 0
-              then desynchronize output Flow_error
-              else write_remaining (Cstruct.shift buffer written)
-            with
-            | Eio.Io _ -> desynchronize output Flow_error
-            | Eio.Cancel.Cancelled _ as exception_value ->
-                output.status <- Poisoned;
-                raise exception_value
-        in
-        write_remaining (Cstruct.of_bytes bytes)
+let write_subbytes output ~bytes ~off ~len =
+  if not (valid_range bytes ~off ~len) then Error Invalid_range
+  else
+    match output.status with
+    | Poisoned -> Error Desynchronized
+    | Healthy ->
+        if Int.equal len 0 then Ok ()
+        else
+          let remaining = ref (Cstruct.of_bytes ~off ~len bytes) in
+          let failure = ref None in
+          let finished = ref false in
+          while not !finished do
+            if Int.equal (Cstruct.length !remaining) 0 then finished := true
+            else
+              match !failure with
+              | Some _ -> finished := true
+              | None ->
+                  (try
+                     let available = Cstruct.length !remaining in
+                     let written =
+                       Eio.Flow.single_write output.sink [ !remaining ]
+                     in
+                     if
+                       Int.compare written 0 <= 0
+                       || Int.compare written available > 0
+                     then (
+                       output.status <- Poisoned;
+                       failure := Some Flow_error)
+                     else remaining := Cstruct.shift !remaining written
+                   with
+                   | Eio.Io _ ->
+                       output.status <- Poisoned;
+                       failure := Some Flow_error
+                   | Eio.Cancel.Cancelled _ as exception_value ->
+                       output.status <- Poisoned;
+                       raise exception_value)
+          done;
+          (match !failure with None -> Ok () | Some error -> Error error)
+
+let write output bytes = write_subbytes output ~bytes ~off:0 ~len:(Bytes.length bytes)
 
 let apply output make_transition =
   let transition = make_transition output.state in

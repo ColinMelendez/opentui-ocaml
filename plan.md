@@ -277,17 +277,18 @@ visibility.
 **Native frame-output increment:** `opentui-native.Renderer.Frame` now exposes
 bounded resolved-character output into caller-owned `bytes`. Its all-or-nothing
 byte count and insufficient-capacity error remain explicit; callers must hand
-an exact-sized value or the returned prefix to `Output_flow`, whose whole-byte
-write contract remains unchanged. The frame token checks its lifetime before
-writing, while output flushing remains composed by the caller; no sink, fiber,
-or frame manager is introduced at this layer.
+an exact-sized value or the returned prefix to `Output_flow`. The runtime
+package now exposes a checked subrange write for that prefix. The frame token
+checks its lifetime before writing, while output flushing remains composed by
+the caller; no sink, fiber, or frame manager is introduced at this layer.
 
 **Eio flow increment:** `opentui-terminal-eio.Input_flow` now provides a
-separate optional Eio/Cstruct boundary. It owns reusable read/staging buffers,
-maps one `single_read` into the pure input coordinator, stamps deadlines from
-the caller's monotonic clock, exposes typed events and its deadline, and maps
-explicit EOF/I/O failure. It does not create parser, timer, dispatch, mode, or
-output fibers.
+separate optional Eio/Cstruct boundary. It owns one reusable read buffer and a
+character-typed Bigarray view over that same storage, maps one `single_read`
+into the pure input coordinator without a second staging copy, stamps
+deadlines from the caller's monotonic clock, exposes typed events and its
+deadline, and maps explicit EOF/I/O failure. It does not create parser, timer,
+dispatch, mode, or output fibers.
 
 **Eio output increment:** `opentui-terminal-eio.Output_flow` now binds the
 writer-free terminal mode transitions to a caller-owned Eio sink. It writes
@@ -371,6 +372,30 @@ The PTY acceptance remains host-gated because this workspace has no
 `/dev/pts`; the signal, wakeup, dispatcher, and structured non-terminal
 boundaries run on the current host.
 
+## Pre-Phase-4 performance and design review
+
+The repository now has `bench/profile.exe`, a deliberately small
+repeatable profile for 80x24 native frame updates, Eio input reads, and Eio
+output writes. It reports monotonic elapsed nanoseconds and OCaml GC words;
+the values are diagnostic baselines, not absolute host-independent gates.
+The benchmark is kept below the retained core so it can measure the
+imperative seams before identity and reactive scheduling are introduced.
+
+The review removed the Eio input staging copy: one reusable Cstruct buffer and
+one character-typed Bigarray view now feed the pure parser, which performs its
+single ownership copy into the parser queue. The output boundary now has
+`Output_flow.write_subbytes` with checked ranges, so native resolved-output
+counts cannot accidentally flush undefined trailing scratch bytes.
+`opentui-native.Color` is the caller-facing color module; raw color
+representation remains behind the native package's private conversion.
+
+Native span-feed views, per-cell OCaml views, retained node identity, Lwd
+bindings, and widgets remain intentionally deferred. They require separate
+ownership contracts or measurements rather than being inferred from this
+baseline. A failed-frame cleanup error path and parser invariant traps remain
+review items for the retained-frame contract; they are not silently widened
+into this performance pass.
+
 ## Phase 4 — Retained `opentui-core`
 
 - define the retained scene/renderable model and ownership tree;
@@ -424,14 +449,15 @@ suite, and consume the stable packages without the JavaScript runtime.
 
 ## Immediate next tasks
 
-Phase 1 is complete. The first typed Phase 2 increment now includes the owned
-Yoga/layout, copied-capability, and copy-first output-feed boundaries described
-above. The remaining implementation sequence is:
+Phase 3 is complete. The pre-Phase-4 review now has a repeatable imperative
+profile and has tidied the measured input/output seams without starting the
+retained core. The remaining implementation sequence is:
 
-1. decide whether profiling justifies a separately scoped native chunk view;
-2. extend `opentui-native` only where a measured renderable contract remains
+1. compare the checked-in profile across the supported compiler/native hosts;
+2. decide whether profiling justifies a separately scoped native chunk view;
+3. extend `opentui-native` only where a measured renderable contract remains
    missing; and
-3. design `opentui-core`, then its Lwd and widget layers, only after the
+4. design `opentui-core`, then its Lwd and widget layers, only after the
    imperative runtime contracts have been reviewed.
 
 The reusable stdin queue and framing parser are now implemented as

@@ -1,4 +1,4 @@
-type error = Flow_error | Desynchronized
+type error = Invalid_range | Flow_error | Desynchronized
 
 type t
 
@@ -13,6 +13,9 @@ val mouse_mode : t -> Opentui_terminal.Terminal_modes.mouse_mode
 val bracketed_paste : t -> bool
 
 val write : t -> bytes -> (unit, error) result
+
+val write_subbytes :
+  t -> bytes:bytes -> off:int -> len:int -> (unit, error) result
 
 val set_screen :
   t -> Opentui_terminal.Terminal_modes.screen -> (unit, error) result

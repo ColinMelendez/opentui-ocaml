@@ -17,14 +17,18 @@ The package also exposes `Layout`, an owner-scoped composition over the raw
 Yoga tree. Its opaque nodes support validated width/height updates and copied
 six-field layout results; closing the layout invalidates its nodes.
 
+`Opentui_native.Color` is the caller-facing color module for frame and text
+operations. It hides the raw color representation and maps invalid
+construction into the native package's structured error type.
+
 `Renderer.Frame.write_resolved_chars` writes the frame's resolved characters
 into caller-owned `bytes`, preserving the raw boundary's bounded output
 contract. `Ok count` is an all-or-nothing byte count; only the prefix
 `output[0, count)` is defined, and insufficient capacity returns
 `Error (Error.Native Output_too_small)`. It does not flush or own an output
-sink. Because `Output_flow.write` sends the whole `bytes` value, callers must
-provide an exact-sized buffer or slice `output` to that prefix before handing
-it to `opentui-terminal-eio.Output_flow` and deciding when to present.
+sink. Callers can pass the returned count to
+`Output_flow.write_subbytes`, which validates the prefix and avoids flushing
+undefined trailing scratch bytes.
 
 `Renderer.resize` delegates the audited raw resize operation and is only
 allowed when no imperative frame is open. Resizing preserves the native

@@ -41,17 +41,17 @@ let () =
           ignore
             (expect_ok
                (Renderer.Frame.clear frame
-                  ~background:Opentui_raw.Color.black));
+                  ~background:Opentui_native.Color.black));
           ignore
             (expect_ok
                (Renderer.Frame.set_cell frame ~x:0l ~y:0l ~character:65l
-                  ~foreground:Opentui_raw.Color.white
-                  ~background:Opentui_raw.Color.black ~attributes:0l));
+                  ~foreground:Opentui_native.Color.white
+                  ~background:Opentui_native.Color.black ~attributes:0l));
           ignore
             (expect_ok
                (Renderer.Frame.draw_text frame ~text:"B" ~x:1l ~y:0l
-                  ~foreground:Opentui_raw.Color.white
-                  ~background:Opentui_raw.Color.black ~attributes:0l));
+                  ~foreground:Opentui_native.Color.white
+                  ~background:Opentui_native.Color.black ~attributes:0l));
           let output = Bytes.create 2 in
           let written =
             expect_ok
@@ -88,7 +88,7 @@ let () =
           (match
              Renderer.run_frame renderer ~force:true ~draw:(fun frame ->
                  Renderer.Frame.clear frame
-                   ~background:Opentui_raw.Color.black)
+                   ~background:Opentui_native.Color.black)
            with
           | Ok Renderer.Rendered -> ()
           | Ok Renderer.Skipped -> fail "expected the memory frame to render"
@@ -102,8 +102,8 @@ let () =
                  ignore
                    (expect_ok
                       (Renderer.Frame.set_cell frame ~x:0l ~y:0l
-                         ~character:88l ~foreground:Opentui_raw.Color.white
-                         ~background:Opentui_raw.Color.black ~attributes:0l));
+                         ~character:88l ~foreground:Opentui_native.Color.white
+                         ~background:Opentui_native.Color.black ~attributes:0l));
                  Error Opentui_native.Error.Frame_not_open));
           let frame = expect_ok (Renderer.begin_frame renderer) in
           let output = Bytes.create 1 in
@@ -147,13 +147,18 @@ let () =
           let frame = expect_ok (Renderer.begin_frame renderer) in
           Renderer.close renderer;
           expect_error Opentui_native.Error.Closed
-            (Renderer.Frame.clear frame ~background:Opentui_raw.Color.black);
+            (Renderer.Frame.clear frame ~background:Opentui_native.Color.black);
           expect_error Opentui_native.Error.Closed
             (Renderer.present frame ~force:true));
       test "native creation errors stay structured" (fun () ->
           expect_error
             (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
             (Renderer.create ~width:0l ~height:1l));
+      test "native colors keep construction behind the native package" (fun () ->
+          expect_error
+            (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
+            (Opentui_native.Color.rgba ~red:256 ~green:0 ~blue:0
+               ~alpha:255));
       test "an owner-scoped layout composes raw Yoga nodes" (fun () ->
           let layout =
             expect_ok (Layout.create ())
@@ -223,22 +228,22 @@ let () =
           ignore
             (expect_ok
                (Renderer.Frame.clear frame
-                  ~background:Opentui_raw.Color.black));
+                  ~background:Opentui_native.Color.black));
           ignore
             (expect_ok
                (Text_renderable.draw renderable frame
-                  ~foreground:Opentui_raw.Color.white
-                  ~background:Opentui_raw.Color.black ~attributes:0l));
+                  ~foreground:Opentui_native.Color.white
+                  ~background:Opentui_native.Color.black ~attributes:0l));
           ignore (expect_ok (Renderer.present frame ~force:true));
           expect_error Opentui_native.Error.Frame_not_open
             (Text_renderable.draw renderable frame
-               ~foreground:Opentui_raw.Color.white
-               ~background:Opentui_raw.Color.black ~attributes:0l);
+               ~foreground:Opentui_native.Color.white
+               ~background:Opentui_native.Color.black ~attributes:0l);
           let next_frame = expect_ok (Renderer.begin_frame renderer) in
           Layout.close layout;
           expect_error Opentui_native.Error.Closed
             (Text_renderable.draw renderable next_frame
-               ~foreground:Opentui_raw.Color.white
-               ~background:Opentui_raw.Color.black ~attributes:0l);
+               ~foreground:Opentui_native.Color.white
+               ~background:Opentui_native.Color.black ~attributes:0l);
           Renderer.close renderer)
     ]

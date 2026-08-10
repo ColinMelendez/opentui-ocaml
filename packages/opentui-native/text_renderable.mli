@@ -7,7 +7,7 @@ val set_text : t -> text:string -> unit
 val draw :
   t ->
   Renderer.Frame.t ->
-  foreground:Opentui_raw.Color.t ->
-  background:Opentui_raw.Color.t ->
+  foreground:Color.t ->
+  background:Color.t ->
   attributes:int32 ->
   (unit, Error.t) result
