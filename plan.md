@@ -312,8 +312,8 @@ sizes. Lossless input reports `Full` rather than being silently dropped;
 pending resize and mouse-motion (`Move`/`Drag`) values coalesce to their
 latest payload while preserving the pending slot's position. The queue
 allocates its ring once and does not own Eio fibers, signal sources, wakeups,
-dispatch, or native resources. Those runtime policies remain the next Phase 3
-work.
+dispatch, or native resources. The runtime packages compose those policies
+around this pure queue rather than moving Eio or process-global state into it.
 
 **Eio event-transfer increment:** `Input_coordinator.transfer_one` and
 `opentui-terminal-eio.Input_flow.transfer_one` now move at most one
@@ -323,13 +323,23 @@ that reports `Full` leaves the source event pending for retry. A successful
 coalescing remains a direct `Event_queue` concern. The helper does not create
 fibers, wakeups, signal sources, dispatch, or output ownership.
 
+**Eio wakeup and dispatch increment:** `opentui-terminal-eio.Wakeup` now owns
+a single-domain revision condition. `Wakeup.push` notifies only after the
+bounded queue accepts or coalesces an event, and
+`Input_flow.transfer_one_and_notify` does the same for an already-owned input
+event. `Dispatch.run` drains available events, snapshots the wakeup revision,
+rechecks the queue, and only then waits; a producer cannot leave an event
+behind while the dispatcher sleeps. The caller provides the fiber, switch, and
+handler, and handler exceptions remain visible.
+
 **PTY/native composition increment:** the host-gated
 `test_native_terminal_pty` smoke now composes the caller-owned mode, input,
-resize, native frame, and output seams through a Unix PTY. It verifies mode
-entry and restoration, input transfer into `Event_queue`, validated window
-sizes, native resize, and two frame flushes. The test remains the acceptance
-boundary; it does not add a terminal session manager, resize signal source,
-wakeup policy, or dispatcher.
+resize, native frame, and output seams through a Unix PTY. It verifies raw
+termios entry/restoration, ANSI mode restoration, input transfer into
+`Event_queue`, validated window sizes, native resize, and two frame flushes.
+The test remains the acceptance boundary; signal sourcing and event dispatch
+are covered separately so the PTY composition does not become a hidden
+terminal manager.
 
 **Unix terminal-size increment:** `opentui-terminal-eio-unix` now provides a
 caller-invoked `Eio_unix` window-size probe. It copies positive columns and
@@ -337,6 +347,29 @@ rows into the pure `Terminal_size` value and maps OS query failures without
 installing `SIGWINCH`, creating wakeups, pushing events, or owning a file
 descriptor. The PTY smoke uses this probe before handing the size to
 `Event_queue`.
+
+**Unix resize-source increment:** `Resize_source` now installs at most one
+process-global, single-domain `SIGWINCH` handler, refuses to replace a
+non-default handler, coalesces pending signals into an Eio condition
+notification, and restores the previous default/ignored behavior on close or
+switch release. It does not query dimensions or push events; the caller waits, invokes
+`Terminal_size_source.get`, and uses `Wakeup.push` for the bounded handoff.
+
+**Terminal restoration increment:** `Terminal_session` now saves the exact
+`Unix.terminal_io` record, enters a raw input configuration, and restores the
+saved record plus the `Output_flow` ANSI state. Restoration attempts both
+parts, retains successful component cleanup for retries, and reports a
+structured combined error when both fail. A never-entered session performs no
+ANSI write. The session never closes the caller's descriptor or sink; its
+switch hook is a best-effort fallback, while explicit `restore` is the
+observable cleanup operation.
+
+**Phase 3 runtime-policy exit (2026-08-10):** the Eio wakeup/dispatch seam,
+Unix resize source, and switch-scoped terminal restoration are now checked in
+above the pure terminal queue and below any retained or reactive framework.
+The PTY acceptance remains host-gated because this workspace has no
+`/dev/pts`; the signal, wakeup, dispatcher, and structured non-terminal
+boundaries run on the current host.
 
 ## Phase 4 — Retained `opentui-core`
 
@@ -396,11 +429,10 @@ Yoga/layout, copied-capability, and copy-first output-feed boundaries described
 above. The remaining implementation sequence is:
 
 1. decide whether profiling justifies a separately scoped native chunk view;
-2. add actual runtime policy around the proven PTY composition only when its
-   ownership is explicit: resize sourcing, wakeups, dispatch, and restoration;
-   and
-3. extend `opentui-native` only where a measured renderable contract remains
-   missing before adding terminal, core, Lwd, or widget layers.
+2. extend `opentui-native` only where a measured renderable contract remains
+   missing; and
+3. design `opentui-core`, then its Lwd and widget layers, only after the
+   imperative runtime contracts have been reviewed.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their

@@ -1,5 +1,5 @@
 (library
  (name opentui_terminal_eio_unix)
  (public_name opentui-terminal-eio-unix)
- (modules terminal_size_source)
- (libraries opentui-terminal eio.unix))
+ (modules terminal_size_source resize_source terminal_session)
+ (libraries opentui-terminal opentui-terminal-eio eio.unix))

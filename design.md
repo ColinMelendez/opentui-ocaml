@@ -81,8 +81,8 @@ layers, not one package per Zig file:
 | `opentui-raw` | ABI values, generation-checked handles, foreign calls, ownership | current |
 | `opentui-native` | higher-level renderer, buffers, Yoga integration, native renderables, native lifecycle | foundation increment |
 | `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, validated resize payloads, bounded event handoff | foundation |
-| `opentui-terminal-eio` | Eio/Cstruct flow input and mode/output lifecycle over the pure terminal foundation | Phase 3 runtime boundary |
-| `opentui-terminal-eio-unix` | caller-invoked Unix terminal-size probe over `Eio_unix` | Phase 3 Unix boundary |
+| `opentui-terminal-eio` | Eio/Cstruct flow input, mode/output lifecycle, revision wakeups, and caller-run dispatch over the pure terminal foundation | Phase 3 runtime boundary |
+| `opentui-terminal-eio-unix` | validated Unix size probe, scoped `SIGWINCH` source, and saved-termios terminal session over `Eio_unix` | Phase 3 Unix runtime boundary |
 | `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
 | `opentui-widgets` | reusable controls and application-facing conveniences | later |
@@ -410,8 +410,9 @@ staging buffer, reads one caller-requested flow chunk, and feeds the pure
 monotonic clock and maps explicit EOF and Eio I/O failure to structured
 results. Its one-event transfer helper preserves source ownership only across
 a bounded destination `Full`; a successful `Move`/`Drag` coalescing push
-consumes the source event. The caller still owns fibers, switches, timeout
-wakeups, mode commits, and output.
+consumes the source event. The `transfer_one_and_notify` helper adds a
+caller-owned revision wakeup only after a successful transfer. The caller
+still owns fibers, switches, timeout policy, mode commits, and output.
 
 Its `Output_flow` holds a caller-owned Eio sink reference and the last terminal
 mode state successfully written to that sink. Mode operations write the owned
@@ -420,14 +421,25 @@ complete sink write returns; arbitrary frame bytes use the same synchronous
 sink seam. An I/O, cancellation, or invalid-progress failure poisons the
 wrapper against retries because the sink may contain only a prefix. It does
 not close the sink, serialize concurrent callers, create fibers, or take
-ownership of terminal restoration. The host-gated PTY composition smoke now
-exercises those caller-owned seams together: it enters and restores terminal
-modes, feeds input through `Input_flow` into `Event_queue`, reads a validated
-window size, resizes the native renderer, and flushes two frames. This
-workspace has no `/dev/pts`, so the smoke is reported as skipped here while
-remaining runnable on a PTY-capable Unix host. It does not introduce a
-terminal session manager, resize signal source, wakeup policy, or event
-dispatcher.
+ownership of terminal restoration. `Wakeup` is a single-domain revision
+condition, and its `push` helper couples a successful bounded queue insertion
+to notification. `Dispatch.run` drains queued events and performs a second
+queue check after taking its revision snapshot before waiting, closing the
+producer/waiter race without creating a fiber or swallowing handler exceptions.
+
+`opentui-terminal-eio-unix` is the Unix-only extension of that boundary.
+`Terminal_size_source.get` remains a caller-invoked query. `Resize_source`
+owns one process-global, single-domain `SIGWINCH` installation at a time,
+refuses to replace an existing non-default handler, coalesces signals into a
+pending wakeup, and restores the previous default/ignored behavior on close or
+switch release.
+`Terminal_session` saves the exact termios record, enters a raw input
+configuration, and restores both that record and the successful
+`Output_flow` mode state. It never closes the descriptor or sink. The
+host-gated PTY composition smoke now exercises raw tty restoration as well as
+ANSI mode restoration, input/resize handoff, native resize, and two frame
+flushes. This workspace has no `/dev/pts`, so the smoke is reported as skipped
+here while remaining runnable on a PTY-capable Unix host.
 
 ### Eio and external data structures
 
@@ -447,7 +459,7 @@ The proposed dependency policy is:
 | Dependency | Use | Phase 1 decision |
 | --- | --- | --- |
 | `eio`, `eio_main`, and platform support | Terminal byte I/O, cancellation, timers, fibers, and runtime lifetime | Adopt at `opentui-terminal`/runtime level. Keep `opentui-raw` independent. |
-| `Eio.Stream`/`Eio.Promise` | Waiting and handoff between runtime fibers | Candidate for the boundary queue and wake-up path, not the parser's pending-byte queue or render command buffer. Benchmark the event-burst behavior. |
+| `Eio.Condition`/`Eio.Promise` | Revision wakeups, dispatch waiting, and test/runtime coordination | Use a caller-owned revision condition beside the pure bounded event queue. Keep the queue's overflow/coalescing policy in `opentui-terminal`; use `Eio.Stream` only if a measured multi-consumer requirement appears. |
 | OCaml `Array`, `Bytes`, `Queue`, `Hashtbl`, `Map`, and `Set` | Local state, keyed lookup, scratch storage, and small registries | Use first. Add a small growable ring/dirty-set module only where the access pattern is known and a profile justifies it. |
 | `Bigarray` or `cstruct` | Reusable byte storage, typed bulk buffers, and bounded views | Use `Bigarray.Array1` as the raw storage contract and `Cstruct` at the Eio flow boundary. A native-owned view must remain behind an owner/release token; neither library solves pointer lifetime or resize invalidation by itself. |
 | `uutf`/`uucp` | OCaml-side Unicode decoding or width logic | Defer for rendering; OpenTUI already owns grapheme and width behavior. Add only if the input/parser API needs a separately validated Unicode layer. |

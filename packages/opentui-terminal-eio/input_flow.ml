@@ -81,6 +81,14 @@ let drain input callback =
 let transfer_one input ~queue =
   Opentui_terminal.Input_coordinator.transfer_one input.coordinator ~queue
 
+let transfer_one_and_notify input ~queue ~wakeup =
+  match transfer_one input ~queue with
+  | Error error -> Error error
+  | Ok false -> Ok false
+  | Ok true ->
+      Wakeup.notify wakeup;
+      Ok true
+
 let fire_timeout input ~clock =
   Opentui_terminal.Input_coordinator.fire_timeout input.coordinator
     ~now_ms:(now_ms clock)

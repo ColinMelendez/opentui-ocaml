@@ -35,5 +35,11 @@ val transfer_one :
   t ->
   queue:Opentui_terminal.Event_queue.t ->
   (bool, Opentui_terminal.Event_queue.error) result
+
+val transfer_one_and_notify :
+  t ->
+  queue:Opentui_terminal.Event_queue.t ->
+  wakeup:Wakeup.t ->
+  (bool, Opentui_terminal.Event_queue.error) result
 val fire_timeout : t -> clock:_ Eio.Time.Mono.t -> unit
 val reset : t -> unit

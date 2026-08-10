@@ -15,15 +15,16 @@
 
 (package
  (name opentui-terminal-eio-unix)
- (synopsis "Unix terminal-size source for the OpenTUI Eio boundary")
+ (synopsis "Unix terminal runtime boundary for the OpenTUI Eio layer")
  (description
-  "A small Unix-only terminal-size probe over Eio_unix. It validates the copied terminal-size payload without installing signal handlers or owning runtime policy.")
+  "A Unix-only terminal runtime boundary over Eio_unix. It provides a validated size probe, scoped SIGWINCH source, and saved-termios terminal session without closing caller-owned resources.")
  (license ISC)
  (authors "Colin <cwrmcolin@gmail.com>")
  (maintainers "Colin <cwrmcolin@gmail.com>")
  (depends
   (ocaml (>= 5.2))
   opentui-terminal
+  opentui-terminal-eio
   eio))
 
 (package
@@ -42,7 +43,7 @@
  (name opentui-terminal-eio)
  (synopsis "Eio flow adapter for the OpenTUI terminal foundation")
  (description
-  "A separate Eio/Cstruct flow boundary over opentui-terminal. It supplies reusable input storage and caller-clocked timeout coordination without moving Eio into the parser package or owning terminal output policy.")
+  "A separate Eio/Cstruct runtime boundary over opentui-terminal. It supplies reusable input storage, caller-clocked timeout coordination, revision wakeups, and caller-run dispatch without moving Eio into the parser package or owning terminal resources.")
  (license ISC)
  (authors "Colin <cwrmcolin@gmail.com>")
  (maintainers "Colin <cwrmcolin@gmail.com>")

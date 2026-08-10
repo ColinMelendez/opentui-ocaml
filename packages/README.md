@@ -9,8 +9,8 @@ opentui-raw
 │       └── opentui-lwd  fine-grained reactive bindings (later)
 │           └── opentui-widgets (later)
 └── opentui-terminal     terminal modes, input framing, and decoding
-    ├── opentui-terminal-eio      optional Eio/Cstruct input/output boundary
-    └── opentui-terminal-eio-unix Unix terminal-size probe
+    ├── opentui-terminal-eio      optional Eio/Cstruct runtime boundary
+    └── opentui-terminal-eio-unix Unix signal, size, and tty scope
 ```
 
 `opentui-terminal` is kept beside the native layer rather than below it because terminal input/output policy should remain usable without importing the renderer's object model. An application can compose the terminal, native, and core layers at its boundary.
@@ -25,20 +25,24 @@ owned event/paste payloads. The pure package leaves Eio flow ownership and
 output lifecycle to the optional runtime package.
 
 `opentui-terminal-eio` is the optional runtime package for Eio/Cstruct flow
-reads and output. It reuses the pure coordinator's deadline and event queue,
-and can transfer one pending event at a time into the pure bounded handoff. It
-binds writer-free mode transitions to a caller-owned Eio sink without adding
-Eio to the parser package.
+reads, output, bounded-event wakeups, and caller-run dispatch. It reuses the
+pure coordinator's deadline and event queue, and can transfer one pending
+event at a time into the pure bounded handoff. Its revision wakeup and
+race-safe dispatcher do not create fibers or take ownership of the switch.
+It binds writer-free mode transitions to a caller-owned Eio sink without
+adding Eio to the parser package.
 
-`opentui-terminal-eio-unix` is a separate Unix-only size-source package. Its
-caller-invoked probe validates `Terminal_size` values and maps OS errors; it
-does not own signals, fibers, event dispatch, or terminal restoration.
+`opentui-terminal-eio-unix` is a separate Unix-only runtime package. Its
+caller-invoked probe validates `Terminal_size` values and maps OS errors;
+`Resize_source` owns the scoped `SIGWINCH` notification, and
+`Terminal_session` owns saved termios restoration plus ANSI reset while
+leaving the descriptor and sink with the caller.
 
 The host-gated `test_native_terminal_pty` smoke composes the optional Eio
 boundary with native frames through a Unix PTY. It is an acceptance test for
-caller-owned mode restoration, input/resize handoff, native resize, and output;
-it does not add a terminal session manager or move dispatch policy into this
-package.
+mode restoration, raw tty restoration, input/resize handoff, native resize,
+and output. The runtime test separately proves the signal-owner, wakeup, and
+dispatch contracts.
 
 The first `opentui-native` slice composes `opentui-raw` behind an imperative
 renderer/frame lifecycle and an owner-scoped `Layout` tree. Its opaque frame

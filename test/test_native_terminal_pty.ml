@@ -4,6 +4,7 @@ module Native = Opentui_native.Renderer
 module Output = Opentui_terminal_eio.Output_flow
 module Input_flow = Opentui_terminal_eio.Input_flow
 module Size_source = Opentui_terminal_eio_unix.Terminal_size_source
+module Session = Opentui_terminal_eio_unix.Terminal_session
 module Input = Opentui_terminal.Input_decoder
 module Events = Opentui_terminal.Event_queue
 module Modes = Opentui_terminal.Terminal_modes
@@ -63,6 +64,16 @@ let expect_size_source result =
   | Ok value -> value
   | Error error -> fail (Size_source.message error)
 
+let expect_session result =
+  match result with
+  | Ok session -> session
+  | Error error -> fail (Session.message error)
+
+let expect_session_ok result =
+  match result with
+  | Ok () -> ()
+  | Error error -> fail (Session.message error)
+
 let read_exact source length =
   let result = Bytes.create length in
   let rec read_remaining offset =
@@ -121,19 +132,7 @@ let () =
               Eio.Switch.run @@ fun sw ->
               let pty = Eio_unix.Pty.open_pty ~sw () in
               let tty = Eio_unix.Pty.tty pty in
-              let attributes = Eio_unix.Pty.Tc.getattr tty in
-              Eio_unix.Pty.Tc.setattr tty Unix.TCSAFLUSH
-                {
-                  attributes with
-                  c_icanon = false;
-                  c_echo = false;
-                  c_echonl = false;
-                  c_opost = false;
-                  c_ixon = false;
-                  c_ixoff = false;
-                  c_vmin = 1;
-                  c_vtime = 0;
-                };
+              let original_attributes = Eio_unix.Pty.Tc.getattr tty in
               set_window_size pty ~columns:2 ~rows:1;
               let size = terminal_size pty in
               equal int 2 (Size.columns size);
@@ -153,6 +152,19 @@ let () =
                 | Error error -> fail (Events.message error)
               in
               let output = Output.create ~sink:output_sink in
+              let session =
+                expect_session (Session.create ~sw ~fd:tty ~output)
+              in
+              expect_session_ok (Session.enter session);
+              let raw_attributes = Eio_unix.Pty.Tc.getattr tty in
+              equal bool false raw_attributes.c_icanon;
+              equal bool false raw_attributes.c_echo;
+              equal bool false raw_attributes.c_isig;
+              equal bool false raw_attributes.c_opost;
+              equal bool false raw_attributes.c_ixon;
+              equal bool false raw_attributes.c_ixoff;
+              equal int 1 raw_attributes.c_vmin;
+              equal int 0 raw_attributes.c_vtime;
               let renderer =
                 expect_native_ok (Native.create ~width:2l ~height:1l)
               in
@@ -206,7 +218,7 @@ let () =
                        (Native.resize renderer ~width:3l ~height:1l));
                   render_text renderer output ~text:"CDE" ~width:3;
                   equal string "CDE" (read_exact (Eio_unix.Pty.source pty) 3);
-                  expect_output_ok (Output.reset output);
+                  expect_session_ok (Session.restore session);
                   let reset_output = "\x1b[?25h\x1b[0m\x1b[?1049l" in
                   equal string reset_output
                     (read_exact (Eio_unix.Pty.source pty)
@@ -215,6 +227,21 @@ let () =
                   | Modes.Main -> ()
                   | Modes.Alternate -> fail "PTY output did not restore screen");
                   equal bool true (Output.cursor_visible output);
+                  let restored_attributes = Eio_unix.Pty.Tc.getattr tty in
+                  equal bool original_attributes.c_icanon
+                    restored_attributes.c_icanon;
+                  equal bool original_attributes.c_echo
+                    restored_attributes.c_echo;
+                  equal bool original_attributes.c_isig
+                    restored_attributes.c_isig;
+                  equal bool original_attributes.c_opost
+                    restored_attributes.c_opost;
+                  equal bool original_attributes.c_ixon
+                    restored_attributes.c_ixon;
+                  equal bool original_attributes.c_ixoff
+                    restored_attributes.c_ixoff;
+                  equal int original_attributes.c_vmin restored_attributes.c_vmin;
+                  equal int original_attributes.c_vtime restored_attributes.c_vtime;
                   Native.close renderer
             with
             | Unix.Unix_error

@@ -72,6 +72,7 @@ let () =
             | Ok value -> value
             | Error error -> fail (Events.message error)
           in
+          let wakeup = Opentui_terminal_eio.Wakeup.create () in
           let source = Eio.Flow.string_source "ab" in
           let clock = Eio.Stdenv.mono_clock env in
           (match Flow.transfer_one input ~queue with
@@ -84,10 +85,17 @@ let () =
           | Ok (Flow.Bytes_read count) ->
               fail (Printf.sprintf "expected two bytes, got %d" count)
           | Error error -> fail (Flow.message error));
-          (match Flow.transfer_one input ~queue with
+          let revision_before =
+            Opentui_terminal_eio.Wakeup.revision wakeup
+          in
+          (match
+             Flow.transfer_one_and_notify input ~queue ~wakeup
+           with
           | Ok true -> ()
           | Ok false -> fail "first input event was absent"
           | Error error -> fail (Events.message error));
+          equal int64 (Int64.add revision_before 1L)
+            (Opentui_terminal_eio.Wakeup.revision wakeup);
           (match Flow.transfer_one input ~queue with
           | Error Events.Full -> ()
           | Error Events.Invalid_capacity -> fail "unexpected capacity error"
