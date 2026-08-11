@@ -1,0 +1,19 @@
+(version 0.0.5)
+
+(build
+ (all_platforms
+  ((action
+    (progn
+     (when %{pkg-self:dev} (run dune subst))
+     (run dune build -p %{pkg-self:name} -j %{jobs} @install))))))
+
+(depends
+ (all_platforms
+  (ocaml dune ctypes ctypes-foreign conf-pkg-config conf-cmake conf-zlib)))
+
+(source
+ (fetch
+  (url
+   https://github.com/ocaml-multicore/hdr_histogram_ocaml/releases/download/0.0.5/hdr_histogram-0.0.5.tbz)
+  (checksum
+   sha512=afbb1e2a934f81a53388a7431ae6c655dfd16c2ad8f987d65ce1932d4030e0ddef0f978c9157edeffbf947c7c2994f4b621465a086d8bc57aa399019081e8b64)))

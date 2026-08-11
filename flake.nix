@@ -19,10 +19,13 @@
           # Keep CI and repeatable test runs free of editor-only tools while
           # retaining the same compiler, Dune, and native toolchain.
           test = pkgs.mkShell {
+            LC_ALL = "C";
             packages = with pkgs;
               [
+                cmake
                 curl
                 git
+                libffi
                 pkg-config
                 zig_0_16
               ]
@@ -35,10 +38,13 @@
           # mkShell (rather than mkShellNoCC) keeps a C/C++ compiler available
           # for Dune package builds and the native OpenTUI/Yoga boundary.
           default = pkgs.mkShell {
+            LC_ALL = "C";
             packages = with pkgs;
               [
+                cmake
                 curl
                 git
+                libffi
                 pkg-config
                 zig_0_16
               ]

@@ -1,0 +1,34 @@
+(version 0.12)
+
+(build
+ (all_platforms
+  ((action
+    (progn
+     (when %{pkg-self:dev} (run dune subst))
+     (run
+      dune
+      build
+      -p
+      %{pkg-self:name}
+      -j
+      %{jobs}
+      --promote-install-files=false
+      @install)
+     (run
+      dune
+      install
+      -p
+      %{pkg-self:name}
+      --create-install-files
+      %{pkg-self:name}))))))
+
+(depends
+ (all_platforms
+  (ocaml trace mtime base-bigarray base-unix dune)))
+
+(source
+ (fetch
+  (url
+   https://github.com/ocaml-tracing/ocaml-trace/releases/download/v0.12/trace-0.12.tbz)
+  (checksum
+   sha512=1105c52112095fdc8d4961d7346b02e416627bde6ac79ddd137bff63ac0ff5cd23fa53192be642614efadb9cb0cbb83b7d571bb5a0d100ad0ae6d10bc61d3bba)))
