@@ -1,0 +1,5 @@
+# name<TAB>workload_version<TAB>pattern<TAB>pattern_hex<TAB>events_per_period<TAB>payload_bytes<TAB>chunk_bytes<TAB>expected_events_per_operation
+ascii-4k	1	ascii	61	1	4096	4096	4096
+csi-arrow-4k	1	csi-arrow	1b5b41	1	4095	2	1365
+utf8-split-4k	1	utf8	c3a9	1	4096	1	2048
+mixed-4k	1	mixed	611b5b41c3a9	3	4098	5	2049

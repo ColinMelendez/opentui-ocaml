@@ -537,8 +537,9 @@ checked in. The remaining implementation sequence is:
 2. run retained-core update benchmarks and keep expanding `opentui-core`
    acceptance around retained containers, layout changes, pointer propagation,
    and teardown without widening into terminal or reactive ownership; the
-   optional pinned-reference comparison harness now covers terminal byte
-   framing;
+   optional pinned-reference behavior and contextual performance harnesses now
+   cover terminal byte framing, while the Bun timing includes its typed-event
+   normalization beyond the OCaml framing layer;
 3. extend `opentui-native` only where a measured renderable contract remains
    missing; and
 4. keep the deferred output, pooling, and native-view candidates in

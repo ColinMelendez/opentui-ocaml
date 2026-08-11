@@ -36,3 +36,34 @@ The reference source revision remains the parent repository's pinned
 `vendor/opentui` gitlink. Performance measurements stay separate: identical
 workloads may be useful for context, but TypeScript/Bun and OCaml/native
 latencies are not a single cross-runtime gate.
+
+## Comparative performance
+
+The first optional performance comparison uses the same deterministic byte
+workloads at the adjacent terminal-parser seam. The OCaml runner measures
+`opentui-terminal.Stdin_parser` through owned framing events; the Bun runner
+measures the pinned OpenTUI `StdinParser`, which additionally normalizes those
+frames into typed key/mouse/response events. This is a useful contextual
+comparison, not an exact same-layer timing. `perf_manifest.tsv` carries the
+pattern bytes, event multiplicity, payload size, and chunk shape so neither
+runner needs a private pattern table.
+
+Run it from the repository root:
+
+```sh
+sh reference/compare_terminal_perf.sh
+```
+
+The protocol and shape fields are checked before timings are displayed, and
+timing rows are joined by case name rather than by preamble line position.
+OCaml timed GC words/collections and Bun retained post-GC heap/ArrayBuffer
+deltas are different diagnostics, not a cross-runtime allocation rate. Run
+comparisons on the same host with the same compiler/runtime and pinned
+submodule revision, and treat the output as a diagnostic baseline rather than
+a regression gate.
+
+The upstream `bench:layout`, `bench:js`, and `bench:native` suites remain useful
+context, but their tree sizes, scheduler, renderer, and native optimization
+boundaries differ from this repository's retained scene. A retained-core
+side-by-side benchmark will be added only after an equivalent workload
+manifest can be stated without hiding those differences.
