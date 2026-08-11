@@ -389,6 +389,11 @@ counts cannot accidentally flush undefined trailing scratch bytes.
 `opentui-native.Color` is the caller-facing color module; raw color
 representation remains behind the native package's private conversion.
 
+The zero-copy and pooling ideas that may follow this review are recorded in
+[`future-performance.md`](future-performance.md). They are intentionally a
+deferred parking lot, not a Phase 4 prerequisite: the current copy-first
+seams remain the reference while retained-core correctness is established.
+
 Native span-feed views, per-cell OCaml views, retained node identity, Lwd
 bindings, and widgets remain intentionally deferred. They require separate
 ownership contracts or measurements rather than being inferred from this
@@ -454,7 +459,9 @@ profile and has tidied the measured input/output seams without starting the
 retained core. The remaining implementation sequence is:
 
 1. compare the checked-in profile across the supported compiler/native hosts;
-2. decide whether profiling justifies a separately scoped native chunk view;
+2. keep the deferred output, pooling, and native-view candidates in
+   [`future-performance.md`](future-performance.md) until a retained-core
+   profile identifies a specific material hotspot;
 3. extend `opentui-native` only where a measured renderable contract remains
    missing; and
 4. design `opentui-core`, then its Lwd and widget layers, only after the

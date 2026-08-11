@@ -141,6 +141,11 @@ The goal is not to eliminate all allocation. It is to keep transient allocation
 off the render/input hot paths and make unavoidable ownership transitions
 visible in profiles.
 
+The deferred zero-copy and allocation candidates are collected in
+[`future-performance.md`](future-performance.md). That note is deliberately
+separate from the current design contract so higher-level correctness work can
+use the copy-first paths without depending on bespoke pool or lease machinery.
+
 ## Phase 1: native structures and first smoke gate
 
 The audit of the pinned OpenTUI source makes the following structures and
@@ -530,15 +535,20 @@ operations for now. If post-processing later needs direct views, choose one of
 three explicit contracts: a scoped borrow that blocks resize/destroy, stable
 allocations with deferred reclamation, or an intentional snapshot copy.
 
-The first zero-copy implementation should consequently be:
+The current implementation already uses `Bigarray.Array1`/`Cstruct.t` for
+reusable OCaml-owned terminal input, and `Span.release` owns an idempotent
+native release operation for copied output-feed payloads. Those are
+copy-first/current ownership boundaries, not future native views.
 
-- `Bigarray.Array1`/`Cstruct.t` for reusable OCaml-owned terminal input and
-  scratch output;
-- an abstract native-view token for any native-owned bytes;
-- a native `release_span` operation with an idempotent OCaml token rather than
-  OCaml mutating a refcount byte directly; and
-- a benchmark that measures copies, view construction, minor allocations, and
-  frame latency separately.
+The remaining list is deferred, not a current Phase 4 task. If a later profile
+justifies it, the first low-copy steps should consequently be:
+
+- caller-owned Bigarray scratch output plus an Eio Cstruct view, removing the
+  later `Bytes`-to-`Cstruct` materialization while retaining the native-to-
+  caller copy;
+- an abstract native-view token for any genuinely native-owned bytes; and
+- a direct comparison benchmark measuring copies, view construction, minor
+  allocations, and frame latency separately.
 
 Zero-copy does not mean zero allocation: a Bigarray/Cstruct view descriptor,
 reservation token, or result record may still allocate. The relevant target is

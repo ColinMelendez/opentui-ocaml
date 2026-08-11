@@ -5,6 +5,9 @@ This repository is the native OCaml side of an OpenTUI frontend. The target is a
 The current architecture and open decisions are in [`design.md`](design.md),
 and the implementation sequence is in [`plan.md`](plan.md). The pinned
 upstream OpenTUI source is documented in [`vendor/README.md`](vendor/README.md).
+Deferred allocation and zero-copy ideas are collected in
+[`future-performance.md`](future-performance.md); they are not prerequisites
+for the retained or reactive layers.
 
 For a fresh checkout, initialize the pinned upstream source with:
 
