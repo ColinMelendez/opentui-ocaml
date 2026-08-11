@@ -208,6 +208,46 @@ let () =
             (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
             (Layout.Node.set_dimensions root ~width:Float.nan ~height:1.0);
           Layout.close layout);
+      test "layout moves a child while retaining its computed identity" (fun () ->
+          let layout = expect_ok (Layout.create ()) in
+          let root = expect_ok (Layout.root layout) in
+          let first = expect_ok (Layout.add_child ~parent:root) in
+          let second = expect_ok (Layout.add_child ~parent:root) in
+          ignore
+            (expect_ok
+               (Layout.Node.set_dimensions first ~width:4.0 ~height:1.0));
+          ignore
+            (expect_ok
+               (Layout.Node.set_dimensions second ~width:4.0 ~height:2.0));
+          ignore
+            (expect_ok
+               (Layout.calculate layout ~width:4.0 ~height:10.0
+                  ~direction:Layout.Ltr));
+          equal (float 0.0001) 0.0
+            (expect_ok (Layout.Node.layout first)).Layout.top;
+          equal (float 0.0001) 1.0
+            (expect_ok (Layout.Node.layout second)).Layout.top;
+          expect_error
+            (Opentui_native.Error.Native Opentui_raw.Error.Invalid_argument)
+            (Layout.move_child ~parent:root ~child:second ~index:2l);
+          equal (float 0.0001) 0.0
+            (expect_ok (Layout.Node.layout first)).Layout.top;
+          equal (float 0.0001) 1.0
+            (expect_ok (Layout.Node.layout second)).Layout.top;
+          ignore
+            (expect_ok
+               (Layout.move_child ~parent:root ~child:second ~index:0l));
+          ignore
+            (expect_ok
+               (Layout.calculate layout ~width:4.0 ~height:10.0
+                  ~direction:Layout.Ltr));
+          equal (float 0.0001) 2.0
+            (expect_ok (Layout.Node.layout first)).Layout.top;
+          equal (float 0.0001) 0.0
+            (expect_ok (Layout.Node.layout second)).Layout.top;
+          Layout.close layout;
+          expect_error Opentui_native.Error.Closed
+            (Layout.Node.layout second));
       test "a text renderable draws through the layout and frame seams" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:4l ~height:1l) in
           let layout = expect_ok (Layout.create ()) in

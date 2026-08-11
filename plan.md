@@ -447,6 +447,15 @@ the deepest laid-out node and bubble through parent handlers until `Stop`.
 The increment intentionally does not include terminal-event adaptation, rich
 Yoga styles, keyboard/focus policy, custom renderables, Lwd, or widgets.
 
+**Child-ordering increment (2026-08-10):** the raw and native layout seams now
+support moving an attached same-parent Yoga child to a final zero-based index
+without freeing its native subtree. `opentui-core.Scene.Node.move_to_index`
+keeps its retained child list synchronized with that native order, rejects
+invalid/root moves without dirtying the scene, and leaves rendering deferred
+until the existing controlled `flush` boundary. Black-box acceptance covers
+layout order, stable identities, invalid-operation preservation, replacement
+placement, and teardown after a move.
+
 ## Phase 5 — Solid-like Lwd bindings
 
 - add `opentui-lwd` over the retained core rather than over a rebuilt virtual
@@ -493,15 +502,12 @@ checked in. The remaining implementation sequence is:
 
 1. compare the checked-in profile across the supported compiler/native hosts,
    retaining the current macOS sample as the reference point;
-2. add the smallest stable same-parent child-ordering operation through the
-   raw, native, and retained-core layers, with identity/layout/teardown
-   acceptance and controlled flush as the mutation batch boundary;
-3. expand `opentui-core` acceptance around retained containers, layout changes,
+2. expand `opentui-core` acceptance around retained containers, layout changes,
    pointer propagation, and teardown without widening into terminal or
    reactive ownership;
-4. extend `opentui-native` only where a measured renderable contract remains
+3. extend `opentui-native` only where a measured renderable contract remains
    missing; and
-5. keep the deferred output, pooling, and native-view candidates in
+4. keep the deferred output, pooling, and native-view candidates in
    [`future-performance.md`](future-performance.md) until the core profile
    identifies a specific material hotspot, then design Lwd and widgets over
    the stable imperative boundary.

@@ -143,6 +143,31 @@ let remove_child_by_id identity children =
   in
   remove children
 
+let move_child_to_index identity index children =
+  let ordered = List.rev children in
+  let rec detach position reverse_prefix = function
+    | [] -> None
+    | child :: rest when Int.equal child.identity identity ->
+        Some (position, child, List.rev_append reverse_prefix rest)
+    | child :: rest -> detach (position + 1) (child :: reverse_prefix) rest
+  in
+  match detach 0 [] ordered with
+  | None -> None
+  | Some (current_index, child, remaining) ->
+      let reordered =
+        if Int.equal current_index index then ordered
+        else
+          let rec insert_node remaining reverse_prefix = function
+            | rest when Int.equal remaining 0 ->
+                List.rev_append reverse_prefix (child :: rest)
+            | child :: rest ->
+                insert_node (remaining - 1) (child :: reverse_prefix) rest
+            | [] -> List.rev_append reverse_prefix []
+          in
+          insert_node index [] remaining
+      in
+      Some (current_index, List.rev reordered)
+
 let child_count (node : node) = List.length node.children
 
 let create_node parent ~width ~height ~make_kind =
@@ -310,6 +335,33 @@ module Node = struct
   let is_destroyed (node : node) = node.destroyed
   let is_dirty (node : node) = node.dirty
   let children_count (node : node) = child_count node
+
+  let move_to_index node ~index =
+    match ensure_node node with
+    | Error error -> Error error
+    | Ok () when Int.equal node.identity 0 -> Error Error.Cannot_move_root
+    | Ok () ->
+        (match node.parent with
+        | None -> Error Error.Cannot_move_root
+        | Some parent ->
+            let count = child_count parent in
+            if Int.compare index 0 < 0 || Int.compare index count >= 0 then
+              Error Error.Invalid_child_index
+            else
+              (match move_child_to_index node.identity index parent.children with
+              | None -> Error Error.Invalid_child_index
+              | Some (current_index, reordered) when
+                  Int.equal current_index index -> Ok ()
+              | Some (_, reordered) ->
+                  (match
+                     Layout.move_child ~parent:parent.layout ~child:node.layout
+                       ~index:(Int32.of_int index)
+                   with
+                  | Error error -> Error (Error.Native error)
+                  | Ok () ->
+                      parent.children <- reordered;
+                      mark_layout_dirty parent;
+                      Ok ())))
 
   let create_container ~parent ~width ~height =
     create_node parent ~width ~height ~make_kind:(fun _ -> Container)

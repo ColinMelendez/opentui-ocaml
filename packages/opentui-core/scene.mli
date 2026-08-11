@@ -59,6 +59,11 @@ module Node : sig
   (** [children_count node] is the number of currently attached children. *)
   val children_count : t -> int
 
+  (** [move_to_index node ~index] moves [node] to the zero-based position
+      [index] among its parent's children in render order. The node and its
+      descendants keep their identities. The root cannot be moved. *)
+  val move_to_index : t -> index:int -> (unit, error) result
+
   (** [create_container ~parent ~width ~height] attaches a fixed-size
       container to a live container parent. *)
   val create_container :

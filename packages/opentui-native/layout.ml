@@ -118,6 +118,17 @@ let remove_child ~parent ~child =
       (Opentui_raw.Yoga.remove_child parent.owner.yoga
          ~parent:parent.raw ~child:child.raw)
 
+let move_child ~parent ~child ~index =
+  if parent.owner.closed || child.owner.closed then Error Error.Closed
+  else if not (parent.owner == child.owner) then
+    Error (Error.Native Opentui_raw.Error.Invalid_argument)
+  else if Int32.compare index 0l < 0 then
+    Error (Error.Native Opentui_raw.Error.Invalid_argument)
+  else
+    map_native
+      (Opentui_raw.Yoga.move_child parent.owner.yoga
+         ~parent:parent.raw ~child:child.raw ~index)
+
 let direction_code direction =
   match direction with
   | Inherit -> Opentui_raw.Yoga.Inherit

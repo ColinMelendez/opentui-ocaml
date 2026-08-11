@@ -61,6 +61,56 @@ let () =
           equal int32 0l
             (expect_skipped (Scene.flush scene ~force:false ~output));
           Scene.close scene);
+      test "moves retained children without recreating or losing teardown" (fun () ->
+          let scene = expect_ok (Scene.create ~width:4l ~height:2l) in
+          let root = expect_ok (Scene.root scene) in
+          let first =
+            expect_ok
+              (Node.create_text ~parent:root ~width:4.0 ~height:1.0
+                 ~text:"AAAA" ())
+          in
+          let second =
+            expect_ok
+              (Node.create_text ~parent:root ~width:4.0 ~height:1.0
+                 ~text:"BBBB" ())
+          in
+          let first_id = Node.id first in
+          let second_id = Node.id second in
+          let output = Bytes.create 8 in
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "AAAABBBB" (Bytes.to_string output);
+          equal int first_id (Node.id first);
+          equal int second_id (Node.id second);
+          expect_core_error
+            (function Opentui_core.Error.Invalid_child_index -> true | _ -> false)
+            (Node.move_to_index first ~index:2);
+          equal int32 0l
+            (expect_skipped (Scene.flush scene ~force:false ~output));
+          equal string "AAAABBBB" (Bytes.to_string output);
+          ignore (expect_ok (Node.move_to_index first ~index:1));
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "BBBBAAAA" (Bytes.to_string output);
+          ignore (expect_ok (Node.destroy second));
+          equal bool true (Node.is_destroyed second);
+          let replacement =
+            expect_ok
+              (Node.create_text ~parent:root ~width:4.0 ~height:1.0
+                 ~text:"CCCC" ())
+          in
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "AAAACCCC" (Bytes.to_string output);
+          ignore (expect_ok (Node.move_to_index replacement ~index:0));
+          equal int first_id (Node.id first);
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "CCCCAAAA" (Bytes.to_string output);
+          expect_core_error
+            (function Opentui_core.Error.Cannot_move_root -> true | _ -> false)
+            (Node.move_to_index root ~index:0);
+          Scene.close scene);
       test "retains dirty state after an output-capacity failure" (fun () ->
           let scene = expect_ok (Scene.create ~width:2l ~height:1l) in
           let root = expect_ok (Scene.root scene) in

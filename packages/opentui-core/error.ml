@@ -2,6 +2,8 @@ type t =
   | Closed
   | Destroyed
   | Cannot_destroy_root
+  | Cannot_move_root
+  | Invalid_child_index
   | Not_container
   | Not_text
   | Invalid_dimensions
@@ -13,6 +15,8 @@ let message error =
   | Closed -> "core scene is closed"
   | Destroyed -> "core node is destroyed"
   | Cannot_destroy_root -> "core scene root cannot be destroyed"
+  | Cannot_move_root -> "core scene root cannot be moved"
+  | Invalid_child_index -> "core child index is invalid"
   | Not_container -> "core node cannot own children"
   | Not_text -> "core node is not a text node"
   | Invalid_dimensions -> "core node dimensions are invalid"

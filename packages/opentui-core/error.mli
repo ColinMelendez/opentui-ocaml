@@ -3,6 +3,8 @@ type t =
   | Closed
   | Destroyed
   | Cannot_destroy_root
+  | Cannot_move_root
+  | Invalid_child_index
   | Not_container
   | Not_text
   | Invalid_dimensions

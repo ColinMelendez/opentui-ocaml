@@ -50,6 +50,13 @@ val add_child :
 val remove_child :
   t -> parent:Node.t -> child:Node.t -> (unit, Error.t) result
 
+(** [move_child tree ~parent ~child ~index] moves an attached direct child to
+    zero-based [index] within [parent]. The child and its descendants keep
+    their native identities. An invalid index or parent/child relationship is
+    rejected without changing the tree. *)
+val move_child :
+  t -> parent:Node.t -> child:Node.t -> index:int32 -> (unit, Error.t) result
+
 (** [calculate tree ...] computes layout for the tree. *)
 val calculate :
   t ->

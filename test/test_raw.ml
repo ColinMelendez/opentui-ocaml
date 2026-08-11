@@ -174,6 +174,55 @@ let () =
           expect_error Opentui_raw.Error.Closed
             (Opentui_raw.Yoga.Node.layout child);
           expect_error Opentui_raw.Error.Closed (Opentui_raw.Yoga.root tree));
+      test "Yoga moves an attached child without destroying its handle" (fun () ->
+          let tree = expect_ok (Opentui_raw.Yoga.create ()) in
+          let root = expect_ok (Opentui_raw.Yoga.root tree) in
+          let first =
+            expect_ok (Opentui_raw.Yoga.add_child tree ~parent:root)
+          in
+          let second =
+            expect_ok (Opentui_raw.Yoga.add_child tree ~parent:root)
+          in
+          ignore (expect_ok (Opentui_raw.Yoga.Node.set_height first 1.0));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.set_height second 2.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.calculate tree ~width:10.0 ~height:10.0
+                  ~direction:Opentui_raw.Yoga.Ltr));
+          let first_before = expect_ok (Opentui_raw.Yoga.Node.layout first) in
+          let second_before = expect_ok (Opentui_raw.Yoga.Node.layout second) in
+          equal (float 0.0001) 0.0 first_before.Opentui_raw.Yoga.top;
+          equal (float 0.0001) 1.0 second_before.Opentui_raw.Yoga.top;
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.move_child tree ~parent:root ~child:second
+               ~index:2l);
+          let first_after_invalid =
+            expect_ok (Opentui_raw.Yoga.Node.layout first)
+          in
+          let second_after_invalid =
+            expect_ok (Opentui_raw.Yoga.Node.layout second)
+          in
+          equal (float 0.0001) 0.0
+            first_after_invalid.Opentui_raw.Yoga.top;
+          equal (float 0.0001) 1.0
+            second_after_invalid.Opentui_raw.Yoga.top;
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.move_child tree ~parent:root ~child:second
+                  ~index:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.calculate tree ~width:10.0 ~height:10.0
+                  ~direction:Opentui_raw.Yoga.Ltr));
+          let first_after = expect_ok (Opentui_raw.Yoga.Node.layout first) in
+          let second_after = expect_ok (Opentui_raw.Yoga.Node.layout second) in
+          equal (float 0.0001) 2.0 first_after.Opentui_raw.Yoga.top;
+          equal (float 0.0001) 0.0 second_after.Opentui_raw.Yoga.top;
+          Opentui_raw.Yoga.close tree;
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Yoga.Node.layout first);
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Yoga.Node.layout second));
       test "Yoga rejects invalid dimensions and cross-tree parents" (fun () ->
           let first = expect_ok (Opentui_raw.Yoga.create ()) in
           let second = expect_ok (Opentui_raw.Yoga.create ()) in

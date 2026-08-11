@@ -107,6 +107,17 @@ let remove_child tree ~parent ~child =
       (Native.yoga_remove_child tree.handle parent.Node.handle child.Node.handle)
       ()
 
+let move_child tree ~parent ~child ~index =
+  if not (Native_owner.is_open tree.owner)
+     || not (Native_owner.is_open parent.Node.owner)
+     || not (Native_owner.is_open child.Node.owner)
+  then Error Error.Closed
+  else
+    result_of_status
+      (Native.yoga_move_child tree.handle parent.Node.handle child.Node.handle
+         index)
+      ()
+
 let direction_code direction =
   match direction with
   | Inherit -> 0
