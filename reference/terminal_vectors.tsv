@@ -1,0 +1,14 @@
+# name<TAB>flush-timeout (0/1)<TAB>hex chunks separated by semicolons
+ascii	0	61
+ascii-batch	0	616263
+utf8-split	0	c3;a9
+csi-arrow-split	0	1b;5b;41
+ss3-arrow	0	1b4f41
+cpr-response	0	1b5b313b3252
+sgr-mouse	0	1b5b3c303b323b334d
+x10-mouse	0	1b5b4d202121
+osc-bell	0	1b5d303b6f6b07
+dcs-st	0	1b5030781b5c
+apc-st	0	1b5f30781b5c
+paste-split	0	1b5b3230307e;68656c6c6f;1b5b3230317e
+incomplete-csi	1	1b5b

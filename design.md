@@ -631,6 +631,9 @@ Tests should follow the layer being tested:
   handle/error behavior;
 - terminal tests exercise input decoding, resize, capabilities, and output
   framing with deterministic byte streams or a pseudo-terminal;
+- reference comparisons feed shared deterministic vectors through the pinned
+  TypeScript implementation and the analogous OCaml boundary, normalizing
+  only the differences caused by intentionally separate layers;
 - core tests verify retained identity, layout, event propagation, and teardown;
 - reactive tests verify dependency invalidation, batching, keyed identity, and
   cleanup;

@@ -101,6 +101,147 @@ let profile_retained_text () =
   Core.close scene;
   print_sample "retained_text" ~iterations:retained_iterations sample
 
+let layout_iterations = 128
+
+let profile_retained_layout () =
+  let scene =
+    expect_ok
+      (Core.create ~width:(Int32.of_int retained_width)
+         ~height:(Int32.of_int retained_height))
+  in
+  let root = expect_ok (Core.root scene) in
+  let nodes =
+    Array.init retained_height (fun row ->
+        expect_ok
+          (Core_node.create_text ~parent:root
+             ~width:(Float.of_int retained_width) ~height:1.0
+             ~text:(retained_row_text row) ()))
+  in
+  let output = Bytes.create (retained_width * retained_height) in
+  let expected_bytes = Int32.of_int (Bytes.length output) in
+  let run_update iteration =
+    let row = iteration mod retained_height in
+    let width =
+      if Int.equal (iteration mod 2) 0 then retained_width
+      else retained_width / 2
+    in
+    expect_unit
+      (Core_node.set_dimensions (Array.get nodes row)
+         ~width:(Float.of_int width) ~height:1.0);
+    match Core.flush scene ~force:false ~output with
+    | Ok { Core.status = Core.Rendered; bytes_written } ->
+        if not (Int32.equal bytes_written expected_bytes) then
+          fail "profile retained layout produced an unexpected output length"
+    | Ok { status = Core.Skipped; _ } ->
+        fail "profile retained layout unexpectedly skipped a dirty frame"
+    | Ok { status = Core.Failed; _ } ->
+        fail "profile retained layout failed to render"
+    | Error _ -> fail "profile retained layout operation failed"
+  in
+  run_update 1;
+  let sample =
+    measure (fun () ->
+        for iteration = 0 to layout_iterations - 1 do
+          run_update iteration
+        done)
+  in
+  Core.close scene;
+  print_sample "retained_layout" ~iterations:layout_iterations sample
+
+let reorder_iterations = 128
+let reorder_nodes = 24
+
+let profile_retained_reorder () =
+  let scene =
+    expect_ok
+      (Core.create ~width:(Int32.of_int retained_width)
+         ~height:(Int32.of_int retained_height))
+  in
+  let root = expect_ok (Core.root scene) in
+  let nodes =
+    Array.init reorder_nodes (fun row ->
+        expect_ok
+          (Core_node.create_text ~parent:root
+             ~width:(Float.of_int retained_width) ~height:1.0
+             ~text:(retained_row_text row) ()))
+  in
+  let output = Bytes.create (retained_width * retained_height) in
+  let expected_bytes = Int32.of_int (Bytes.length output) in
+  let order = Array.init reorder_nodes (fun index -> Array.get nodes index) in
+  let run_update iteration =
+    let source_index = iteration mod reorder_nodes in
+    let target_index = (source_index + 1) mod reorder_nodes in
+    let target = Array.get order source_index in
+    expect_unit (Core_node.move_to_index target ~index:target_index);
+    if Int.compare source_index target_index < 0 then
+      for index = source_index to target_index - 1 do
+        Array.set order index (Array.get order (index + 1))
+      done
+    else
+      for index = source_index downto target_index + 1 do
+        Array.set order index (Array.get order (index - 1))
+      done;
+    Array.set order target_index target;
+    match Core.flush scene ~force:false ~output with
+    | Ok { Core.status = Core.Rendered; bytes_written } ->
+        if not (Int32.equal bytes_written expected_bytes) then
+          fail "profile retained reorder produced an unexpected output length"
+    | Ok { status = Core.Skipped; _ } ->
+        fail "profile retained reorder unexpectedly skipped a dirty frame"
+    | Ok { status = Core.Failed; _ } ->
+        fail "profile retained reorder failed to render"
+    | Error _ -> fail "profile retained reorder operation failed"
+  in
+  run_update 1;
+  let sample =
+    measure (fun () ->
+        for iteration = 0 to reorder_iterations - 1 do
+          run_update iteration
+        done)
+  in
+  Core.close scene;
+  print_sample "retained_reorder" ~iterations:reorder_iterations sample
+
+let teardown_iterations = 64
+
+let profile_retained_teardown () =
+  let scene =
+    expect_ok
+      (Core.create ~width:(Int32.of_int retained_width)
+         ~height:(Int32.of_int retained_height))
+  in
+  let root = expect_ok (Core.root scene) in
+  let output = Bytes.create (retained_width * retained_height) in
+  let expected_bytes = Int32.of_int (Bytes.length output) in
+  let flush_after_change message =
+    match Core.flush scene ~force:false ~output with
+    | Ok { Core.status = Core.Rendered; bytes_written } ->
+        if not (Int32.equal bytes_written expected_bytes) then fail message
+    | Ok { status = Core.Skipped; _ } -> fail message
+    | Ok { status = Core.Failed; _ } -> fail message
+    | Error _ -> fail message
+  in
+  flush_after_change "profile retained teardown initial flush failed";
+  let run_update iteration =
+    let child =
+      expect_ok
+        (Core_node.create_text ~parent:root
+           ~width:(Float.of_int retained_width) ~height:1.0
+           ~text:(retained_row_text (iteration mod retained_height)) ())
+    in
+    flush_after_change "profile retained teardown create flush failed";
+    expect_unit (Core_node.destroy child);
+    flush_after_change "profile retained teardown destroy flush failed"
+  in
+  let sample =
+    measure (fun () ->
+        for iteration = 0 to teardown_iterations - 1 do
+          run_update iteration
+        done)
+  in
+  Core.close scene;
+  print_sample "retained_teardown" ~iterations:teardown_iterations sample
+
 let frame_iterations = 64
 let frame_width = 80
 let frame_height = 24
@@ -200,6 +341,9 @@ let profile_output () =
 
 let () =
   profile_retained_text ();
+  profile_retained_layout ();
+  profile_retained_reorder ();
+  profile_retained_teardown ();
   profile_frames ();
   Eio_main.run (fun env ->
       profile_input env;

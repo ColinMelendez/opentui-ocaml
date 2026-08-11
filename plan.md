@@ -407,11 +407,21 @@ Zig 0.16.0, and the pinned OpenTUI revision
 `de64d210e4f0163720fc1fbfa838d4d1aad47d53`:
 
 ```text
-retained_text iterations=64 elapsed_ns=2424958 minor_words=0 major_words=0 minor_collections=0 major_collections=0
-frames iterations=64 elapsed_ns=7312625 minor_words=4718546 major_words=385 minor_collections=18 major_collections=0
-input iterations=32768 elapsed_ns=3487625 minor_words=1048569 major_words=26039 minor_collections=4 major_collections=0
-output iterations=4096 elapsed_ns=465750 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+retained_text iterations=64 elapsed_ns=2352500 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+retained_layout iterations=128 elapsed_ns=4631541 minor_words=524281 major_words=196 minor_collections=2 major_collections=0
+retained_reorder iterations=128 elapsed_ns=6752083 minor_words=524281 major_words=262 minor_collections=2 major_collections=0
+retained_teardown iterations=64 elapsed_ns=3502125 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+frames iterations=64 elapsed_ns=7319250 minor_words=4718546 major_words=385 minor_collections=18 major_collections=0
+input iterations=32768 elapsed_ns=3484791 minor_words=1048569 major_words=26039 minor_collections=4 major_collections=0
+output iterations=4096 elapsed_ns=438959 minor_words=0 major_words=0 minor_collections=0 major_collections=0
 ```
+
+The retained-core cases were repeated three times on that same macOS host.
+Their elapsed ranges were 2,352,500–2,408,625 ns for retained text,
+4,631,541–4,803,083 ns for retained layout, 6,608,792–6,898,417 ns for
+retained reorder, and 3,502,125–3,602,250 ns for retained teardown. The
+allocation and collection counters were stable across those runs; the ranges
+are diagnostic rather than a hard gate.
 
 These values are a diagnostic sample from one supported host, not a portable
 performance gate. A second run on 2026-08-10 used the same compiler, Dune,
@@ -419,7 +429,10 @@ Zig, pinned OpenTUI revision, and benchmark parameters inside a 4-vCPU/8-GiB
 Colima `aarch64-linux` VM (Linux 6.8.0-64-generic aarch64):
 
 ```text
-retained_text iterations=64 elapsed_ns=8254456 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+retained_text iterations=64 elapsed_ns=6655593 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+retained_layout iterations=128 elapsed_ns=15551913 minor_words=524282 major_words=197 minor_collections=2 major_collections=0
+retained_reorder iterations=128 elapsed_ns=7429516 minor_words=524282 major_words=263 minor_collections=2 major_collections=0
+retained_teardown iterations=64 elapsed_ns=4525618 minor_words=0 major_words=0 minor_collections=0 major_collections=0
 frames iterations=64 elapsed_ns=10307695 minor_words=4718547 major_words=386 minor_collections=18 major_collections=0
 input iterations=32768 elapsed_ns=4131145 minor_words=1048570 major_words=26040 minor_collections=4 major_collections=0
 output iterations=4096 elapsed_ns=2030240 minor_words=0 major_words=0 minor_collections=0 major_collections=0
@@ -521,9 +534,11 @@ checked in. The remaining implementation sequence is:
    retaining the macOS sample as the reference and the aarch64-linux Colima
    sample as a caveated VM diagnostic; add x86_64-linux when a matching host
    is available;
-2. expand `opentui-core` acceptance around retained containers, layout changes,
-   pointer propagation, and teardown without widening into terminal or
-   reactive ownership;
+2. run retained-core update benchmarks and keep expanding `opentui-core`
+   acceptance around retained containers, layout changes, pointer propagation,
+   and teardown without widening into terminal or reactive ownership; the
+   optional pinned-reference comparison harness now covers terminal byte
+   framing;
 3. extend `opentui-native` only where a measured renderable contract remains
    missing; and
 4. keep the deferred output, pooling, and native-view candidates in

@@ -4,6 +4,8 @@
 seams. It reports monotonic elapsed nanoseconds and OCaml GC words for:
 
 - retained text updates and caller-owned resolved-character output;
+- retained dimension/layout updates, child reordering, and create/destroy
+  lifecycle churn;
 - full 80x24 native frame updates and resolved-character output;
 - Eio input reads through the terminal coordinator; and
 - repeated writes through the Eio output sink.

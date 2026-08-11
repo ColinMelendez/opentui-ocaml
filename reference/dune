@@ -1,0 +1,4 @@
+(executable
+ (name parse_terminal_vectors)
+ (modules parse_terminal_vectors)
+ (libraries opentui-terminal))
