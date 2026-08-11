@@ -6,8 +6,8 @@ The monorepo is intentionally built from the bottom up:
 opentui-raw
 ├── opentui-native       native renderer, buffers, renderables, and layout bindings
 │   └── opentui-core     retained OpenTUI scene model over the native layer
-│       └── opentui-lwd  fine-grained reactive bindings (later)
-│           └── opentui-widgets (later)
+│       ├── opentui-widgets direct OpenTUI-shaped content and controls (later)
+│       └── opentui-lwd fine-grained core bindings (later bridge)
 └── opentui-terminal     terminal modes, input framing, and decoding
     ├── opentui-terminal-eio      optional Eio/Cstruct runtime boundary
     └── opentui-terminal-eio-unix Unix signal, size, and tty scope
@@ -57,8 +57,9 @@ retained-scene, measure-callback, Lwd, or widget policy.
 composition. It owns a scene renderer and Yoga tree, gives each container or
 text node a persistent identity, invalidates layout and rendering on mutation,
 flushes one caller-owned output frame, and dispatches synthetic pointer events
-to the deepest hit node before bubbling to its parents. It currently supports
-fixed-size containers and text only; terminal-event adaptation, richer Yoga
-styles, custom renderables, Lwd, and widgets remain outside this increment.
+to the deepest hit node before bubbling to its parents. Its direct OpenTUI-shaped
+renderable surface is being expanded before either the direct control package
+or the later Lwd bridge; neither package is allowed to replace the retained
+tree with a second mandatory representation.
 
 The graph is a design target, not a promise to create a package for every subsystem. The `Buffer` module currently in `opentui-raw` is only the ABI-level borrowed view needed to exercise the pinned renderer; it is not the retained scene or renderable model. Yoga/layout and native renderables should initially be modules of `opentui-native`; they become separate packages only if they have a stable independent consumer.

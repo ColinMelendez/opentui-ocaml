@@ -538,30 +538,32 @@ leaf dirty after an output-capacity failure, retries the render successfully,
 and recursively tears down the removed branch without stale pointer hits. The
 release allocation cases and the varied traversal diagnostic are documented,
 and the pinned-reference comparison keeps the benchmark shapes explicit. The
-imperative retained scene therefore meets the Phase 4 exit contract; Lwd and
-widgets remain separate layers for Phase 5 and Phase 6.
+imperative retained scene therefore meets the Phase 4 exit contract. The next
+track first builds the direct OpenTUI-shaped renderable and control surface;
+Lwd remains a separate bridge after that surface has real examples.
 
-## Phase 5 — OpenTUI-shaped renderables and Lwd bindings
+## Phase 5 — Direct OpenTUI-shaped renderables
 
 - establish an OpenTUI-shaped imperative renderable slice in `opentui-core`,
   preserving the current retained identity, layout, event, flush, and teardown
   contracts while mirroring the reference semantics and vocabulary with typed
   OCaml modules;
-- add `opentui-lwd` over the retained core rather than over a rebuilt virtual
-  tree;
-- introduce mount/component scopes, cleanup, context, and keyed children;
-- connect Lwd invalidation to a frame scheduler and batch boundary;
-- add equality/cutoff policy for native property updates;
-- measure allocation and frame behavior for signal updates, list changes, and
-  event bursts;
-- document the cases where an explicit mutable model is preferable to a
-  reactive value.
+- implement the common retained operations that direct OpenTUI users expect:
+  typed renderable construction, persistent identity, child ordering, typed
+  property mutation, visibility/invalidation, pointer registration, and
+  recursive teardown;
+- add the first `Box` and `Text` renderables over the existing native frame and
+  Yoga seams, with direct examples that exercise their actual output;
+- record a conformance map for the remaining OpenTUI renderable families and
+  add one deterministic test app per family as each family becomes usable;
+- document the direct API and its intentional OCaml differences before adding
+  a framework reconciler or reactive mount layer.
 
-**Exit:** a direct imperative example constructs and updates the Phase 5 core
-renderables while preserving node identity and cleanup; a reactive example
-mounts once, updates only affected native state through Lwd, and cleans up all
-bindings. Both paths meet an agreed allocation/frame budget under a
-repeatable benchmark. Stateful controls remain a Phase 6 gate.
+**Exit:** direct examples construct and update the implemented core renderables,
+preserve node identity and cleanup, and pass deterministic black-box output and
+event tests. The conformance map identifies every intentionally deferred
+renderable family. Remaining content, editor-supporting, and stateful families
+remain a Phase 6 gate.
 
 **Architecture refinement (2026-08-11):** Phase 5 begins by making the
 imperative retained path recognizable to OpenTUI users. The core will mirror
@@ -571,21 +573,42 @@ frame scheduling replace
 JavaScript inheritance, generic option bags, string events, and ambient
 renderer state. The detailed replacement candidates are recorded in
 [`renderable-architecture.md`](renderable-architecture.md). The experimental
-OpenTUI `VNode`/constructs API remains optional until the direct and Lwd paths
-demonstrate a need for it.
+OpenTUI `VNode`/constructs API remains optional until the direct path
+demonstrates a need for it.
 
-## Phase 6 — Widgets and application ergonomics
+## Phase 6 — Direct OpenTUI-shaped content and controls
 
-- add a small set of useful widgets over stable core contracts;
+- add the remaining direct OpenTUI-shaped content, editor-supporting, and
+  stateful families in `opentui-widgets` without making the package depend on
+  Lwd or an application architecture;
+- keep the family boundaries recognizable even if later measurements justify
+  splitting a stable subset into its own package;
 - define styling, focus, keyboard/mouse, scrolling, and accessibility-shaped
   conventions only as supported by the native core;
-- provide examples that exercise both imperative and Lwd APIs;
+- provide direct examples for controls and compound renderables;
 - keep widget state and rendering allocations measurable.
 
-**Exit:** examples are expressive without exposing raw handles or requiring
-callers to manage native lifetime manually.
+**Exit:** direct examples cover the implemented content and control families,
+are expressive without exposing raw handles or requiring callers to manage
+native lifetime manually, and the conformance map has no family without a
+phase home.
 
-## Phase 7 — Portability, packaging, and upstream feedback
+## Phase 7 — Lwd bindings and optional application policy
+
+- add `opentui-lwd` over the direct retained renderables rather than over a
+  rebuilt virtual tree;
+- introduce mount/component scopes, cleanup, context, keyed children, and one
+  caller-owned frame boundary;
+- measure allocation and frame behavior for signal updates, list changes, and
+  event bursts against the direct examples;
+- consider an Elm-like model/message/effect adapter only after the direct and
+  Lwd paths have real callers.
+
+**Exit:** a reactive example mounts once, updates only affected retained state,
+preserves identity, and cleans up bindings; its allocation/frame comparison is
+recorded beside the direct-app baseline.
+
+## Phase 8 — Portability, packaging, and upstream feedback
 
 - test supported Linux and macOS targets, including terminal differences;
 - add package-level documentation and installation examples;
@@ -600,21 +623,29 @@ suite, and consume the stable packages without the JavaScript runtime.
 ## Immediate next tasks
 
 Phase 4 is complete and the retained scene now has its correctness,
-allocation, traversal-diagnostic, and pinned-reference records. The remaining
-implementation sequence is:
+allocation, traversal-diagnostic, and pinned-reference records. The direct
+OpenTUI-shaped track now comes before any reactive or alternative application
+framework. The remaining implementation sequence is:
 
 1. map the first OpenTUI renderable primitives to typed `opentui-core` modules
-   and implement their identity, mutation, event, and teardown contracts;
-2. design `opentui-lwd` bindings over those nodes, keeping mount scopes,
+   and implement their identity, mutation, event, output, and teardown
+   contracts;
+2. add deterministic direct test apps and documentation for each implemented
+   renderable family, plus analogous reference comparisons where the behavior
+   and measurement protocol are genuinely comparable;
+3. move the remaining direct content, editor-supporting, and stateful families
+   into `opentui-widgets` only after the direct core vocabulary and lifecycle
+   contracts are useful;
+4. design `opentui-lwd` bindings over those nodes, keeping mount scopes,
    cleanup, keyed children, and frame scheduling above the imperative core
    rather than rebuilding a virtual tree;
-3. preserve the current allocation gate while measuring signal updates, list
-   changes, and event bursts; add x86_64-linux comparison when a matching host
-   is available, keeping the macOS and aarch64-linux samples as the existing
-   reference and caveated VM diagnostic;
-4. extend `opentui-native` only where a measured renderable contract remains
+5. preserve the current allocation gate while measuring direct updates and,
+   later, signal updates, list changes, and event bursts; add x86_64-linux
+   comparison when a matching host is available, keeping the macOS and
+   aarch64-linux samples as the existing reference and caveated VM diagnostic;
+6. extend `opentui-native` only where a measured renderable contract remains
    missing;
-5. keep the deferred output, pooling, and native-view candidates in
+7. keep the deferred output, pooling, and native-view candidates in
    [`future-performance.md`](future-performance.md) until the core profile
    identifies a specific material hotspot.
 

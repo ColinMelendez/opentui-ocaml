@@ -13,10 +13,11 @@ Build an OCaml terminal UI framework directly on OpenTUI's Zig native core:
 ```text
 OCaml application
     │
-    ├── widgets and application components       (later)
-    ├── Lwd reactive bindings                   (later)
-    ├── retained scene and event model          (later)
-    ├── native renderer, buffers, Yoga bindings  (later)
+    ├── OpenTUI-shaped renderables                (being built)
+    ├── direct controls                           (later)
+    ├── Lwd reactive bindings                     (later bridge)
+    ├── retained scene and event model           (foundation)
+    ├── native renderer, buffers, Yoga bindings   (foundation)
     ├── typed raw ABI and ownership boundary     (being built)
     │
     └── OpenTUI Zig core                         (vendor/opentui)
@@ -84,8 +85,8 @@ layers, not one package per Zig file:
 | `opentui-terminal-eio` | Eio/Cstruct flow input, mode/output lifecycle, revision wakeups, and caller-run dispatch over the pure terminal foundation | Phase 3 runtime boundary |
 | `opentui-terminal-eio-unix` | validated Unix size probe, scoped `SIGWINCH` source, and saved-termios terminal session over `Eio_unix` | Phase 3 Unix runtime boundary |
 | `opentui-core` | retained scene tree, renderables, layout/render traversal, pointer events | Phase 4 retained tree; OpenTUI-shaped expansion next |
-| `opentui-lwd` | Lwd-based fine-grained bindings and component scope | Phase 5 design; API tentative |
-| `opentui-widgets` | reusable controls and application-facing conveniences | Phase 6 later layer |
+| `opentui-widgets` | direct OpenTUI-shaped content renderables, controls, and application-facing composites | Phase 6 later layer |
+| `opentui-lwd` | Lwd-based fine-grained bindings and component scope over direct renderables | Phase 7 later bridge; API tentative |
 
 The raw package may contain small ABI-level renderer, buffer, Yoga, and
 capability wrappers because they are the narrow ownership boundary. Higher-level
@@ -124,11 +125,13 @@ intended replacements.
 The complete mapping and candidate concepts are recorded in
 [`renderable-architecture.md`](renderable-architecture.md).
 
-`opentui-core` remains the Lwd-independent imperative waist. Stateful controls
-and application conveniences may live in `opentui-widgets`, while
-`opentui-lwd` binds Lwd values and keyed collections to existing nodes. An
-Elm-like model/message/effect adapter is optional later policy, not a
-requirement of the retained core or the Lwd package.
+`opentui-core` remains the Lwd-independent imperative waist. The direct
+OpenTUI-shaped renderable, content, and control surface is built and documented before
+`opentui-lwd` is introduced. Stateful controls and application conveniences may
+live in `opentui-widgets` without depending on Lwd; `opentui-lwd` later binds
+Lwd values and keyed collections to the same existing nodes. An Elm-like
+model/message/effect adapter is optional later policy, not a requirement of the
+retained core, widgets, or Lwd package.
 
 ### Lwd as the reactive kernel
 

@@ -1,8 +1,8 @@
 # OpenTUI-shaped renderable architecture
 
-Status: proposed working direction, 2026-08-11. This note records the
-architecture to use during the Phase 5 design pass; it does not commit the
-final OCaml module signatures.
+Status: active implementation direction, 2026-08-11. This note records the
+direct OpenTUI-shaped architecture and the boundaries that the later Lwd
+bridge must not collapse.
 
 The pinned OpenTUI implementation gives us a useful low-level shape even
 though its TypeScript surface is not a suitable OCaml API to copy literally.
@@ -33,21 +33,23 @@ opentui-core
     ├── imperative retained renderables
     ├── layout, identity, event propagation, and frame invalidation
     │
-opentui-lwd                     Phase 5
-    ├── Lwd bindings over existing renderables
+opentui-widgets                 direct OpenTUI-shaped content and controls, later
+    ├── editor support, content renderables, input, select, scroll, and controls
     │
-opentui-widgets                 Phase 6, later
-    ├── input, select, textarea, scroll, markdown, and other controls
+opentui-lwd                     later bridge
+    ├── Lwd bindings over the direct core tree (core dependency only)
     │
 optional application adapter   later, only if useful
     └── Elm-like Model / Msg / Update / Cmd policy
 ```
 
-`opentui-core` must remain usable without Lwd. A caller should be able to
-construct a retained scene, mutate renderables, dispatch events, and flush a
-frame without importing a reactive package. `opentui-lwd` should bind values
-and keyed collections to that tree; it should not replace the tree with a
-second virtual representation.
+`opentui-core` and `opentui-widgets` must remain usable without Lwd. A caller
+should be able to construct a retained scene, mutate renderables and controls,
+dispatch events, and flush a frame without importing a reactive package.
+`opentui-lwd` should bind values and keyed collections to that tree; it should
+not replace the tree with a second virtual representation. It depends on
+`opentui-core`, not on `opentui-widgets`; control-specific reactive adapters
+would be a separate package only if direct control callers demonstrate a need.
 
 ## What we mirror
 
@@ -66,9 +68,10 @@ compatibility with TypeScript:
   OpenTUI implementation.
 
 Stateful widget vocabulary such as `Input`, `Select`, `Textarea`, and
-`Scroll_box` remains a Phase 6 target. It should be built in
-`opentui-widgets` after the core and Lwd binding contracts are useful, rather
-than making the Phase 5 core gate open-ended.
+`Scroll_box` is part of the Phase 6 direct content-and-control track. It should
+be built in `opentui-widgets` after the direct core renderable contracts are
+useful and before the later Lwd bridge, rather than making the Phase 5 core
+gate open-ended.
 
 The adoption path is semantic rather than source-compatible. TypeScript
 option objects, inheritance, and callbacks cannot be carried over unchanged,
@@ -159,8 +162,6 @@ this policy.
 - whether the common retained type is one abstract `Node.t` with typed
   modules, or a small family of abstract renderable types sharing flat
   accessors;
-- which primitives belong in `opentui-core` before stateful controls move to
-  `opentui-widgets`;
 - whether subscriptions need a public `Subscription.t` or can be represented
   by scope-owned cleanup functions;
 - how keyed collection bindings represent keys and preserve node identity;
@@ -181,15 +182,34 @@ the TypeScript class graph.
    identity, layout, flush, pointer, and teardown contracts.
 2. Add typed property/update operations with equality cutoffs and allocation
    measurements before widening the property surface.
-3. Build `opentui-lwd` bindings over those imperative nodes, proving that a
+3. Add direct test apps and docs for each implemented core renderable family,
+   then build the remaining content, editor-supporting, and stateful families
+   in `opentui-widgets` without an Lwd dependency.
+4. Build `opentui-lwd` bindings over those imperative nodes, proving that a
    signal update preserves node identity and batches into one flush.
-4. Add stateful controls in `opentui-widgets` only after the core and Lwd
-   contracts are useful; specify each control's local-state and event lifetime.
 5. Consider a convenience `Constructs` layer and an Elm-like application
    adapter only after the direct and Lwd paths are useful.
 
-The Phase 5 exit must demonstrate both a direct imperative application and a
-reactive application. Both must preserve node identity across ordinary
-updates, release all nodes and subscriptions on teardown, and meet a recorded
-allocation/frame budget under a repeatable workload. API familiarity is useful
-only if these ownership and performance contracts remain visible.
+The direct-renderable track must demonstrate applications that preserve node
+identity across ordinary updates, release all nodes on teardown, and have
+deterministic output/event tests. The later Lwd track must add the corresponding
+binding cleanup and allocation/frame evidence. API familiarity is useful only
+if these ownership and performance contracts remain visible.
+
+## Direct conformance map
+
+This map keeps “copy the architecture” concrete without making one phase an
+open-ended promise to port every upstream feature at once. Each row gets a
+typed OCaml module, a direct example, black-box behavior tests, and a reference
+comparison when the observable behavior is comparable.
+
+| Reference family | OCaml home | Direct-track status |
+| --- | --- | --- |
+| `Renderable` tree and lifecycle | `opentui-core.Scene` and typed renderable modules | retained identity, ordering, invalidation, pointer propagation, and teardown exist; typed surface is expanding |
+| `BoxRenderable` | `opentui-core` | first implementation slice |
+| `TextRenderable`, `TextBufferRenderable`, `TextNodeRenderable` | `opentui-core` | plain copied text exists; styled text and nested text nodes are Phase 5 foundational text follow-ons; `opentui-native` remains their lower-level drawing seam |
+| `EditBufferRenderable`, `LineNumberRenderable`, `TimeToFirstDrawRenderable`, `ASCIIFontRenderable` | `opentui-widgets` | deferred supporting families with a direct Phase 6 home; each needs a contract and example |
+| `FrameBufferRenderable`, `ImageRenderable`, `CodeRenderable`, `DiffRenderable`, `MarkdownRenderable`, `TextTableRenderable` | `opentui-widgets` | deferred content/rendering families with a direct Phase 6 home; each needs a contract and example |
+| `InputRenderable`, `TextareaRenderable`, `SelectRenderable`, `ScrollBoxRenderable`, `SliderRenderable`, `TabSelectRenderable`, `ScrollBarRenderable` | `opentui-widgets` | deferred Phase 6 stateful control families; no Lwd dependency is implied |
+| composition `VNode`/constructs | optional convenience module | intentionally deferred; not a second identity tree |
+| React/Solid host reconcilers | `opentui-lwd` plus any later bridge | later bridge over the direct tree, never the prerequisite for direct examples |
