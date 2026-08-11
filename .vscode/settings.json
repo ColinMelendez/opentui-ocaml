@@ -1,24 +1,36 @@
 {
   "cSpell.words": [
+    "Amdahl's",
     "Bootstring",
     "bytesrw",
     "Camldoc",
     "codepoints",
+    "Datasette",
     "firsttime",
+    "Flambda",
     "Gazagnaire",
     "gettimeofday",
     "IDNA",
     "Jsont",
     "Madhavapeddy",
     "Madhavapejddy",
+    "Memprof",
     "Meross",
     "mkdirs",
     "mocknet",
     "numpoints",
+    "ocamlopt",
+    "OCAMLRUNPARAM",
     "OPENTUI",
     "reraise",
     "rmtree",
+    "samply",
     "sonos",
-    "systhread"
+    "specialise",
+    "specialised",
+    "statmemprof",
+    "syscalls",
+    "systhread",
+    "xctrace's"
   ]
 }
