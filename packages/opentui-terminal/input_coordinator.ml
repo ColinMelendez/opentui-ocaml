@@ -1,13 +1,17 @@
 type event = Input_decoder.event
+type delivery = Accepted | Full
+type push_result = Accepted_all | Full_after of int
 
 type error = Parser_error of Stdin_parser.error
 
 type t = {
   parser : Stdin_parser.t;
   decoder : Input_decoder.t;
-  events : event Queue.t;
+  mutable pending : event option;
   mutable deadline : int64 option;
 }
+
+let push_chunk_size = 4096
 
 let message = function
   | Parser_error error -> "input coordinator parser: " ^ Stdin_parser.message error
@@ -24,7 +28,7 @@ let create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
         {
           parser;
           decoder = Input_decoder.create ();
-          events = Queue.create ();
+          pending = None;
           deadline = None;
         }
 
@@ -43,59 +47,106 @@ let refresh_deadline coordinator ~now_ms =
     coordinator.deadline <- Some (deadline_after coordinator now_ms)
   else coordinator.deadline <- None
 
-let drain_parser coordinator =
-  Stdin_parser.drain coordinator.parser (fun input ->
-      Queue.add (Input_decoder.decode coordinator.decoder input) coordinator.events)
+let drain coordinator ~emit =
+  let status = ref Accepted in
+  let running = ref true in
+  while !running do
+    match coordinator.pending with
+    | Some event ->
+        (match emit event with
+        | Accepted -> coordinator.pending <- None
+        | Full ->
+            status := Full;
+            running := false)
+    | None ->
+        (match Stdin_parser.read coordinator.parser with
+        | None -> running := false
+        | Some input ->
+            coordinator.pending <-
+              Some (Input_decoder.decode coordinator.decoder input))
+  done;
+  !status
 
-let accept_push coordinator ~now_ms push_operation =
-  match push_operation () with
-  | Error error -> Error (Parser_error error)
-  | Ok () ->
-      drain_parser coordinator;
-      refresh_deadline coordinator ~now_ms;
-      Ok ()
+let valid_range ~size ~off ~len =
+  Int.compare off 0 >= 0
+  && Int.compare len 0 >= 0
+  && Int.compare off size <= 0
+  && Int.compare len (size - off) <= 0
 
-let push coordinator ~now_ms ~source ~off ~len =
-  accept_push coordinator ~now_ms (fun () ->
-      Stdin_parser.push coordinator.parser ~source ~off ~len)
+let invalid_range () =
+  Error (Parser_error (Stdin_parser.Queue_error Byte_queue.Invalid_range))
 
-let push_chars coordinator ~now_ms ~source ~off ~len =
-  accept_push coordinator ~now_ms (fun () ->
+let accept_push coordinator ~now_ms ~emit ~source_size ~off ~len push_operation =
+  if not (valid_range ~size:source_size ~off ~len) then invalid_range ()
+  else
+    match drain coordinator ~emit with
+    | Full ->
+        Ok (Full_after 0)
+    | Accepted ->
+        let position = ref off in
+        let end_exclusive = off + len in
+        let status = ref Accepted in
+        let running = ref true in
+        let failure = ref None in
+        while
+          Int.compare !position end_exclusive < 0
+          && !running
+          && Option.is_none !failure
+        do
+          let remaining = end_exclusive - !position in
+          let take =
+            if Int.compare remaining push_chunk_size < 0 then remaining
+            else push_chunk_size
+          in
+          match push_operation ~off:!position ~len:take with
+          | Error error ->
+              failure := Some error
+          | Ok () ->
+              position := !position + take;
+              status := drain coordinator ~emit;
+              (match !status with
+              | Accepted -> ()
+              | Full -> running := false)
+        done;
+        (match !failure with
+        | Some error -> Error (Parser_error error)
+        | None ->
+            refresh_deadline coordinator ~now_ms;
+            (match !status with
+            | Accepted -> Ok Accepted_all
+            | Full -> Ok (Full_after (!position - off))))
+
+let push coordinator ~now_ms ~emit ~source ~off ~len =
+  accept_push coordinator ~now_ms ~emit
+    ~source_size:(Bigarray.Array1.dim source) ~off ~len
+    (fun ~off ~len -> Stdin_parser.push coordinator.parser ~source ~off ~len)
+
+let push_chars coordinator ~now_ms ~emit ~source ~off ~len =
+  accept_push coordinator ~now_ms ~emit
+    ~source_size:(Bigarray.Array1.dim source) ~off ~len
+    (fun ~off ~len ->
       Stdin_parser.push_chars coordinator.parser ~source ~off ~len)
 
-let push_bytes coordinator ~now_ms ~source ~off ~len =
-  accept_push coordinator ~now_ms (fun () ->
+let push_bytes coordinator ~now_ms ~emit ~source ~off ~len =
+  accept_push coordinator ~now_ms ~emit ~source_size:(Bytes.length source) ~off
+    ~len
+    (fun ~off ~len ->
       Stdin_parser.push_bytes coordinator.parser ~source ~off ~len)
 
-let read coordinator =
-  if Queue.is_empty coordinator.events then None
-  else Some (Queue.take coordinator.events)
-
-let drain coordinator callback =
-  while not (Queue.is_empty coordinator.events) do
-    callback (Queue.take coordinator.events)
-  done
-
-let transfer_one coordinator ~queue =
-  if Queue.is_empty coordinator.events then Ok false
-  else
-    let event = Queue.peek coordinator.events in
-    match Event_queue.push queue (Event_queue.Input event) with
-    | Error error -> Error error
-    | Ok () ->
-        ignore (Queue.take coordinator.events);
-        Ok true
-
-let fire_timeout coordinator ~now_ms =
-  match coordinator.deadline with
-  | Some deadline when Int64.compare now_ms deadline >= 0 ->
-      Stdin_parser.flush_timeout coordinator.parser;
-      drain_parser coordinator;
-      refresh_deadline coordinator ~now_ms
-  | Some _ | None -> ()
+let fire_timeout coordinator ~now_ms ~emit =
+  match drain coordinator ~emit with
+  | Full -> Full
+  | Accepted ->
+      (match coordinator.deadline with
+      | Some deadline when Int64.compare now_ms deadline >= 0 ->
+          Stdin_parser.flush_timeout coordinator.parser;
+          let status = drain coordinator ~emit in
+          refresh_deadline coordinator ~now_ms;
+          status
+      | Some _ | None -> Accepted)
 
 let reset coordinator =
   Stdin_parser.reset coordinator.parser;
   Input_decoder.reset coordinator.decoder;
-  Queue.clear coordinator.events;
+  coordinator.pending <- None;
   coordinator.deadline <- None

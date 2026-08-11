@@ -25,12 +25,13 @@ owned event/paste payloads. The pure package leaves Eio flow ownership and
 output lifecycle to the optional runtime package.
 
 `opentui-terminal-eio` is the optional runtime package for Eio/Cstruct flow
-reads, output, bounded-event wakeups, and caller-run dispatch. It reuses the
-pure coordinator's deadline and event queue, and can transfer one pending
-event at a time into the pure bounded handoff. Its revision wakeup and
-race-safe dispatcher do not create fibers or take ownership of the switch.
-It binds writer-free mode transitions to a caller-owned Eio sink without
-adding Eio to the parser package.
+reads, output, bounded-event wakeups, and caller-run dispatch. Its input flow
+offers decoded events synchronously to a caller-owned sink and stops reading
+when that sink applies backpressure; an `Event_queue` sink provides the
+optional bounded lossless/coalescing handoff. Its revision wakeup and
+race-safe dispatcher do not create fibers or take ownership of the switch. It
+binds writer-free mode transitions to a caller-owned Eio sink without adding
+Eio to the parser package.
 
 `opentui-terminal-eio-unix` is a separate Unix-only runtime package. Its
 caller-invoked probe validates `Terminal_size` values and maps OS errors;

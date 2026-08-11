@@ -317,18 +317,24 @@ allocates its ring once and does not own Eio fibers, signal sources, wakeups,
 dispatch, or native resources. The runtime packages compose those policies
 around this pure queue rather than moving Eio or process-global state into it.
 
-**Eio event-transfer increment:** `Input_coordinator.transfer_one` and
-`opentui-terminal-eio.Input_flow.transfer_one` now move at most one
-already-owned decoded input event into the bounded `Event_queue`. A destination
-that reports `Full` leaves the source event pending for retry. A successful
-`Move`/`Drag` coalescing push at capacity consumes the source; resize
-coalescing remains a direct `Event_queue` concern. The helper does not create
-fibers, wakeups, signal sources, dispatch, or output ownership.
+**Push-driven input/backpressure increment:** `Input_coordinator` now offers
+decoded events synchronously to a caller-owned sink instead of accumulating an
+unbounded decoded-event queue. A sink that reports `Full` leaves the blocked
+event owned by the coordinator and returns the exact accepted source prefix;
+source processing is chunked at 4096 bytes so a large direct push cannot create
+an unbounded transient event queue. `Input_flow` keeps an unread suffix in its
+reusable Cstruct/Bigarray storage and returns `Backpressured count` without
+reading again until the sink accepts earlier input; `count` is zero when no
+new source read occurred. An `Event_queue` sink preserves
+lossless key/paste/opaque/button/scroll events and applies only its documented
+resize and pointer-motion coalescing. This replaces the old coordinator-to-
+queue transfer helper; no fiber, wakeup, signal source, dispatcher, or output
+ownership moved into either input layer.
 
 **Eio wakeup and dispatch increment:** `opentui-terminal-eio.Wakeup` now owns
 a single-domain revision condition. `Wakeup.push` notifies only after the
 bounded queue accepts or coalesces an event, and
-`Input_flow.transfer_one_and_notify` does the same for an already-owned input
+the caller's input sink can notify the same wakeup after its queue accepts an
 event. `Dispatch.run` drains available events, snapshots the wakeup revision,
 rechecks the queue, and only then waits; a producer cannot leave an event
 behind while the dispatcher sleeps. The caller provides the fiber, switch, and

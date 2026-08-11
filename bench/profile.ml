@@ -1,6 +1,7 @@
 module Native = Opentui_native
 module Renderer = Native.Renderer
 module Input = Opentui_terminal_eio.Input_flow
+module Coordinator = Opentui_terminal.Input_coordinator
 module Output = Opentui_terminal_eio.Output_flow
 
 type sample = {
@@ -105,15 +106,19 @@ let profile_input env =
   let source = Eio.Flow.string_source payload in
   let clock = Eio.Stdenv.mono_clock env in
   let events = ref 0 in
+  let emit _event =
+    events := !events + 1;
+    Coordinator.Accepted
+  in
   let sample =
     measure (fun () ->
         let finished = ref false in
         while not !finished do
-          (match Input.read_once input ~clock ~source with
+          (match Input.read_once input ~clock ~source ~emit with
           | Ok Input.End_of_input -> finished := true
           | Ok (Input.Bytes_read _) -> ()
+          | Ok (Input.Backpressured _) -> fail "profile input unexpectedly blocked"
           | Error _ -> fail "profile input read failed");
-          Input.drain input (fun _event -> events := !events + 1)
         done)
   in
   if not (Int.equal !events input_repetitions) then

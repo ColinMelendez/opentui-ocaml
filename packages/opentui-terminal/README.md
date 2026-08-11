@@ -45,12 +45,13 @@ coupling the package to mode or output ownership.
 
 `Input_coordinator` owns the parser/decoder composition and exposes a single
 monotonic-millisecond deadline for incomplete input. The caller supplies the
-clock, calls `fire_timeout` when that deadline is due, and drains typed events;
-`transfer_one` can move one pending owned event into `Event_queue`; it leaves
-the source pending only when the destination reports `Full`. A pending
-`Move`/`Drag` can instead be accepted and replaced at capacity, consuming the
-source event; resize coalescing applies to direct `Event_queue` pushes. The
-package does not create timer fibers, own an Eio flow, or write terminal output.
+clock and an event sink. A successful push offers decoded events synchronously;
+when the sink reports `Full`, the coordinator retains the blocked event and
+reports the exact accepted source prefix. Pushes are processed in bounded
+chunks, so a slow sink does not create an unbounded second decoded-event queue.
+The package does not create timer fibers, own an Eio flow, or write terminal
+output. A caller can implement an `Event_queue` sink to obtain bounded
+lossless input with resize and pointer-motion coalescing.
 
 `Event_queue` is the pure bounded handoff for a runtime owner that combines
 decoded input with externally supplied `Terminal_size` values. It preserves

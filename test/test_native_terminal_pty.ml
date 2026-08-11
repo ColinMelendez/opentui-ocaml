@@ -153,6 +153,14 @@ let () =
                 | Ok value -> value
                 | Error error -> fail (Events.message error)
               in
+              let emit event =
+                match Events.push queue (Events.Input event) with
+                | Ok () -> Opentui_terminal.Input_coordinator.Accepted
+                | Error Events.Full ->
+                    Opentui_terminal.Input_coordinator.Full
+                | Error Events.Invalid_capacity ->
+                    fail "a queue created successfully reported Invalid_capacity"
+              in
               let output = Output.create ~sink:output_sink in
               let session =
                 expect_session (Session.create ~sw ~fd:tty ~output)
@@ -181,18 +189,16 @@ let () =
               Eio.Flow.copy_string "\x1b[A" (Eio_unix.Pty.sink pty);
               let clock = Eio.Stdenv.mono_clock env in
               (match
-               Input_flow.read_once input ~clock ~source:input_source
+               Input_flow.read_once input ~clock ~source:input_source ~emit
                with
               | Ok (Input_flow.Bytes_read 3) -> ()
               | Ok Input_flow.End_of_input ->
                   fail "PTY input ended before the arrow key"
+              | Ok (Input_flow.Backpressured _) ->
+                  fail "PTY input was unexpectedly backpressured"
               | Ok (Input_flow.Bytes_read count) ->
                   fail (Printf.sprintf "expected three input bytes, got %d" count)
               | Error error -> fail (Input_flow.message error));
-              (match Input_flow.transfer_one input ~queue with
-              | Ok true -> ()
-              | Ok false -> fail "PTY input produced no event"
-              | Error error -> fail (Events.message error));
               set_window_size pty ~columns:3 ~rows:1;
               let resized = terminal_size pty in
               match Events.push queue (Events.Resize resized) with

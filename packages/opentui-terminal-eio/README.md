@@ -6,18 +6,18 @@ continues to own framing, semantic decoding, mode transitions, and the pure
 caller-clocked `Input_coordinator`.
 
 `Input_flow` allocates one reusable Cstruct read buffer and keeps one
-character-typed Bigarray view over that same storage. `read_once` reads one
-flow chunk and feeds it into the coordinator without an intermediate `bytes`
-staging copy, then returns only the read result; callers can drain typed events
-separately or transfer one pending event at a time into the pure bounded
-`Event_queue`.
-`transfer_one` leaves the source event pending only when that destination
-reports `Full`; a successful `Move`/`Drag` coalescing push at capacity consumes
-the source event. `transfer_one_and_notify` additionally advances a caller-owned
-`Wakeup` after a successful transfer. Resize values can use `Wakeup.push`, which
-keeps queue insertion and notification together. The caller supplies an Eio
-monotonic clock, invokes `fire_timeout` when the exposed deadline is due, and
-owns the surrounding fibers, switch, terminal modes, and output flow.
+character-typed Bigarray view over that same storage. `read_once` offers each
+decoded event synchronously to a caller-owned sink without an intermediate
+`bytes` staging copy. If the sink reports `Full`, the flow returns
+`Backpressured count`, keeps any unread suffix in the same reusable buffer, and
+does not read the source again until the sink accepts the earlier input. The
+count is the number of bytes read during that call; it is zero when no new
+source read occurred. A sink that calls `Event_queue.push
+(Event_queue.Input event)` obtains the bounded lossless/coalescing handoff; a
+sink that dispatches directly can follow the same push-and-drain path without
+a queue. The caller supplies an Eio monotonic clock, invokes `fire_timeout`
+when the exposed deadline is due, and owns the surrounding fibers, switch,
+wakeups, terminal modes, and output flow.
 
 `Wakeup` is a single-domain revision condition. Its revision makes a
 notification that happens before a waiter sleeps observable, and its `push`

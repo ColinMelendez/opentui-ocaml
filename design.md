@@ -374,16 +374,16 @@ events. Resetting it clears only decoder-owned mouse state; mode, timer, flow,
 and dispatch ownership stay outside the package.
 
 `Input_coordinator` is the pure timer seam above that composition. It owns one
-parser, one input decoder, and an output event queue; each successful push
-refreshes a single deadline when framing leaves an incomplete prefix. The
-caller supplies monotonic milliseconds and invokes `fire_timeout` only when the
-deadline is due. It does not create Eio fibers, own a flow, commit terminal
-modes, or write output. `transfer_one` moves at most one already-owned event
-into the separate bounded `Event_queue`; if that queue reports `Full`, the
-source event remains pending for a later retry. A pending `Move`/`Drag` may be
-accepted and replace the pending slot even when the queue is at capacity; this
-transfer path carries input only, so a successful coalescing push consumes the
-source, while resize coalescing applies to direct `Event_queue` pushes.
+parser, one input decoder, and at most one decoded event blocked at a
+caller-owned sink; each successful push refreshes a single deadline when
+framing leaves an incomplete prefix. The caller supplies monotonic milliseconds
+and invokes `fire_timeout` only when the deadline is due. It does not create
+Eio fibers, own a flow, commit terminal modes, or write output. A push processes
+source bytes in bounded 4096-byte chunks and returns `Accepted_all` or
+`Full_after count`, so a caller can retry an unconsumed suffix without copying
+or losing it. `Event_queue` remains an optional sink: its `Full` result stops the
+input flow, while resize and `Move`/`Drag` coalescing are applied only when that
+sink accepts the event.
 
 `opentui-native.Layout` is the first higher-level Yoga composition. It owns one
 raw Yoga tree and wraps its nodes in an owner-scoped opaque domain. Dimension
@@ -411,15 +411,15 @@ scene.
 
 `opentui-terminal-eio` is a separate optional runtime package. Its
 `Input_flow` owns one reusable Cstruct read buffer and one character-typed
-Bigarray view over that same storage. It reads one caller-requested flow chunk
-and feeds the pure `Input_coordinator` without a second Eio staging buffer.
-It stamps parser deadlines from the caller's Eio monotonic clock and maps
-explicit EOF and Eio I/O failure to structured results. Its one-event transfer
-helper preserves source ownership only across a bounded destination `Full`; a
-successful `Move`/`Drag` coalescing push consumes the source event. The
-`transfer_one_and_notify` helper adds a caller-owned revision wakeup only
-after a successful transfer. The caller still owns fibers, switches, timeout
-policy, mode commits, and output.
+Bigarray view over that same storage. It reads at most one source chunk and
+feeds the pure `Input_coordinator` without a second Eio staging buffer. If the
+sink reports `Full`, it retains the unread suffix in the reusable buffer and
+returns `Backpressured count` before the next source read. The count records
+bytes read during that call, including zero when no read occurred. Parser
+deadlines start when a buffered suffix is admitted to the parser, using the
+current caller-supplied Eio monotonic time; a blocked pre-parser suffix does
+not age an invisible parser prefix. The caller still owns fibers, switches,
+timeout policy, event-queue wakeups, mode commits, and output.
 
 Its `Output_flow` holds a caller-owned Eio sink reference and the last terminal
 mode state successfully written to that sink. Mode operations write the owned

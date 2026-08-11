@@ -175,7 +175,6 @@ let emit_sequence_with_escape parser protocol ~start ~end_exclusive =
 let clear_paste_storage parser =
   parser.paste_parts <- [];
   parser.paste_total <- 0;
-  parser.paste_chunk <- Bytes.create paste_chunk_size;
   parser.paste_chunk_length <- 0;
   parser.paste_tail_length <- 0
 
@@ -203,12 +202,6 @@ let paste_tail_matches_end parser =
   !matches
 
 let finish_paste parser =
-  let parts =
-    if Int.equal parser.paste_chunk_length 0 then parser.paste_parts
-    else
-      Bytes.sub parser.paste_chunk 0 parser.paste_chunk_length
-      :: parser.paste_parts
-  in
   let total_length = parser.paste_total + parser.paste_chunk_length in
   let result = Bytes.create total_length in
   let offset = ref 0 in
@@ -217,7 +210,9 @@ let finish_paste parser =
       let length = Bytes.length part in
       Bytes.blit part 0 result !offset length;
       offset := !offset + length)
-    (List.rev parts);
+    (List.rev parser.paste_parts);
+  if Int.compare parser.paste_chunk_length 0 > 0 then
+    Bytes.blit parser.paste_chunk 0 result !offset parser.paste_chunk_length;
   Queue.add (Paste result) parser.events;
   parser.paste_active <- false;
   parser.force_flush <- false;

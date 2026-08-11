@@ -8,6 +8,24 @@ let expect_ok result =
   | Ok value -> value
   | Error error -> fail (Coordinator.message error)
 
+let expect_push result =
+  match result with
+  | Coordinator.Accepted_all -> ()
+  | Coordinator.Full_after count ->
+      failf "input was backpressured after %d bytes" count
+
+let expect_accepted = function
+  | Coordinator.Accepted -> ()
+  | Coordinator.Full -> fail "event sink unexpectedly reported Full"
+
+let sink () =
+  let events = Queue.create () in
+  let emit event =
+    Queue.add event events;
+    Coordinator.Accepted
+  in
+  events, emit
+
 let expect_deadline expected actual =
   match expected, actual with
   | None, None -> ()
@@ -22,111 +40,201 @@ let () =
           let coordinator =
             expect_ok (Coordinator.create ~timeout_ms:20 ())
           in
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:100L
-               ~source:(Bytes.of_string "\x1b") ~off:0 ~len:1);
+          let events, emit = sink () in
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:100L ~emit
+                  ~source:(Bytes.of_string "\x1b") ~off:0 ~len:1));
           expect_deadline (Some 120L) (Coordinator.deadline coordinator);
-          (match Coordinator.read coordinator with
-          | None -> ()
-          | Some _ -> fail "incomplete escape was emitted before timeout");
-          Coordinator.fire_timeout coordinator ~now_ms:119L;
+          equal int 0 (Queue.length events);
+          expect_accepted
+            (Coordinator.fire_timeout coordinator ~now_ms:119L ~emit);
           expect_deadline (Some 120L) (Coordinator.deadline coordinator);
-          (match Coordinator.read coordinator with
-          | None -> ()
-          | Some _ -> fail "early timeout emitted an event");
-          Coordinator.fire_timeout coordinator ~now_ms:120L;
+          equal int 0 (Queue.length events);
+          expect_accepted
+            (Coordinator.fire_timeout coordinator ~now_ms:120L ~emit);
           expect_deadline None (Coordinator.deadline coordinator);
-          match Coordinator.read coordinator with
-          | Some (Input.Key { key = Opentui_terminal.Key_decoder.Named Escape; _ }) ->
+          match Queue.take events with
+          | Input.Key { key = Opentui_terminal.Key_decoder.Named Escape; _ } ->
               ()
-          | Some _ -> fail "timeout emitted the wrong key"
-          | None -> fail "timeout did not emit the pending escape");
+          | _ -> fail "timeout emitted the wrong key");
       test "continuation before deadline wins and disarms" (fun () ->
           let coordinator =
             expect_ok (Coordinator.create ~timeout_ms:20 ())
           in
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:100L
-               ~source:(Bytes.of_string "\x1b[") ~off:0 ~len:2);
+          let events, emit = sink () in
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:100L ~emit
+                  ~source:(Bytes.of_string "\x1b[") ~off:0 ~len:2));
           expect_deadline (Some 120L) (Coordinator.deadline coordinator);
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:110L
-               ~source:(Bytes.of_string "A") ~off:0 ~len:1);
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:110L ~emit
+                  ~source:(Bytes.of_string "A") ~off:0 ~len:1));
           expect_deadline None (Coordinator.deadline coordinator);
-          match Coordinator.read coordinator with
-          | Some (Input.Key { key = Opentui_terminal.Key_decoder.Named Up; _ }) ->
+          match Queue.take events with
+          | Input.Key { key = Opentui_terminal.Key_decoder.Named Up; _ } ->
               ()
-          | Some _ -> fail "continuation emitted the wrong key"
-          | None -> fail "continuation did not emit a key");
+          | _ -> fail "continuation emitted the wrong key");
       test "refreshes the deadline for a still-incomplete continuation" (fun () ->
           let coordinator =
             expect_ok (Coordinator.create ~timeout_ms:20 ())
           in
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:100L
-               ~source:(Bytes.of_string "\x1b") ~off:0 ~len:1);
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:110L
-               ~source:(Bytes.of_string "[") ~off:0 ~len:1);
+          let events, emit = sink () in
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:100L ~emit
+                  ~source:(Bytes.of_string "\x1b") ~off:0 ~len:1));
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:110L ~emit
+                  ~source:(Bytes.of_string "[") ~off:0 ~len:1));
           expect_deadline (Some 130L) (Coordinator.deadline coordinator);
-          Coordinator.fire_timeout coordinator ~now_ms:129L;
-          (match Coordinator.read coordinator with
-          | None -> ()
-          | Some _ -> fail "refreshed timeout emitted too early");
-          Coordinator.fire_timeout coordinator ~now_ms:130L;
+          expect_accepted
+            (Coordinator.fire_timeout coordinator ~now_ms:129L ~emit);
+          equal int 0 (Queue.length events);
+          expect_accepted
+            (Coordinator.fire_timeout coordinator ~now_ms:130L ~emit);
           expect_deadline None (Coordinator.deadline coordinator);
-          match Coordinator.read coordinator with
-          | Some
-              (Input.Key
-                {
-                  key = Opentui_terminal.Key_decoder.Character bytes;
-                  modifiers;
-                }) ->
+          match Queue.take events with
+          | Input.Key
+              {
+                key = Opentui_terminal.Key_decoder.Character bytes;
+                modifiers;
+              } ->
               equal string "[" (Bytes.to_string bytes);
               equal bool true modifiers.Opentui_terminal.Key_decoder.meta
-          | Some (Input.Key _) -> fail "incomplete CSI emitted a key"
-          | Some (Input.Sequence _) ->
+          | Input.Key _ -> fail "incomplete CSI emitted a key"
+          | Input.Sequence _ ->
               fail "incomplete CSI remained an unexpected opaque sequence"
-          | Some (Input.Mouse _) -> fail "incomplete CSI emitted a mouse event"
-          | Some (Input.Paste _) -> fail "incomplete CSI emitted a paste"
-          | None -> fail "refreshed timeout did not flush the sequence");
-      test "reset clears pending bytes, events, deadline, and mouse state" (fun () ->
+          | Input.Mouse _ -> fail "incomplete CSI emitted a mouse event"
+          | Input.Paste _ -> fail "incomplete CSI emitted a paste"
+          | exception Queue.Empty -> fail "timeout emitted no event");
+      test "does not extend a deadline during a blocked no-progress retry" (fun () ->
+          let coordinator = expect_ok (Coordinator.create ~timeout_ms:20 ()) in
+          let events = Queue.create () in
+          let blocked = ref true in
+          let emit event =
+            if !blocked then Coordinator.Full
+            else (
+              Queue.add event events;
+              Coordinator.Accepted)
+          in
+          (match
+             Coordinator.push_bytes coordinator ~now_ms:0L ~emit
+               ~source:(Bytes.of_string "A\x1b") ~off:0 ~len:2
+           with
+          | Ok (Coordinator.Full_after 2) -> ()
+          | Ok Coordinator.Accepted_all -> fail "the sink unexpectedly accepted A"
+          | Ok (Coordinator.Full_after count) ->
+              failf "expected two consumed bytes, got %d" count
+          | Error error -> fail (Coordinator.message error));
+          expect_deadline (Some 20L) (Coordinator.deadline coordinator);
+          (match
+             Coordinator.push_bytes coordinator ~now_ms:15L ~emit
+               ~source:Bytes.empty ~off:0 ~len:0
+           with
+          | Ok (Coordinator.Full_after 0) -> ()
+          | Ok Coordinator.Accepted_all ->
+              fail "the blocked sink unexpectedly accepted an event"
+          | Ok (Coordinator.Full_after count) ->
+              failf "expected no-progress retry, got %d bytes" count
+          | Error error -> fail (Coordinator.message error));
+          expect_deadline (Some 20L) (Coordinator.deadline coordinator);
+          (match
+             Coordinator.fire_timeout coordinator ~now_ms:20L ~emit
+           with
+          | Coordinator.Full -> ()
+          | Coordinator.Accepted ->
+              fail "the blocked timeout unexpectedly accepted an event");
+          expect_deadline (Some 20L) (Coordinator.deadline coordinator);
+          blocked := false;
+          expect_accepted
+            (Coordinator.fire_timeout coordinator ~now_ms:20L ~emit);
+          expect_deadline None (Coordinator.deadline coordinator);
+          equal int 2 (Queue.length events);
+          match Queue.take events, Queue.take events with
+          | ( Input.Key
+                { key = Opentui_terminal.Key_decoder.Character _; _ },
+              Input.Key
+                { key = Opentui_terminal.Key_decoder.Named Escape; _ } ) ->
+              ()
+          | _ -> fail "blocked input or timeout escape was lost");
+      test "reset clears pending bytes, framed events, deadline, and mouse state" (fun () ->
           let coordinator =
             expect_ok (Coordinator.create ~timeout_ms:20 ())
           in
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:90L
-               ~source:(Bytes.of_string "A") ~off:0 ~len:1);
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:100L
-               ~source:(Bytes.of_string "\x1b") ~off:0 ~len:1);
+          let blocked _event = Coordinator.Full in
+          (match
+             Coordinator.push_bytes coordinator ~now_ms:90L ~emit:blocked
+               ~source:(Bytes.of_string "A") ~off:0 ~len:1
+           with
+          | Ok (Coordinator.Full_after 1) -> ()
+          | Ok Coordinator.Accepted_all ->
+              fail "the blocked sink unexpectedly accepted the first event"
+          | Ok (Coordinator.Full_after count) ->
+              failf "expected one consumed byte, got %d" count
+          | Error error -> fail (Coordinator.message error));
+          (match
+             Coordinator.push_bytes coordinator ~now_ms:100L ~emit:blocked
+               ~source:(Bytes.of_string "\x1b") ~off:0 ~len:1
+           with
+          | Ok (Coordinator.Full_after 0) -> ()
+          | Ok Coordinator.Accepted_all ->
+              fail "the blocked sink unexpectedly accepted the second event"
+          | Ok (Coordinator.Full_after count) ->
+              failf "expected no additional consumed byte, got %d" count
+          | Error error -> fail (Coordinator.message error));
           Coordinator.reset coordinator;
           expect_deadline None (Coordinator.deadline coordinator);
           equal int 0 (Coordinator.pending_bytes coordinator);
-          (match Coordinator.read coordinator with
-          | None -> ()
-          | Some _ -> fail "reset retained a queued event");
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:200L
-               ~source:(Bytes.of_string "\x1b[<32;8;6M") ~off:0 ~len:10);
-          match Coordinator.read coordinator with
-          | Some (Input.Mouse event) ->
+          let events, emit = sink () in
+          expect_accepted (Coordinator.drain coordinator ~emit);
+          equal int 0 (Queue.length events);
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:200L ~emit
+                  ~source:(Bytes.of_string "\x1b[<32;8;6M") ~off:0 ~len:10));
+          match Queue.take events with
+          | Input.Mouse event ->
               (match event.Opentui_terminal.Mouse_decoder.kind with
               | Opentui_terminal.Mouse_decoder.Move -> ()
               | _ -> fail "reset leaked mouse button state")
-          | Some _ -> fail "reset emitted the wrong event"
-          | None -> fail "reset input did not emit a mouse event");
+          | _ -> fail "reset emitted the wrong event");
       test "a complete event does not arm a deadline" (fun () ->
           let coordinator =
             expect_ok (Coordinator.create ~timeout_ms:20 ())
           in
-          expect_ok
-            (Coordinator.push_bytes coordinator ~now_ms:100L
-               ~source:(Bytes.of_string "A") ~off:0 ~len:1);
+          let events, emit = sink () in
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:100L ~emit
+                  ~source:(Bytes.of_string "A") ~off:0 ~len:1));
           expect_deadline None (Coordinator.deadline coordinator);
-          match Coordinator.read coordinator with
-          | Some (Input.Key { key = Opentui_terminal.Key_decoder.Character _; _ }) ->
+          match Queue.take events with
+          | Input.Key { key = Opentui_terminal.Key_decoder.Character _; _ } ->
               ()
-          | Some _ -> fail "complete input emitted the wrong event"
-          | None -> fail "complete input did not emit an event")
+          | _ -> fail "complete input emitted the wrong event");
+      test "reports a precise prefix and preserves every blocked input byte" (fun () ->
+          let coordinator = expect_ok (Coordinator.create ()) in
+          let payload = Bytes.make 5000 'a' in
+          let blocked _event = Coordinator.Full in
+          (match
+             Coordinator.push_bytes coordinator ~now_ms:0L ~emit:blocked
+               ~source:payload ~off:0 ~len:(Bytes.length payload)
+           with
+          | Ok (Coordinator.Full_after 4096) -> ()
+          | Ok Coordinator.Accepted_all ->
+              fail "the full sink unexpectedly accepted all input"
+          | Ok (Coordinator.Full_after count) ->
+              failf "expected a 4096-byte prefix, got %d" count
+          | Error error -> fail (Coordinator.message error));
+          let events, emit = sink () in
+          expect_accepted (Coordinator.drain coordinator ~emit);
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:0L ~emit
+                  ~source:payload ~off:4096 ~len:904));
+          equal int 5000 (Queue.length events))
     ]
