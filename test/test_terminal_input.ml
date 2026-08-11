@@ -51,6 +51,16 @@ let () =
           (match decoded with
           | Input.Sequence { bytes; _ } -> equal string "\x1b[1;1R" (Bytes.to_string bytes)
           | _ -> fail "expected an opaque composed sequence"));
+      test "rejects overflowing modifyOtherKeys parameters" (fun () ->
+          let decoder = Input.create () in
+          match
+            Input.decode decoder
+              (sequence "\x1b[27;1;4611686018427387904~")
+          with
+          | Input.Sequence { protocol = Parser.Csi; bytes } ->
+              equal string "\x1b[27;1;4611686018427387904~"
+                (Bytes.to_string bytes)
+          | _ -> fail "expected an opaque sequence");
       test "reset clears mouse state for the next composition" (fun () ->
           let decoder = Input.create () in
           ignore (Input.decode decoder (sequence "\x1b[<0;6;6M"));

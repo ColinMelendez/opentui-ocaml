@@ -1,7 +1,13 @@
+(** Text renderables backed by an owner-scoped layout node. *)
 type t
 
+(** [create ~node ~text] creates a renderable with copied text. *)
 val create : node:Layout.Node.t -> text:string -> t
+
+(** [text renderable] returns the renderable's owned text. *)
 val text : t -> string
+
+(** [set_text renderable ~text] replaces the renderable's copied text. *)
 val set_text : t -> text:string -> unit
 
 (** [draw ... ~offset_x ~offset_y] adds the caller-owned parent origin to the

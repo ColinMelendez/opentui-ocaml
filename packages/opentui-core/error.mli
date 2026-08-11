@@ -1,3 +1,4 @@
+(** Errors returned by retained scene operations. *)
 type t =
   | Closed
   | Destroyed
@@ -8,5 +9,8 @@ type t =
   | Invalid_layout
   | Native of Opentui_native.Error.t
 
+(** [message error] is a diagnostic string for [error]. *)
 val message : t -> string
+
+(** [pp ppf error] formats [error] for diagnostics. *)
 val pp : Format.formatter -> t -> unit

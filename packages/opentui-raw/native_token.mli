@@ -1,31 +1,44 @@
+(** Opaque generation-checked tokens used by the raw native bridge.
+
+    These types have no public constructors or operations. A token is only
+    valid while its owning raw resource remains open. *)
+
 module Renderer : sig
   type t
+(** A renderer token. *)
 end
 
 module Buffer : sig
   type t
+(** A renderer-owned buffer token. *)
 end
 
 module Event_sink : sig
   type t
+(** An event-sink token. *)
 end
 
 module Yoga_tree : sig
   type t
+(** A Yoga-tree token. *)
 end
 
 module Yoga_node : sig
   type t
+(** A Yoga-node token. *)
 end
 
 module Span_feed : sig
   type t
+(** A span-feed token. *)
 end
 
 module Span : sig
   type t
+(** A drained-span token. *)
 end
 
 module Reservation : sig
   type t
+(** A span-feed reservation token. *)
 end

@@ -1,4 +1,7 @@
+(** A copied capability snapshot for one renderer. *)
+
 type unicode = Wcwidth | Unicode
+(** The native Unicode width policy. *)
 
 type multiplexer =
   | No_multiplexer
@@ -6,16 +9,20 @@ type multiplexer =
   | Zellij
   | Screen
   | Unknown_multiplexer
+(** The detected terminal multiplexer. *)
 
 type image_protocol = Auto | Kitty | Sixel | Blocks
+(** The selected image protocol. *)
 
 type osc52_support = Unknown_osc52 | Supported | Unsupported
+(** OSC 52 support reported by the terminal. *)
 
 type terminal_info = {
   name : string;
   version : string;
   from_xtversion : bool;
 }
+(** Copied terminal name/version information. *)
 
 type t = {
   kitty_keyboard : bool;
@@ -41,8 +48,12 @@ type t = {
   terminal : terminal_info;
   osc52_support : osc52_support;
 }
+(** Decoded terminal capabilities. All strings are owned copies. *)
 
+(** [snapshot renderer] queries and decodes the renderer's capabilities. *)
 val snapshot : Renderer.t -> (t, Error.t) result
 
+(** [process_response renderer ~response] passes a caller-owned capability
+    response synchronously to the native renderer. *)
 val process_response :
   Renderer.t -> response:string -> (unit, Error.t) result

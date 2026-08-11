@@ -3,7 +3,6 @@
 #include <caml/mlvalues.h>
 
 #include <stdbool.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -12,27 +11,6 @@
 
 static bool renderer_is_valid(opentui_native_handle handle) {
   return handle != 0 && getCurrentBuffer(handle) != 0;
-}
-
-static bool copy_borrowed_string(
-    const uint8_t *source,
-    size_t length,
-    uint8_t **output) {
-  *output = NULL;
-  if (length > UINT32_MAX || (length != 0 && source == NULL)) {
-    return false;
-  }
-  if (length == 0) {
-    return true;
-  }
-
-  uint8_t *copy = malloc(length);
-  if (copy == NULL) {
-    return false;
-  }
-  memcpy(copy, source, length);
-  *output = copy;
-  return true;
 }
 
 static bool copy_native_string(
@@ -46,6 +24,15 @@ static bool copy_native_string(
   *output = caml_alloc_string((mlsize_t)length);
   if (length != 0) {
     memcpy(Bytes_val(*output), source, length);
+  }
+  return true;
+}
+
+static bool valid_borrowed_string(
+    const uint8_t *source,
+    size_t length) {
+  if (length > UINT32_MAX || (length != 0 && source == NULL)) {
+    return false;
   }
   return true;
 }
@@ -112,18 +99,12 @@ CAMLprim value opentui_raw_renderer_capabilities(value renderer_value) {
 
   opentui_external_capabilities capabilities;
   getTerminalCapabilities(renderer, &capabilities);
-  uint8_t *name_copy = NULL;
-  uint8_t *version_copy = NULL;
-  if (!copy_borrowed_string(
+  if (!valid_borrowed_string(
           capabilities.term_name_ptr,
-          capabilities.term_name_len,
-          &name_copy)
-      || !copy_borrowed_string(
+          capabilities.term_name_len)
+      || !valid_borrowed_string(
           capabilities.term_version_ptr,
-          capabilities.term_version_len,
-          &version_copy)) {
-    free(name_copy);
-    free(version_copy);
+          capabilities.term_version_len)) {
     CAMLreturn(make_status_capabilities(
         OPENTUI_RAW_STATUS_NATIVE_FAILURE,
         NULL,
@@ -132,22 +113,18 @@ CAMLprim value opentui_raw_renderer_capabilities(value renderer_value) {
   }
   if (!copy_native_string(
           &name,
-          name_copy,
+          capabilities.term_name_ptr,
           capabilities.term_name_len)
       || !copy_native_string(
           &version,
-          version_copy,
+          capabilities.term_version_ptr,
           capabilities.term_version_len)) {
-    free(name_copy);
-    free(version_copy);
     CAMLreturn(make_status_capabilities(
         OPENTUI_RAW_STATUS_NATIVE_FAILURE,
         NULL,
         Val_unit,
         Val_unit));
   }
-  free(name_copy);
-  free(version_copy);
 
   CAMLreturn(make_status_capabilities(
       OPENTUI_RAW_STATUS_OK,

@@ -239,8 +239,14 @@ let parse_numeric_params bytes ~start ~end_exclusive =
     for index = start to end_exclusive - 1 do
       let value = Bytes.get_uint8 bytes index in
       if Int.compare value 0x30 >= 0 && Int.compare value 0x39 <= 0 then (
-        current := (!current * 10) + value - 0x30;
-        has_digit := true)
+        let digit = value - 0x30 in
+        if Int.compare !current (Int.max_int / 10) > 0
+           || (Int.equal !current (Int.max_int / 10)
+              && Int.compare digit (Int.max_int mod 10) > 0)
+        then valid := false
+        else (
+          current := (!current * 10) + digit;
+          has_digit := true))
       else if Int.equal value 0x3b then
         if not !has_digit || Int.compare !count 3 >= 0 then valid := false
         else (
@@ -261,6 +267,7 @@ let modify_other_key params count =
     let modifier = modifiers_of_wire params.(1) in
     let char_code = params.(2) in
     if not (wire_modifier_supported params.(1))
+       || Int.compare char_code 0 < 0
        || Int.compare char_code 255 > 0
     then None
     else
