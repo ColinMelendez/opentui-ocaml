@@ -1,5 +1,7 @@
 module Native = Opentui_native
 module Renderer = Native.Renderer
+module Core = Opentui_core.Scene
+module Core_node = Core.Node
 module Input = Opentui_terminal_eio.Input_flow
 module Coordinator = Opentui_terminal.Input_coordinator
 module Output = Opentui_terminal_eio.Output_flow
@@ -48,6 +50,56 @@ let print_sample name ~iterations sample =
     "%s iterations=%d elapsed_ns=%Ld minor_words=%Ld major_words=%Ld minor_collections=%d major_collections=%d\n%!"
     name iterations sample.elapsed_ns sample.minor_words sample.major_words
     sample.minor_collections sample.major_collections
+
+let retained_iterations = 64
+let retained_width = 80
+let retained_height = 24
+
+let retained_row_text row =
+  String.init retained_width (fun column ->
+      Char.chr (Char.code 'A' + ((row + column) mod 26)))
+
+let profile_retained_text () =
+  let scene =
+    expect_ok
+      (Core.create ~width:(Int32.of_int retained_width)
+         ~height:(Int32.of_int retained_height))
+  in
+  let root = expect_ok (Core.root scene) in
+  let rows = Array.init retained_height retained_row_text in
+  let nodes =
+    Array.init retained_height (fun row ->
+        expect_ok
+          (Core_node.create_text ~parent:root
+             ~width:(Float.of_int retained_width) ~height:1.0
+             ~text:(Array.get rows row) ()))
+  in
+  let output = Bytes.create (retained_width * retained_height) in
+  let expected_bytes = Int32.of_int (Bytes.length output) in
+  let run_frame frame_number =
+    let row = frame_number mod retained_height in
+    expect_unit
+      (Core_node.set_text (Array.get nodes row)
+         ~text:(Array.get rows ((row + frame_number) mod retained_height)));
+    match Core.flush scene ~force:false ~output with
+    | Ok { Core.status = Core.Rendered; bytes_written } ->
+        if not (Int32.equal bytes_written expected_bytes) then
+          fail "profile retained scene produced an unexpected output length"
+    | Ok { status = Core.Skipped; _ } ->
+        fail "profile retained scene unexpectedly skipped a dirty frame"
+    | Ok { status = Core.Failed; _ } ->
+        fail "profile retained scene failed to render"
+    | Error _ -> fail "profile retained scene operation failed"
+  in
+  run_frame 0;
+  let sample =
+    measure (fun () ->
+        for frame_number = 0 to retained_iterations - 1 do
+          run_frame frame_number
+        done)
+  in
+  Core.close scene;
+  print_sample "retained_text" ~iterations:retained_iterations sample
 
 let frame_iterations = 64
 let frame_width = 80
@@ -147,6 +199,7 @@ let profile_output () =
   print_sample "output" ~iterations:output_iterations sample
 
 let () =
+  profile_retained_text ();
   profile_frames ();
   Eio_main.run (fun env ->
       profile_input env;
