@@ -413,10 +413,21 @@ The warmed workload is now a reusable benchmark fixture rather than a
 profile-only closure. `bench/regression.exe` keeps fixture construction and
 warm-up outside the measured region, then gates exact `alloc_words` for a
 retained 80x24 frame, a lossless bounded input burst, and a caller-owned
-output write through the separate `@bench` alias. The committed
-`bench/warmed.thumper` baseline is intentionally allocation-only and
-machine-local; wall time remains diagnostic until a stable cross-host policy
-exists.
+output write through the separate `@bench` alias. Its separate
+`retained-core` group covers text updates, layout changes, child reordering,
+pointer dispatch, and create/destroy teardown with setup and initial layout
+outside each measured region. The committed `bench/warmed.thumper` baseline
+is intentionally allocation-only and machine-local; wall time remains
+diagnostic until a stable cross-host policy exists.
+
+**Retained-core allocation increment (2026-08-11):** the release-profile
+baseline now proves exact per-call OCaml allocation for those five retained
+operations on the reference Apple Silicon host: 2,504 words for text, 4,331
+for layout, 4,489 for a representative child move, 48 for a representative
+pointer dispatch, and 565 for create/destroy teardown. The reorder and pointer
+fixtures use fixed representative paths so the exactness probe measures a
+stable operation; traversal-shape variation remains diagnostic work rather
+than a zero-tolerance gate. No production package or public API was widened.
 
 The current host-local Dune release-profile run (`dune --profile release`)
 was captured on 2026-08-10 with macOS 14.7.6 arm64, OCaml 5.5.0, Dune 3.23.1,

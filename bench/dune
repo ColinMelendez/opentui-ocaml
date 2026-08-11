@@ -1,6 +1,6 @@
 (library
  (name opentui_bench_workload)
- (modules warmed_workload)
+ (modules warmed_workload retained_workload)
  (libraries opentui-core opentui-native opentui-terminal-eio eio mtime.clock))
 
 (executable

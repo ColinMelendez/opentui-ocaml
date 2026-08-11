@@ -39,9 +39,15 @@ views; those require their own contracts first.
 ## Allocation regression suite
 
 The warmed fixture is also exercised by a separate Thumper suite. It keeps
-fixture construction outside the measured region and checks exact OCaml words
-for three steady-state cases: retained 80x24 frame updates, a lossless input
-burst through the bounded event queue, and caller-owned output writes.
+fixture construction and initial layout outside the measured region and
+checks exact OCaml words for three steady-state cases: retained 80x24 frame
+updates, a lossless input burst through the bounded event queue, and
+caller-owned output writes. A separate `retained-core` group covers text
+updates, layout changes, child reordering, pointer dispatch, and create/destroy
+teardown. These cases measure the retained operation itself; they do not add a
+wall-time gate yet. Reorder and pointer use fixed representative paths so the
+allocation probe can prove an exact per-call count; broader traversal-shape
+timing remains diagnostic profile work.
 
 Run the allocation gate explicitly from the release profile:
 

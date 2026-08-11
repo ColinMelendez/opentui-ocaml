@@ -292,52 +292,6 @@ let profile env =
   Printf.printf "warmed_load input_events=%d max_queue_length=%d warmup_frames=%d\n%!"
     !delivered_events !maximum_queue_length warmup_frames
 
-module Retained_frame = struct
-  type t = {
-    scene : Core.t;
-    nodes : Core_node.t array;
-    texts : string array;
-    output : bytes;
-    expected_bytes : int32;
-    mutable next_frame : int;
-  }
-
-  let create () =
-    let scene =
-      expect_ok
-        (Core.create ~width:(Int32.of_int width) ~height:(Int32.of_int height))
-    in
-    let root = expect_ok (Core.root scene) in
-    let texts = Array.init height row_text in
-    let nodes =
-      Array.init height (fun row ->
-          expect_ok
-            (Core_node.create_text ~parent:root ~width:(Float.of_int width)
-               ~height:1.0 ~text:(Array.get texts row) ()))
-    in
-    let output = Bytes.create (width * height) in
-    { scene; nodes; texts; output; expected_bytes = Int32.of_int (Bytes.length output); next_frame = 0 }
-
-  let run fixture =
-    let frame_number = fixture.next_frame in
-    fixture.next_frame <- frame_number + 1;
-    let row = frame_number mod height in
-    expect_unit
-      (Core_node.set_text (Array.get fixture.nodes row)
-         ~text:(Array.get fixture.texts ((row + frame_number) mod height)));
-    match Core.flush fixture.scene ~force:false ~output:fixture.output with
-    | Ok { Core.status = Core.Rendered; bytes_written } ->
-        if not (Int32.equal bytes_written fixture.expected_bytes) then
-          fail "retained frame benchmark produced an unexpected output length"
-    | Ok { status = Core.Skipped; _ } ->
-        fail "retained frame benchmark unexpectedly skipped a dirty frame"
-    | Ok { status = Core.Failed; _ } ->
-        fail "retained frame benchmark failed to render"
-    | Error _ -> fail "retained frame benchmark operation failed"
-
-  let close fixture = Core.close fixture.scene
-end
-
 module Input_burst = struct
   type counters = {
     mutable key_events : int;
