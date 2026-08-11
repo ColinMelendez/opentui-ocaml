@@ -401,12 +401,29 @@ The zero-copy and pooling ideas that may follow this review are recorded in
 deferred parking lot, not a Phase 4 prerequisite: the current copy-first
 seams remain the reference while retained-core correctness is established.
 
-Native span-feed views, per-cell OCaml views, retained node identity, Lwd
-bindings, and widgets remain intentionally deferred. They require separate
-ownership contracts or measurements rather than being inferred from this
-baseline. A failed-frame cleanup error path and parser invariant traps remain
-review items for the retained-frame contract; they are not silently widened
-into this performance pass.
+The current host-local Dune release-profile run (`dune --profile release`)
+was captured on 2026-08-10 with macOS 14.7.6 arm64, OCaml 5.5.0, Dune 3.23.1,
+Zig 0.16.0, and the pinned OpenTUI revision
+`de64d210e4f0163720fc1fbfa838d4d1aad47d53`:
+
+```text
+retained_text iterations=64 elapsed_ns=2424958 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+frames iterations=64 elapsed_ns=7312625 minor_words=4718546 major_words=385 minor_collections=18 major_collections=0
+input iterations=32768 elapsed_ns=3487625 minor_words=1048569 major_words=26039 minor_collections=4 major_collections=0
+output iterations=4096 elapsed_ns=465750 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+```
+
+These values are a diagnostic sample from one supported host, not a portable
+performance gate. A Linux/native-host comparison remains open; future runs
+must keep the compiler, native revision, host, and benchmark parameters
+visible alongside the values.
+
+Native span-feed views, per-cell OCaml views, Lwd bindings, and widgets remain
+intentionally deferred. They require separate ownership contracts or
+measurements rather than being inferred from this baseline. The retained core
+now keeps its dirty state after layout, drawing, or native-present errors;
+parser invariant traps remain review items for the retained-frame contract and
+are not silently widened into this performance pass.
 
 ## Phase 4 — Retained `opentui-core`
 
@@ -474,13 +491,17 @@ suite, and consume the stable packages without the JavaScript runtime.
 Phase 3 is complete and the first Phase 4 retained-core increment is now
 checked in. The remaining implementation sequence is:
 
-1. compare the checked-in profile across the supported compiler/native hosts;
-2. expand `opentui-core` acceptance around retained containers, layout changes,
+1. compare the checked-in profile across the supported compiler/native hosts,
+   retaining the current macOS sample as the reference point;
+2. add the smallest stable same-parent child-ordering operation through the
+   raw, native, and retained-core layers, with identity/layout/teardown
+   acceptance and controlled flush as the mutation batch boundary;
+3. expand `opentui-core` acceptance around retained containers, layout changes,
    pointer propagation, and teardown without widening into terminal or
    reactive ownership;
-3. extend `opentui-native` only where a measured renderable contract remains
+4. extend `opentui-native` only where a measured renderable contract remains
    missing; and
-4. keep the deferred output, pooling, and native-view candidates in
+5. keep the deferred output, pooling, and native-view candidates in
    [`future-performance.md`](future-performance.md) until the core profile
    identifies a specific material hotspot, then design Lwd and widgets over
    the stable imperative boundary.

@@ -11,7 +11,7 @@ seams. It reports monotonic elapsed nanoseconds and OCaml GC words for:
 Run it from the Nix development environment:
 
 ```sh
-nix develop --command dune exec ./bench/profile.exe
+nix develop --command dune exec --profile release ./bench/profile.exe
 ```
 
 The values are diagnostic baselines, not absolute gates. Compare runs using
