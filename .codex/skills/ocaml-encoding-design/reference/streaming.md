@@ -16,10 +16,60 @@ need streaming. The design question is what goes in `Codec`, what goes in
 | Random-access navigation, edit | `Foo.Cursor.of_value` |
 | Forward-only navigation over bytes | `Foo.Cursor.of_reader` |
 | Layout-preserving transform | `Foo.Stream.transform` (byte-range) |
+| Incremental input parsing | private scanner or Angstrom driver |
+| Buffered output serialization | direct writer or private Faraday adapter |
 
 Only the transform path needs primitives below codec: byte offset (`tell`),
 byte-range splice (`splice_to`), and raw event peek. The rest is codec + cursor
 composition.
+
+## Parser and serializer backends
+
+The public streaming boundary is `Bytesrw.Bytes.Reader.t` /
+`Bytesrw.Bytes.Writer.t`. The parser and serializer underneath it are private
+implementation choices; neither Angstrom nor Faraday belongs in `Foo.Codec`.
+
+For input, use a hand-written scanner when format-specific control, source
+locations, or byte-range preservation dominate. Consider
+[Angstrom](https://ocaml.org/p/angstrom/0.16.1/doc/angstrom/Angstrom/index.html)
+for incremental combinator parsing, especially when the format is consumed in
+chunks or from a non-blocking driver. Start with `Angstrom.Buffered`; use
+`Angstrom.Unbuffered` only when measured allocation or copying costs justify
+its more involved input-management contract. `Partial` means that the driver
+must provide more input, not that the format is invalid. Map terminal parser
+failures into `Loc.Error` and maintain absolute offsets and `Loc.Context` in the
+format adapter rather than relying on parser error strings.
+
+For output, consider
+[Faraday](https://ocaml.org/p/faraday/0.8.2) when serialization needs a
+reusable buffer, queued output, or vectorized writes. Buffered `write_*`
+operations copy into Faraday's buffer; `schedule_*` operations borrow their
+source strings or bigstrings until the queued output is drained. A Faraday
+adapter must honor those lifetimes while draining into the Bytesrw writer and
+must not write the stream end marker until the caller's explicit `~eod:bool`
+policy permits it.
+
+Angstrom's zero-copy input path uses `Bigstringaf.t`, and Faraday's `bigstring`
+operations use the same byte `Bigarray.Array1.t` with C layout. Use
+`Bigstringaf.t`/bigstring as the precise term for this ecosystem path:
+`Bigarray` is the general storage abstraction, while
+[Cstruct](https://ocaml.org/p/cstruct/latest/doc/cstruct/Cstruct/index.html)
+is an optional offset/length view with binary-field accessors. For binary or
+protocol codecs, prefer bigstrings when the surrounding IO already provides
+them; use Cstruct when its typed views improve the implementation. Neither is
+automatically faster for every workload.
+
+Bytesrw's ordinary byte slices are backed by `Bytes.t`, so crossing the
+Bytesrw/bigstring boundary may copy. Treat zero-copy as a benchmarked property
+of a particular adapter, including buffer retention and mutation lifetimes,
+not as an automatic consequence of choosing Angstrom or Faraday. Keep the
+public Bytesrw boundary unless a separate, deliberately documented bigstring
+IO API is justified by the format and workload.
+
+Do not run a full-`Value.t` Angstrom parser and then interpret the tree when a
+typed codec can skip or decode directly. The backend must preserve the same
+skip, path, source-location, and bounded-memory guarantees as the hand-written
+parse kernel.
 
 ## Skip and filter are codec-layer
 
@@ -66,7 +116,7 @@ be a redundant third surface.
 module Cursor : sig
   type t
   val of_value  : Value.t -> t            (* random-access zipper *)
-  val of_reader : Bytes.Reader.t -> t     (* forward-only, one-pass *)
+  val of_reader : Bytesrw.Bytes.Reader.t -> t (* forward-only, one-pass *)
 
   (* Same navigation API, different guarantees per backend. *)
   val focus        : t -> Value.t         (* materializes current subtree *)
@@ -104,19 +154,19 @@ module Stream : sig
     'child Codec.t ->
     f:(Loc.Context.t -> 'acc -> 'child -> 'acc) ->
     init:'acc ->
-    Bytes.Reader.t -> 'acc
+    Bytesrw.Bytes.Reader.t -> 'acc
 
   val iter :
     'child Codec.t ->
     f:(Loc.Context.t -> 'child -> unit) ->
-    Bytes.Reader.t -> unit
+    Bytesrw.Bytes.Reader.t -> unit
 
   (* Layout-preserving transform: byte-copy untouched regions, materialize and
      re-serialize only the sub-trees the user edits or drops. Preserves
      comments, whitespace, attribute order, and entity escape choice in the
      untouched 99%. *)
   val transform :
-    Bytes.Reader.t -> Bytes.Writer.t ->
+    Bytesrw.Bytes.Reader.t -> Bytesrw.Bytes.Writer.t -> eod:bool ->
     f:(Loc.Context.t -> [ `Copy | `Edit of (Value.t -> Value.t) | `Drop ]) ->
     unit
 end
@@ -165,7 +215,7 @@ One primitive below the codec layer closes the gap:
 ```ocaml
 (* In the internal P module *)
 val P.tell : stream -> int
-val P.splice_to : stream -> Bytes.Writer.t -> stop:int -> unit
+val P.splice_to : stream -> Bytesrw.Bytes.Writer.t -> stop:int -> unit
   (* copy bytes from last-spliced position up to [stop] into [writer] *)
 ```
 
@@ -173,3 +223,5 @@ val P.splice_to : stream -> Bytes.Writer.t -> stop:int -> unit
 `Copy` splice untouched bytes through; for `Edit` materialize the subtree via
 the identity codec, apply the function, serialize the result; for `Drop`
 skip past via `P.skip_element`. Untouched bytes reach the writer byte-identical.
+The transform must document whether it consumes one document or all input and
+must write `Bytesrw.Bytes.Slice.eod` exactly when `~eod:true`.

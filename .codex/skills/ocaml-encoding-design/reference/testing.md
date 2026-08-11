@@ -120,15 +120,22 @@ let run name size f =
   Fmt.pr "%-30s  %6.1f MB/s  (%6.2f ms)@." name mbs (median *. 1e3)
 ```
 
-Targets: simdjson (JSON), libyaml (YAML), libcbor (CBOR). Benchmarks catch
-regressions; they are not shootouts.
+Targets: simdjson (JSON), libyaml (YAML), libcbor (CBOR). When the
+implementation has a backend choice, compare the hand-written scanner with
+Angstrom's buffered driver (and the unbuffered driver only when it is a
+supported production path), and compare direct writer output with Faraday
+where applicable. For binary formats, compare the relevant `Bytes` path with a
+`Bigstringaf.t`/bigstring path, and add Cstruct views only when they are part of
+the proposed implementation. Vary reader slice sizes and measure throughput,
+allocations, peak memory, copy counts, skip/filter behavior, and output-buffer
+lifetimes. Benchmarks catch regressions; they are not shootouts.
 
 ## Browser fast-path (JSON only)
 
 Only JSON has browser-native parsing; other formats get no `.brr` sub-library.
 
 The shape mirrors the core six verbs with the native types swapped in: `Jstr.t`
-parallels `string`, `Jv.t` parallels `Bytes.Reader.t` (the zero-copy path). Put
+parallels `string`, `Jv.t` parallels `Bytesrw.Bytes.Reader.t` (the zero-copy path). Put
 it in a separate public library and module (`json.brr` exposing `Json_brr`), not
 a nested `Json.Brr`, so the core stays dependency-free and opam deps stay
 honest.

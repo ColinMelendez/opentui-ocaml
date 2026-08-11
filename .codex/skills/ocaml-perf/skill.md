@@ -100,7 +100,8 @@ bottleneck.
 | Where is CPU time going? (Linux) | `perf` sampling profiler | Build with frame pointers (`ocaml-option-fp`) for call graphs — DWARF unwinding breaks on OCaml 5 effect stacks. `perf record -F 99 --call-graph fp` |
 | Where is CPU time going? (macOS) | Instruments or `samply` | Sampling; frame pointers help as with `perf` (x86_64 needs OCaml 5.3+, ARM64 5.4+) |
 | Where are we allocating? | `Gc.Memprof` / memtrace | Statistical sampling. `Gc.Memprof` exists in 4.11–4.14 and 5.3+, but not 5.0–5.2; released memtrace does not yet support OCaml 5 (pin its statmemprof branch) |
-| What are the GC pauses? | `Runtime_events` + `olly` | Low-overhead tracing in OCaml 5; `olly trace`/`olly gc-stats` show GC phases per domain |
+| What are the GC pauses? | `Runtime_events` + `olly` (`runtime_events_tools`) | Low-overhead tracing in OCaml 5; `olly trace`/`olly gc-stats` show GC phases per domain |
+| which eio callbacks are using the most cpu? | `eio-trace` | very useful for a more semantic view into the relative performance of parts of your program |
 | Did the compiler inline? | `ocamlopt -S` | Assembly ground truth for inner loops |
 | Why wasn't this inlined? | `-inlining-report` (Flambda) | Shows optimizer decisions per round |
 

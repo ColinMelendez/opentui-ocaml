@@ -24,7 +24,7 @@ Each layer is usable alone; each higher one is a thin wrapper over the one below
 Deep material lives beside this file, read it when you reach that layer:
 
 - [`reference/errors.md`](reference/errors.md): the `Foo.Error` facade over `Loc.Error`.
-- [`reference/streaming.md`](reference/streaming.md): `Codec.skip`, `Cursor.of_reader`, `Foo.Stream`, layout-preserving transform.
+- [`reference/streaming.md`](reference/streaming.md): `Codec.skip`, `Cursor.of_reader`, `Foo.Stream`, parser/serializer backends, layout-preserving transform.
 - [`reference/testing.md`](reference/testing.md): spec vectors, fuzz, interop, mdx, benchmarks, browser fast-path, prior art.
 
 ## Public surface
@@ -80,9 +80,11 @@ module Value : sig
   val of_string     : string -> (t, Loc.Error.t) result
   val of_string_exn : string -> t
   val to_string     : ?indent:int -> ?preserve:bool -> t -> string
-  val of_reader     : Bytes.Reader.t -> (t, Loc.Error.t) result
-  val of_reader_exn : Bytes.Reader.t -> t
-  val to_writer     : ?indent:int -> ?preserve:bool -> t -> Bytes.Writer.t -> unit
+  val of_reader     : Bytesrw.Bytes.Reader.t -> (t, Loc.Error.t) result
+  val of_reader_exn : Bytesrw.Bytes.Reader.t -> t
+  val to_writer     :
+    ?indent:int -> ?preserve:bool -> eod:bool -> t ->
+    Bytesrw.Bytes.Writer.t -> unit
 end
 ```
 
@@ -93,7 +95,7 @@ and formatters walk. The cost is one word per node. Parsers populate it from the
 UTF-8 decoder's offset tracking; `Loc.Meta.none` is the sentinel for values
 built programmatically, and encoders accept it silently.
 
-### `?indent` and `?preserve` are the only encoding knobs
+### `?indent` and `?preserve` are the only format encoding knobs
 
 Every `to_string` / `to_writer` in every format takes both, so tooling written
 against one codec works against all of them:
@@ -114,6 +116,11 @@ val to_string_pretty : ...
 (* BAD: inverted default; users opt out of pretty *)
 val to_string : ?compact:bool -> ...
 ```
+
+Stream-boundary controls are separate from format encoding. In particular,
+`to_writer` takes an explicit `~eod:bool`: a writer may be reused for another
+document when `false`, or receives the byte-stream end marker when `true`.
+Never hide that choice in a writer helper.
 
 ## Layer 2: `Foo.Codec`
 
@@ -182,10 +189,10 @@ the AST: the identity codec `Foo.Codec.Value.t` does build a `Value.t`. The
 one-way edge is:
 
 ```txt
-core.ml    : private helpers (resizable buffers, Fmt, byte scanning). No deps.
+core.ml    : private helpers (resizable buffers, Fmt, parser backend, byte scanning). No Value/Codec deps.
 sort.ml    : closed enum of format node categories. Just Fmt.
 value.ml   : AST type + Meta + pp/equal/queries. Does NOT reference Codec.
-codec.ml   : codec GADT + the one byte parser. `type value = Value.t`.
+codec.ml   : codec GADT + typed parse/encode interpreters. `type value = Value.t`.
 cursor.ml  : zipper over value.ml.
 foo.ml     : the six verbs; re-exports the modules above.
 ```
@@ -200,19 +207,25 @@ sibling-`Codec` reference is.
 A `value.ml` that starts importing `Codec` usually means a parse entry point
 belonging at the top level (`Foo.of_string`) was put on `Value` directly.
 
-### One scanner, two readers
+### One parse kernel, two readers
 
-The byte scanner (peek/advance, whitespace skipping, atom and quoted-string
-reading, byte-level `skip_value`) lives in one private module (`core.ml` or
-`parser.ml`), carries no AST type, and is shared by:
+The private parse kernel carries no AST type and owns the format's structural
+primitives: lookahead, whitespace, atoms, quoted strings, UTF-8 offsets, and
+byte-level `skip_value`. It may be a hand-written scanner or an incremental
+parser backend such as
+[Angstrom](https://ocaml.org/p/angstrom/0.16.1/doc/angstrom/Angstrom/index.html).
+Keep it shared by:
 
-- `value.ml`'s tree builder `parse : scanner -> Value.t`;
-- `codec.ml`'s streaming interpreter `of_stream : 'a codec -> scanner -> 'a`.
+- `value.ml`'s tree builder `parse : parser -> Value.t`;
+- `codec.ml`'s streaming interpreter `of_stream : 'a codec -> parser -> 'a`.
 
-`of_string` / `of_reader` run `of_stream` over the scanner in one pass. For an
-object with `skip_unknown`, `of_stream` byte-skips discarded members instead of
-building them; every other shape delegates to the tree walker on a materialised
-sub-value, so results and errors are identical and only kept members are built.
+`of_string` / `of_reader` run `of_stream` over the parse kernel in one pass. For
+an object with `skip_unknown`, `of_stream` byte-skips discarded members instead
+of building them; every other shape delegates to the tree walker on a
+materialised sub-value, so results and errors are identical and only kept
+members are built. An Angstrom parser that materialises a complete `Value.t`
+is not a substitute for the typed interpreter: using it for `Codec.skip` would
+reintroduce the allocation the streaming path is meant to avoid.
 
 ```ocaml
 (* If you write this inside of_string, stop -- it builds the whole tree
@@ -220,12 +233,22 @@ sub-value, so results and errors are identical and only kept members are built.
 let v = parse_value s in interpret_codec codec v
 ```
 
-Two readers over one scanner is not two parsers, and a private scanner module is
-not a banned abstraction. What is banned is a *public* lexeme/token-stream API
+Two readers over one parse kernel is not two parsers, and a private scanner or
+Angstrom adapter is not a banned abstraction. What is banned is a *public*
+lexeme/token-stream API
 (jsonm-style events as a third surface beside `Value` and `Codec`). Both
 runtimes are correct and expected: `decode : 'a codec -> Value.t -> 'a` walks an
 AST you already hold; `of_string` streams bytes in one pass and is never
 implemented as `decode codec (Value.of_string s)`.
+
+For high-throughput binary or protocol formats, prefer `Bigstringaf.t`
+(`bigstring`) at a private parser/serializer boundary when the surrounding IO
+already uses it. A bigstring is a byte `Bigarray.Array1.t` with C layout;
+`Cstruct.t` is an optional offset/length view with binary-field accessors over
+that kind of storage. This is a backend recommendation, not a universal public
+representation rule: keep `string`/`Bytes` convenience APIs where they fit,
+and benchmark the complete pipeline, including conversions and buffer
+lifetimes.
 
 ### Finally tagged
 
@@ -412,10 +435,11 @@ val of_string     : 'a codec -> string -> ('a, Loc.Error.t) result
 val of_string_exn : 'a codec -> string -> 'a
 val to_string     : ?indent:int -> ?preserve:bool -> 'a codec -> 'a -> string
 
-val of_reader     : 'a codec -> Bytes.Reader.t -> ('a, Loc.Error.t) result
-val of_reader_exn : 'a codec -> Bytes.Reader.t -> 'a
+val of_reader     : 'a codec -> Bytesrw.Bytes.Reader.t -> ('a, Loc.Error.t) result
+val of_reader_exn : 'a codec -> Bytesrw.Bytes.Reader.t -> 'a
 val to_writer     :
-  ?indent:int -> ?preserve:bool -> 'a codec -> 'a -> Bytes.Writer.t -> unit
+  ?indent:int -> ?preserve:bool -> eod:bool -> 'a codec -> 'a ->
+  Bytesrw.Bytes.Writer.t -> unit
 
 val decode     : 'a codec -> Value.t -> ('a, Loc.Error.t) result
 val decode_exn : 'a codec -> Value.t -> 'a
@@ -424,6 +448,12 @@ val encode     : 'a codec -> 'a -> Value.t
 
 `to_` / `encode` rarely fail, so no `_exn` twin. `_exn` raises
 `Loc.Error.Error`: shared across every format, never per-library.
+
+Document the input-consumption contract. `of_string` normally requires one
+complete document and no trailing bytes; `of_reader` must say whether it
+decodes one document and leaves the reader positioned at the next byte, or
+requires end-of-data. If both policies are needed, expose that as an explicit
+consumption policy rather than silently choosing based on the reader backend.
 
 ## Naming
 
@@ -519,13 +549,13 @@ record instead of reusing `Loc.Meta.t` + `Loc.Context.t`.
 
 Full pattern, helper menu, and the banned list: [`reference/errors.md`](reference/errors.md).
 
-## Parsers: exceptions internally, result at the boundary
+## Parser failure and result at the boundary
 
 Building `result` during recursive parsing allocates `Ok _` at every tree level.
 
 ```ocaml
 let of_string_exn codec s =
-  parse_value (Reader.of_string s) |> interpret_codec codec
+  parse_value (Bytesrw.Bytes.Reader.of_string s) |> interpret_codec codec
 
 let of_string codec s =
   match of_string_exn codec s with
@@ -533,8 +563,12 @@ let of_string codec s =
   | exception Loc.Error.Error e -> Error e
 ```
 
-Both share the hot path. The internal exception is private to the parser; only
-`Loc.Error.Error` surfaces to callers.
+Both share the hot path. The internal exception is private to the hand-written
+parser; only `Loc.Error.Error` surfaces to callers. An incremental backend has a
+different control state: Angstrom's `Partial` means "need more input", not a
+format error, while `Fail` becomes `Loc.Error` only once the driver has enough
+input to decide that parsing cannot continue. Do not force a `Partial` state
+through an exception or a user-visible error result.
 
 ## UTF-8
 
@@ -557,7 +591,7 @@ One file per concern; each maps to one layer.
 foo/lib/
   sort.ml(i)     # Sort.t: closed enum of node categories
   value.ml(i)    # AST + Meta, pp/equal/queries, of_string shortcuts. No Codec dep.
-  codec.ml(i)    # codec GADT, combinators, Codec.skip, identity codec, byte parser
+  codec.ml(i)    # codec GADT, combinators, Codec.skip, identity codec, interpreters
   cursor.ml(i)   # zipper over Value.t (of_value / of_reader)
   stream.ml(i)   # optional: iter/fold helpers, transform
   error.ml(i)    # Foo.Error facade (see reference/errors.md)
@@ -582,8 +616,18 @@ foo.brr    Browser native-parse fast-path (JSON only, realistically).
 ```
 
 Do not split for concerns (`foo.io`, `foo.parse`); that adds ceremony at call
-sites with no portability benefit. Streaming is core via `Bytes.Reader.t` /
-`Bytes.Writer.t`: pure OCaml, works everywhere.
+sites with no portability benefit. Streaming is core via
+`Bytesrw.Bytes.Reader.t` / `Bytesrw.Bytes.Writer.t`: pure OCaml, works
+everywhere. Angstrom and Faraday are implementation choices, not required
+public abstractions. When using them for a binary fast path, use their native
+`Bigstringaf.t`/bigstring representation where the input and output pipeline
+can preserve it; `Cstruct.t` is useful as a typed view, not as a replacement for
+every byte sequence. Keep backend types and adapters private unless a separate,
+deliberately documented binary IO API is part of the design. Do not claim
+zero-copy across a `Bytesrw`/bigstring boundary without measuring the adapter
+and preserving the relevant buffer lifetimes. Add any selected backend to the
+package's declared dependencies; do not make an unused backend mandatory
+merely because it is available.
 
 **Mark internal helper modules `(private_modules ...)`.** Any `.ml` existing
 only to share helpers between the public layers (the canonical case is a
@@ -615,6 +659,13 @@ private; they are the deliberate public API.
   skip/filter/transform go through `Codec.skip`, `Cursor.of_reader`, and one
   byte-range primitive. Events and cursor moves are the same thing labelled by
   `Sort.t`.
+- **No backend-specific public API.** Do not expose `Angstrom.t`, an
+  `Angstrom.Unbuffered.state`, `Faraday.t`, `Bigstringaf.t`, or a second
+  `Foo.angstrom` / `Foo.faraday` surface merely to reach the parser or writer.
+  Drive private backends through the public Bytesrw reader/writer boundary.
+  This does not forbid a separately designed binary fast-path API, but that
+  API must make its bigstring ownership and lifetime contract explicit rather
+  than leaking a parser backend accidentally.
 - **No backwards-compat shims.** Restructure cleanly and bump the major version;
   don't keep `decode'` beside a new `decode`.
 - **No format-buffet knobs.** Specs mandate UTF-8, so no
@@ -646,10 +697,19 @@ the shape decisions that a build cannot catch:
 - `foo.mli` restates the public API; the odoc tree shows no `Codec.Base` /
   `Object.Member` / `Internal` subpages.
 - Six top-level verbs, `_exn` twin for each `of_*` and `decode`, no `'` variants.
-- Every encoder takes `?indent` + `?preserve`; decode metadata is one
+- Every `to_string` / writer encoder takes `?indent` + `?preserve`; every writer
+  encoder makes `~eod:bool` explicit; decode metadata is one
   ``?meta:[`None | `Locs | `Full]`` knob.
 - `Foo.Error` is a `Loc.Error` facade with typed (builder, raiser) pairs; no
   per-library exception, no sealed `kind` ADT.
-- Parser uses exceptions internally, wraps to `result` once at the boundary.
+- Hand-written parser failures use exceptions internally and wrap to `result`
+  once at the boundary; incremental parser `Partial` is preserved as a driver
+  state until more input arrives.
+- `Bytesrw.Bytes.Reader.t` / `Bytesrw.Bytes.Writer.t` are used consistently;
+  `of_reader` documents whether it consumes one document or all input, and
+  `to_writer` makes `~eod:bool` explicit.
+- Parser and serializer backend choices are private and benchmarked with
+  realistic reader slice sizes, allocation counts, skip/filter cases, and
+  output-buffer lifetimes.
 - Flat core; sub-libraries only for external deps; helpers in `private_modules`.
 - No lexeme-stream abstraction, no compat shims, no encoding knobs.
