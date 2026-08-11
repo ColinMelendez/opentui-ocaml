@@ -414,9 +414,25 @@ output iterations=4096 elapsed_ns=465750 minor_words=0 major_words=0 minor_colle
 ```
 
 These values are a diagnostic sample from one supported host, not a portable
-performance gate. A Linux/native-host comparison remains open; future runs
-must keep the compiler, native revision, host, and benchmark parameters
-visible alongside the values.
+performance gate. A second run on 2026-08-10 used the same compiler, Dune,
+Zig, pinned OpenTUI revision, and benchmark parameters inside a 4-vCPU/8-GiB
+Colima `aarch64-linux` VM (Linux 6.8.0-64-generic aarch64):
+
+```text
+retained_text iterations=64 elapsed_ns=8254456 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+frames iterations=64 elapsed_ns=10307695 minor_words=4718547 major_words=386 minor_collections=18 major_collections=0
+input iterations=32768 elapsed_ns=4131145 minor_words=1048570 major_words=26040 minor_collections=4 major_collections=0
+output iterations=4096 elapsed_ns=2030240 minor_words=0 major_words=0 minor_collections=0 major_collections=0
+```
+
+The VM sample is useful for checking cross-host output scale and compiler
+diagnostics, but it is not a direct hardware or operating-system comparison
+with the macOS sample. The Linux build also exposed a GCC
+`-Wmaybe-uninitialized` warning in the Yoga calculation shim; initializing the
+validated dimensions before status checking removes that portability warning
+without changing the accepted-argument path. An x86_64-linux comparison
+remains open; future runs must keep the compiler, native revision, host, and
+benchmark parameters visible alongside the values.
 
 Native span-feed views, per-cell OCaml views, Lwd bindings, and widgets remain
 intentionally deferred. They require separate ownership contracts or
@@ -502,7 +518,9 @@ Phase 3 is complete and the first Phase 4 retained-core increment is now
 checked in. The remaining implementation sequence is:
 
 1. compare the checked-in profile across the supported compiler/native hosts,
-   retaining the current macOS sample as the reference point;
+   retaining the macOS sample as the reference and the aarch64-linux Colima
+   sample as a caveated VM diagnostic; add x86_64-linux when a matching host
+   is available;
 2. expand `opentui-core` acceptance around retained containers, layout changes,
    pointer propagation, and teardown without widening into terminal or
    reactive ownership;

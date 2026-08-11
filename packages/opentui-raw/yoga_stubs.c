@@ -424,8 +424,8 @@ CAMLprim value opentui_raw_yoga_calculate(
     CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
   }
 
-  float width;
-  float height;
+  float width = 0.0f;
+  float height = 0.0f;
   int width_status = yoga_validate_dimension(width_value, &width);
   int height_status = yoga_validate_dimension(height_value, &height);
   int direction = Int_val(direction_value);
