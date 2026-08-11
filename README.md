@@ -8,6 +8,8 @@ upstream OpenTUI source is documented in [`vendor/README.md`](vendor/README.md).
 Deferred allocation and zero-copy ideas are collected in
 [`future-performance.md`](future-performance.md); they are not prerequisites
 for the retained or reactive layers.
+The proposed OpenTUI-shaped retained/renderable direction is recorded in
+[`renderable-architecture.md`](renderable-architecture.md).
 
 For a fresh checkout, initialize the pinned upstream source with:
 

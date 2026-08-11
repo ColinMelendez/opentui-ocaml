@@ -541,8 +541,12 @@ and the pinned-reference comparison keeps the benchmark shapes explicit. The
 imperative retained scene therefore meets the Phase 4 exit contract; Lwd and
 widgets remain separate layers for Phase 5 and Phase 6.
 
-## Phase 5 — Solid-like Lwd bindings
+## Phase 5 — OpenTUI-shaped renderables and Lwd bindings
 
+- establish an OpenTUI-shaped imperative renderable slice in `opentui-core`,
+  preserving the current retained identity, layout, event, flush, and teardown
+  contracts while mirroring the reference semantics and vocabulary with typed
+  OCaml modules;
 - add `opentui-lwd` over the retained core rather than over a rebuilt virtual
   tree;
 - introduce mount/component scopes, cleanup, context, and keyed children;
@@ -553,9 +557,22 @@ widgets remain separate layers for Phase 5 and Phase 6.
 - document the cases where an explicit mutable model is preferable to a
   reactive value.
 
-**Exit:** a reactive example mounts once, updates only affected native state,
-cleans up all resources, and meets an agreed allocation/frame budget under a
-repeatable benchmark.
+**Exit:** a direct imperative example constructs and updates the Phase 5 core
+renderables while preserving node identity and cleanup; a reactive example
+mounts once, updates only affected native state through Lwd, and cleans up all
+bindings. Both paths meet an agreed allocation/frame budget under a
+repeatable benchmark. Stateful controls remain a Phase 6 gate.
+
+**Architecture refinement (2026-08-11):** Phase 5 begins by making the
+imperative retained path recognizable to OpenTUI users. The core will mirror
+the reference renderable semantics and core vocabulary, but typed modules,
+explicit lifetimes, structured errors, scene invalidation, and caller-owned
+frame scheduling replace
+JavaScript inheritance, generic option bags, string events, and ambient
+renderer state. The detailed replacement candidates are recorded in
+[`renderable-architecture.md`](renderable-architecture.md). The experimental
+OpenTUI `VNode`/constructs API remains optional until the direct and Lwd paths
+demonstrate a need for it.
 
 ## Phase 6 — Widgets and application ergonomics
 
@@ -586,16 +603,18 @@ Phase 4 is complete and the retained scene now has its correctness,
 allocation, traversal-diagnostic, and pinned-reference records. The remaining
 implementation sequence is:
 
-1. begin Phase 5 by designing `opentui-lwd` over the retained scene, keeping
-   mount scopes, cleanup, keyed children, and frame scheduling above the
-   imperative core rather than rebuilding a virtual tree;
-2. preserve the current allocation gate while measuring signal updates, list
+1. map the first OpenTUI renderable primitives to typed `opentui-core` modules
+   and implement their identity, mutation, event, and teardown contracts;
+2. design `opentui-lwd` bindings over those nodes, keeping mount scopes,
+   cleanup, keyed children, and frame scheduling above the imperative core
+   rather than rebuilding a virtual tree;
+3. preserve the current allocation gate while measuring signal updates, list
    changes, and event bursts; add x86_64-linux comparison when a matching host
    is available, keeping the macOS and aarch64-linux samples as the existing
    reference and caveated VM diagnostic;
-3. extend `opentui-native` only where a measured renderable contract remains
-   missing; and
-4. keep the deferred output, pooling, and native-view candidates in
+4. extend `opentui-native` only where a measured renderable contract remains
+   missing;
+5. keep the deferred output, pooling, and native-view candidates in
    [`future-performance.md`](future-performance.md) until the core profile
    identifies a specific material hotspot.
 

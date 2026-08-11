@@ -1,6 +1,6 @@
 # Design
 
-Status: working design, updated 2026-08-10.
+Status: working design, updated 2026-08-11.
 
 This document records the decisions that are currently intentional and keeps
 the unresolved decisions visible. It describes the native OCaml side of
@@ -83,9 +83,9 @@ layers, not one package per Zig file:
 | `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, validated resize payloads, bounded event handoff | foundation |
 | `opentui-terminal-eio` | Eio/Cstruct flow input, mode/output lifecycle, revision wakeups, and caller-run dispatch over the pure terminal foundation | Phase 3 runtime boundary |
 | `opentui-terminal-eio-unix` | validated Unix size probe, scoped `SIGWINCH` source, and saved-termios terminal session over `Eio_unix` | Phase 3 Unix runtime boundary |
-| `opentui-core` | retained scene tree, layout/render traversal, pointer events | Phase 4 initial increment |
-| `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
-| `opentui-widgets` | reusable controls and application-facing conveniences | later |
+| `opentui-core` | retained scene tree, renderables, layout/render traversal, pointer events | Phase 4 retained tree; OpenTUI-shaped expansion next |
+| `opentui-lwd` | Lwd-based fine-grained bindings and component scope | Phase 5 design; API tentative |
+| `opentui-widgets` | reusable controls and application-facing conveniences | Phase 6 later layer |
 
 The raw package may contain small ABI-level renderer, buffer, Yoga, and
 capability wrappers because they are the narrow ownership boundary. Higher-level
@@ -104,6 +104,31 @@ The hot path must not rebuild an entire `Lwd.t<Ui>` tree, allocate a fresh
 virtual tree, or recreate native nodes for ordinary state changes. Keyed child
 identity and explicit teardown are part of the design, not an optimization to
 add later.
+
+### OpenTUI-shaped retained renderables
+
+The retained core will follow OpenTUI's low-level renderable shape more
+closely than its JavaScript syntax. Persistent renderables, local state,
+parent/child ownership, layout invalidation, event propagation, and controlled
+flush behavior are the reference semantics. A caller familiar with OpenTUI
+should recognize core primitives such as `Box` and `Text`, whether the caller
+uses the imperative or reactive path. Stateful controls such as `Input`,
+`Select`, and `Scroll_box` remain later `opentui-widgets` vocabulary.
+
+The OCaml replacement must not copy the JavaScript class hierarchy, generic
+option bags, public mutable fields, string event namespaces, ambient renderer
+lookup, or the experimental `VNode`/constructs layer as a mandatory
+abstraction. Typed modules, explicit ownership, structured errors, scoped
+subscriptions, scene invalidation, and caller-owned frame scheduling are the
+intended replacements.
+The complete mapping and candidate concepts are recorded in
+[`renderable-architecture.md`](renderable-architecture.md).
+
+`opentui-core` remains the Lwd-independent imperative waist. Stateful controls
+and application conveniences may live in `opentui-widgets`, while
+`opentui-lwd` binds Lwd values and keyed collections to existing nodes. An
+Elm-like model/message/effect adapter is optional later policy, not a
+requirement of the retained core or the Lwd package.
 
 ### Lwd as the reactive kernel
 
