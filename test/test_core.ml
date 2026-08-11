@@ -111,6 +111,80 @@ let () =
             (function Opentui_core.Error.Cannot_move_root -> true | _ -> false)
             (Node.move_to_index root ~index:0);
           Scene.close scene);
+      test "moves nested subtrees and retargets pointer hits before teardown" (fun () ->
+          let scene = expect_ok (Scene.create ~width:4l ~height:2l) in
+          let root = expect_ok (Scene.root scene) in
+          let first_branch =
+            expect_ok
+              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+          in
+          let first_leaf =
+            expect_ok
+              (Node.create_text ~parent:first_branch ~width:4.0 ~height:1.0
+                 ~text:"AAAA" ())
+          in
+          let second_branch =
+            expect_ok
+              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+          in
+          let second_leaf =
+            expect_ok
+              (Node.create_text ~parent:second_branch ~width:4.0 ~height:1.0
+                 ~text:"BBBB" ())
+          in
+          let first_branch_id = Node.id first_branch in
+          let first_leaf_id = Node.id first_leaf in
+          let second_branch_id = Node.id second_branch in
+          let second_leaf_id = Node.id second_leaf in
+          ignore
+            (expect_ok
+               (Node.set_pointer_handler first_leaf (fun node event ->
+                    equal int first_leaf_id (Node.id node);
+                    equal int 0 event.x;
+                    Scene.Stop)));
+          ignore
+            (expect_ok
+               (Node.set_pointer_handler second_leaf (fun node event ->
+                    equal int second_leaf_id (Node.id node);
+                    equal int 0 event.x;
+                    Scene.Stop)));
+          let output = Bytes.create 8 in
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "AAAABBBB" (Bytes.to_string output);
+          let pointer_event y =
+            { Scene.kind = Scene.Down; button = 0; x = 0; y }
+          in
+          expect_handled second_leaf_id
+            (Scene.dispatch_pointer scene (pointer_event 1));
+          ignore (expect_ok (Node.move_to_index first_branch ~index:1));
+          equal int first_branch_id (Node.id first_branch);
+          equal int first_leaf_id (Node.id first_leaf);
+          equal int second_branch_id (Node.id second_branch);
+          equal int second_leaf_id (Node.id second_leaf);
+          expect_handled second_leaf_id
+            (Scene.dispatch_pointer scene (pointer_event 0));
+          expect_handled first_leaf_id
+            (Scene.dispatch_pointer scene (pointer_event 1));
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "BBBBAAAA" (Bytes.to_string output);
+          ignore (expect_ok (Node.destroy first_branch));
+          equal bool true (Node.is_destroyed first_branch);
+          equal bool true (Node.is_destroyed first_leaf);
+          equal int 0 (Node.children_count first_branch);
+          equal int 1 (Node.children_count root);
+          expect_handled second_leaf_id
+            (Scene.dispatch_pointer scene (pointer_event 0));
+          (match
+             expect_ok (Scene.dispatch_pointer scene (pointer_event 1))
+           with
+          | Scene.Unhandled -> ()
+          | Scene.Handled _ -> fail "destroyed nested leaf remained hittable");
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "BBBB    " (Bytes.to_string output);
+          Scene.close scene);
       test "retains dirty state after an output-capacity failure" (fun () ->
           let scene = expect_ok (Scene.create ~width:2l ~height:1l) in
           let root = expect_ok (Scene.root scene) in

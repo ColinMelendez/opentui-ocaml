@@ -454,7 +454,8 @@ keeps its retained child list synchronized with that native order, rejects
 invalid/root moves without dirtying the scene, and leaves rendering deferred
 until the existing controlled `flush` boundary. Black-box acceptance covers
 layout order, stable identities, invalid-operation preservation, replacement
-placement, and teardown after a move.
+placement, nested descendant movement, pointer-hit retargeting, and teardown
+after a move.
 
 ## Phase 5 — Solid-like Lwd bindings
 
