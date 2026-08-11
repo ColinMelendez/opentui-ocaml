@@ -462,7 +462,9 @@ let flush scene ~force ~output =
       Ok { status = Skipped; bytes_written = 0l }
   | Ok () ->
       (match ensure_layout scene with
-      | Error error -> Error error
+      | Error error ->
+          scene.dirty <- true;
+          Error error
       | Ok () ->
           let written = ref 0l in
           let draw frame =
@@ -487,7 +489,9 @@ let flush scene ~force ~output =
                             Ok ())))
           in
           (match Renderer.run_frame scene.renderer ~force ~draw with
-          | Error error -> Error (Error.Native error)
+          | Error error ->
+              scene.dirty <- true;
+              Error (Error.Native error)
           | Ok status ->
               let status = render_status status in
               (match status with
@@ -496,7 +500,7 @@ let flush scene ~force ~output =
                   (match scene.root with
                   | None -> ()
                   | Some root -> mark_clean root)
-              | Failed -> ());
+              | Failed -> scene.dirty <- true);
               let bytes_written =
                 match status with Rendered -> !written | Skipped | Failed -> 0l
               in

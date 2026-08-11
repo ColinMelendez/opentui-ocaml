@@ -85,6 +85,18 @@ let () =
           equal bool false (Node.is_dirty text);
           equal int32 0l
             (expect_skipped (Scene.flush scene ~force:false ~output));
+          expect_core_error
+            (function
+              | Opentui_core.Error.Native
+                  (Opentui_native.Error.Native
+                     Opentui_raw.Error.Output_too_small) -> true
+              | _ -> false)
+            (Scene.flush scene ~force:true ~output:undersized);
+          equal int32 2l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "AB" (Bytes.to_string output);
+          equal int32 0l
+            (expect_skipped (Scene.flush scene ~force:false ~output));
           Scene.close scene);
       test "detaches destroyed native children before reusing their slot" (fun () ->
           let scene = expect_ok (Scene.create ~width:2l ~height:2l) in
