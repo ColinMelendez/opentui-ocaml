@@ -61,6 +61,9 @@ usable `/dev/pts`; the remaining tests still run normally. The optional
 behavior and comparative performance checks against the pinned TypeScript
 reference are documented in [`reference/README.md`](reference/README.md).
 
+The first direct OpenTUI-shaped renderable app and its deterministic Cram
+transcript are documented in [`examples/README.md`](examples/README.md).
+
 The imperative profile is available with:
 
 ```sh

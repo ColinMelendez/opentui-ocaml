@@ -576,6 +576,14 @@ renderer state. The detailed replacement candidates are recorded in
 OpenTUI `VNode`/constructs API remains optional until the direct path
 demonstrates a need for it.
 
+**Current increment (2026-08-11):** `Scene.Box` and `Scene.Text` now provide
+the first typed retained renderable surface over `opentui-native`. The direct
+example in [`examples/README.md`](examples/README.md) exercises construction,
+caller-owned frame output, property updates, stable identities, and explicit
+scene teardown. General positioning, styled/nested text, and the remaining
+renderable families remain intentionally outside this increment; Box borders
+already apply their one-cell inset through the audited Yoga style seam.
+
 ## Phase 6 — Direct OpenTUI-shaped content and controls
 
 - add the remaining direct OpenTUI-shaped content, editor-supporting, and
@@ -627,12 +635,12 @@ allocation, traversal-diagnostic, and pinned-reference records. The direct
 OpenTUI-shaped track now comes before any reactive or alternative application
 framework. The remaining implementation sequence is:
 
-1. map the first OpenTUI renderable primitives to typed `opentui-core` modules
-   and implement their identity, mutation, event, output, and teardown
-   contracts;
-2. add deterministic direct test apps and documentation for each implemented
-   renderable family, plus analogous reference comparisons where the behavior
-   and measurement protocol are genuinely comparable;
+1. extend the typed `opentui-core` Box/Text slice with the next foundational
+   text and layout properties, adding equality cutoffs and allocation evidence
+   before widening the public surface;
+2. add deterministic direct test apps and documentation for each newly
+   implemented renderable family, plus analogous reference comparisons where
+   the behavior and measurement protocol are genuinely comparable;
 3. move the remaining direct content, editor-supporting, and stateful families
    into `opentui-widgets` only after the direct core vocabulary and lifecycle
    contracts are useful;

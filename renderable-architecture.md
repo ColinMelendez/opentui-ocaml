@@ -178,7 +178,7 @@ the TypeScript class graph.
 ## Implementation order and acceptance
 
 1. Extend the retained core with a small OpenTUI-shaped primitive slice,
-   starting with container/box and text behavior over the existing stable
+   starting with Box and text behavior over the existing stable
    identity, layout, flush, pointer, and teardown contracts.
 2. Add typed property/update operations with equality cutoffs and allocation
    measurements before widening the property surface.
@@ -206,8 +206,8 @@ comparison when the observable behavior is comparable.
 | Reference family | OCaml home | Direct-track status |
 | --- | --- | --- |
 | `Renderable` tree and lifecycle | `opentui-core.Scene` and typed renderable modules | retained identity, ordering, invalidation, pointer propagation, and teardown exist; typed surface is expanding |
-| `BoxRenderable` | `opentui-core` | first implementation slice |
-| `TextRenderable`, `TextBufferRenderable`, `TextNodeRenderable` | `opentui-core` | plain copied text exists; styled text and nested text nodes are Phase 5 foundational text follow-ons; `opentui-native` remains their lower-level drawing seam |
+| `BoxRenderable` | `opentui-core` | first implementation slice and direct executable example exist |
+| `TextRenderable`, `TextBufferRenderable`, `TextNodeRenderable` | `opentui-core` | plain copied text and a direct update example exist; styled text and nested text nodes are Phase 5 foundational text follow-ons; `opentui-native` remains their lower-level drawing seam |
 | `EditBufferRenderable`, `LineNumberRenderable`, `TimeToFirstDrawRenderable`, `ASCIIFontRenderable` | `opentui-widgets` | deferred supporting families with a direct Phase 6 home; each needs a contract and example |
 | `FrameBufferRenderable`, `ImageRenderable`, `CodeRenderable`, `DiffRenderable`, `MarkdownRenderable`, `TextTableRenderable` | `opentui-widgets` | deferred content/rendering families with a direct Phase 6 home; each needs a contract and example |
 | `InputRenderable`, `TextareaRenderable`, `SelectRenderable`, `ScrollBoxRenderable`, `SliderRenderable`, `TabSelectRenderable`, `ScrollBarRenderable` | `opentui-widgets` | deferred Phase 6 stateful control families; no Lwd dependency is implied |
