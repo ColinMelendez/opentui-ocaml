@@ -24,8 +24,10 @@ observable current/next buffer mismatch as `Native_failure`, but hidden
 hit-grid or other internal allocation failures remain unobservable.
 
 The raw Yoga binding owns a generation-checked tree/node registry and copies
-the exact six-field layout result. It also validates direct-parent removal,
-recursively frees detached native subtrees, and invalidates their node tokens.
+the exact six-field layout result. Its small style subset includes validated
+point padding, which is enough for the first Box border inset without
+publishing Yoga pointers. It also validates direct-parent removal, recursively
+frees detached native subtrees, and invalidates their node tokens.
 The capability binding copies terminal strings and decodes the pinned enum
 codes into a typed snapshot. The `Span_feed` binding audits NativeSpanFeed
 ownership: it copies drained payloads into OCaml bytes, exposes an explicit

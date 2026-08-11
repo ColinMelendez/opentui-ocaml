@@ -22,11 +22,16 @@ module Node : sig
   (** A node owned by one Yoga tree. *)
   type t
 
+  type edge = Left | Top | Right | Bottom
+
   (** [set_width node width] sets a validated point-valued width. *)
   val set_width : t -> float -> (unit, Error.t) result
 
   (** [set_height node height] sets a validated point-valued height. *)
   val set_height : t -> float -> (unit, Error.t) result
+
+  (** [set_padding node ~edge ~value] sets a point-valued content inset. *)
+  val set_padding : t -> edge:edge -> value:float -> (unit, Error.t) result
 
   (** [layout node] returns copied computed layout fields. *)
   val layout : t -> (layout, Error.t) result

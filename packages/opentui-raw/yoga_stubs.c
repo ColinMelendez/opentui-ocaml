@@ -12,6 +12,8 @@
 
 #define OPENTUI_RAW_YOGA_TREE_CAPACITY 64
 #define OPENTUI_RAW_YOGA_NODE_CAPACITY 4096
+#define OPENTUI_RAW_YOGA_VALUE_PADDING UINT32_C(8)
+#define OPENTUI_RAW_YOGA_UNIT_POINT UINT32_C(1)
 
 typedef struct opentui_raw_yoga_tree_slot {
   uint16_t generation;
@@ -408,6 +410,37 @@ CAMLprim value opentui_raw_yoga_node_set_height(value node_value, value height_v
   }
 
   yogaNodeStyleSetValue(node->node, 1, 0, 1, height);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_yoga_node_set_padding(
+    value node_value,
+    value edge_value,
+    value padding_value) {
+  CAMLparam3(node_value, edge_value, padding_value);
+
+  uint32_t node_handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(node_handle);
+  if (node == NULL) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  int32_t signed_edge = Int32_val(edge_value);
+  if (signed_edge < 0 || signed_edge > 3) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  double input = Double_val(padding_value);
+  if (!isfinite(input) || input < 0.0 || input > (double)FLT_MAX) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  yogaNodeStyleSetValue(
+      node->node,
+      OPENTUI_RAW_YOGA_VALUE_PADDING,
+      (uint32_t)signed_edge,
+      OPENTUI_RAW_YOGA_UNIT_POINT,
+      (float)input);
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 

@@ -107,6 +107,10 @@ external yoga_node_set_width : Native_token.Yoga_node.t -> float -> int =
 external yoga_node_set_height : Native_token.Yoga_node.t -> float -> int =
   "opentui_raw_yoga_node_set_height"
 
+external yoga_node_set_padding :
+  Native_token.Yoga_node.t -> int32 -> float -> int =
+  "opentui_raw_yoga_node_set_padding"
+
 external yoga_calculate :
   Native_token.Yoga_tree.t -> float -> float -> int -> int =
   "opentui_raw_yoga_calculate"

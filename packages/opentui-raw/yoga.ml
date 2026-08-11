@@ -20,6 +20,8 @@ module Node = struct
     owner : Native_owner.t;
   }
 
+  type edge = Left | Top | Right | Bottom
+
   let with_open node operation =
     if Native_owner.is_open node.owner then operation ()
     else Error Error.Closed
@@ -40,6 +42,20 @@ module Node = struct
   let set_height node height =
     with_open node (fun () ->
         let status = Native.yoga_node_set_height node.handle height in
+        result_of_status status ())
+
+  let edge_code edge =
+    match edge with
+    | Left -> 0l
+    | Top -> 1l
+    | Right -> 2l
+    | Bottom -> 3l
+
+  let set_padding node ~edge ~value =
+    with_open node (fun () ->
+        let status =
+          Native.yoga_node_set_padding node.handle (edge_code edge) value
+        in
         result_of_status status ())
 
   let layout node =

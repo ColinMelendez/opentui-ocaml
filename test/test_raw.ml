@@ -162,13 +162,21 @@ let () =
           ignore (expect_ok (Opentui_raw.Yoga.Node.set_height child 5.0));
           ignore
             (expect_ok
+               (Opentui_raw.Yoga.Node.set_padding root
+                  ~edge:Opentui_raw.Yoga.Node.Left ~value:1.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.set_padding root
+                  ~edge:Opentui_raw.Yoga.Node.Top ~value:1.0));
+          ignore
+            (expect_ok
                (Opentui_raw.Yoga.calculate tree ~width:100.0 ~height:40.0
                   ~direction:Opentui_raw.Yoga.Ltr));
           let root_layout = expect_ok (Opentui_raw.Yoga.Node.layout root) in
           expect_layout ~left:0.0 ~top:0.0 ~right:0.0 ~bottom:0.0 ~width:100.0
             ~height:40.0 root_layout;
           let child_layout = expect_ok (Opentui_raw.Yoga.Node.layout child) in
-          expect_layout ~left:0.0 ~top:0.0 ~right:0.0 ~bottom:0.0 ~width:10.0
+          expect_layout ~left:1.0 ~top:1.0 ~right:0.0 ~bottom:0.0 ~width:10.0
             ~height:5.0 child_layout;
           Opentui_raw.Yoga.close tree;
           expect_error Opentui_raw.Error.Closed
@@ -234,6 +242,9 @@ let () =
             (Opentui_raw.Yoga.Node.set_width first_root Float.nan);
           expect_error Opentui_raw.Error.Invalid_argument
             (Opentui_raw.Yoga.Node.set_height first_root Float.infinity);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_padding first_root
+               ~edge:Opentui_raw.Yoga.Node.Left ~value:Float.nan);
           expect_error Opentui_raw.Error.Invalid_argument
             (Opentui_raw.Yoga.calculate first ~width:(-1.0) ~height:1.0
                ~direction:Opentui_raw.Yoga.Inherit);

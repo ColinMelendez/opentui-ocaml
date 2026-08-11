@@ -64,6 +64,7 @@ val yoga_move_child :
   int32 -> int
 val yoga_node_set_width : Native_token.Yoga_node.t -> float -> int
 val yoga_node_set_height : Native_token.Yoga_node.t -> float -> int
+val yoga_node_set_padding : Native_token.Yoga_node.t -> int32 -> float -> int
 val yoga_calculate : Native_token.Yoga_tree.t -> float -> float -> int -> int
 val yoga_node_layout :
   Native_token.Yoga_node.t -> int * yoga_layout option
