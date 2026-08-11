@@ -185,6 +185,115 @@ let () =
             (expect_rendered (Scene.flush scene ~force:false ~output));
           equal string "BBBB    " (Bytes.to_string output);
           Scene.close scene);
+      test
+        "preserves nested identity and bubbling across reorder, retry, and teardown"
+        (fun () ->
+          let scene = expect_ok (Scene.create ~width:4l ~height:2l) in
+          let root = expect_ok (Scene.root scene) in
+          let first_branch =
+            expect_ok
+              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+          in
+          let first_leaf =
+            expect_ok
+              (Node.create_text ~parent:first_branch ~width:4.0 ~height:1.0
+                 ~text:"AAAA" ())
+          in
+          let second_branch =
+            expect_ok
+              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+          in
+          let second_leaf =
+            expect_ok
+              (Node.create_text ~parent:second_branch ~width:4.0 ~height:1.0
+                 ~text:"BBBB" ())
+          in
+          let first_branch_id = Node.id first_branch in
+          let first_leaf_id = Node.id first_leaf in
+          let second_branch_id = Node.id second_branch in
+          let second_leaf_id = Node.id second_leaf in
+          let first_leaf_hits = ref 0 in
+          let first_branch_hits = ref 0 in
+          let second_leaf_hits = ref 0 in
+          let second_branch_hits = ref 0 in
+          let leaf_handler expected_id hits node event =
+            equal int expected_id (Node.id node);
+            equal int 0 event.Scene.button;
+            hits := !hits + 1;
+            Scene.Continue
+          in
+          let branch_handler expected_id hits node event =
+            equal int expected_id (Node.id node);
+            equal int 0 event.Scene.button;
+            hits := !hits + 1;
+            Scene.Stop
+          in
+          ignore
+            (expect_ok
+               (Node.set_pointer_handler first_leaf
+                  (leaf_handler first_leaf_id first_leaf_hits)));
+          ignore
+            (expect_ok
+               (Node.set_pointer_handler first_branch
+                  (branch_handler first_branch_id first_branch_hits)));
+          ignore
+            (expect_ok
+               (Node.set_pointer_handler second_leaf
+                  (leaf_handler second_leaf_id second_leaf_hits)));
+          ignore
+            (expect_ok
+               (Node.set_pointer_handler second_branch
+                  (branch_handler second_branch_id second_branch_hits)));
+          let output = Bytes.create 8 in
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "AAAABBBB" (Bytes.to_string output);
+          let event y = { Scene.kind = Scene.Down; button = 0; x = 0; y } in
+          expect_handled first_leaf_id
+            (Scene.dispatch_pointer scene (event 0));
+          equal int 1 !first_leaf_hits;
+          equal int 1 !first_branch_hits;
+          ignore (expect_ok (Node.move_to_index first_branch ~index:1));
+          equal int first_branch_id (Node.id first_branch);
+          equal int first_leaf_id (Node.id first_leaf);
+          equal int second_branch_id (Node.id second_branch);
+          equal int second_leaf_id (Node.id second_leaf);
+          expect_handled second_leaf_id
+            (Scene.dispatch_pointer scene (event 0));
+          expect_handled first_leaf_id
+            (Scene.dispatch_pointer scene (event 1));
+          equal int 2 !first_leaf_hits;
+          equal int 2 !first_branch_hits;
+          equal int 1 !second_leaf_hits;
+          equal int 1 !second_branch_hits;
+          ignore (expect_ok (Node.set_text first_leaf ~text:"CCCC"));
+          expect_core_error
+            (function
+              | Opentui_core.Error.Native
+                  (Opentui_native.Error.Native
+                     Opentui_raw.Error.Output_too_small) -> true
+              | _ -> false)
+            (Scene.flush scene ~force:false ~output:(Bytes.create 1));
+          equal bool true (Node.is_dirty first_leaf);
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "BBBBCCCC" (Bytes.to_string output);
+          equal bool false (Node.is_dirty first_leaf);
+          equal int32 0l
+            (expect_skipped (Scene.flush scene ~force:false ~output));
+          ignore (expect_ok (Node.destroy second_branch));
+          equal bool true (Node.is_destroyed second_branch);
+          equal bool true (Node.is_destroyed second_leaf);
+          equal int 0 (Node.children_count second_branch);
+          equal int 1 (Node.children_count root);
+          expect_handled first_leaf_id
+            (Scene.dispatch_pointer scene (event 0));
+          equal int 3 !first_leaf_hits;
+          equal int 3 !first_branch_hits;
+          equal int32 8l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "CCCC    " (Bytes.to_string output);
+          Scene.close scene);
       test "retains dirty state after an output-capacity failure" (fun () ->
           let scene = expect_ok (Scene.create ~width:2l ~height:1l) in
           let root = expect_ok (Scene.root scene) in

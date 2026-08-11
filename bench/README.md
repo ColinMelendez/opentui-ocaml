@@ -6,6 +6,7 @@ seams. It reports monotonic elapsed nanoseconds and OCaml GC words for:
 - retained text updates and caller-owned resolved-character output;
 - retained dimension/layout updates, child reordering, and create/destroy
   lifecycle churn;
+- varied pointer hit-testing and bubbling across a warmed retained tree;
 - full 80x24 native frame updates and resolved-character output;
 - Eio input reads through the terminal coordinator; and
 - repeated writes through the Eio output sink.
@@ -35,6 +36,38 @@ The values are diagnostic baselines, not absolute gates. Compare runs using
 the same compiler, native revision, host, and benchmark parameters. The
 profile intentionally does not cover Lwd, widgets, or native-owned span
 views; those require their own contracts first.
+
+The retained profile's `retained_pointer` case intentionally varies the hit
+row and x-coordinate across a warmed 24-row scene. It is a traversal-shape
+diagnostic; the `retained-core/pointer` Thumper case remains a fixed
+representative path so its allocation count can stay an exact regression
+gate.
+
+## Pinned OpenTUI comparisons
+
+The vendored OpenTUI source has analogous layout/tree-mutation scenarios in
+`packages/core/src/benchmark/layout-benchmark.ts` and direct/parser-inclusive
+mouse bubbling scenarios in `packages/core/src/benchmark/mouse-event-benchmark.ts`.
+Run the source benchmarks from the pinned package directory:
+
+```sh
+cd vendor/opentui/packages/core
+bun src/benchmark/layout-benchmark.ts \
+  --scenario=wide_shallow_siblings_full_render,deep_chain_leaf_full_render,insert_remove_rows_full_render \
+  --iterations=16 --warmup=2 --rounds=3 --min-sample-ms=10 --width=40 --height=20
+bun src/benchmark/mouse-event-benchmark.ts \
+  --depth=8 --direct-iterations=1000 --stdin-iterations=1000 --samples=3 --warmup=1 --json
+```
+
+On 2026-08-11, the pinned reference (`de64d210e4f0163720fc1fbfa838d4d1aad47d53`)
+ran with Bun 1.3.10 on Darwin arm64. The layout probe reported median
+latencies of 325,387 ns/op for the wide tree, 350,360 ns/op for the deep
+chain, and 77,188 ns/op for insert/remove rows. The mouse probe reported
+72.3 ns/event for direct depth-8 bubbling and 2,009.4 ns/event for the
+stdin-SGR path. The short samples have wide relative error, and the suites
+exercise different tree sizes, renderers, event representations, and
+allocation strategies from the OCaml profile. Use them to keep scenario
+meaning and traversal coverage aligned, not to rank the implementations.
 
 ## Allocation regression suite
 

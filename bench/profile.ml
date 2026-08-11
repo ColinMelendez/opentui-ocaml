@@ -203,6 +203,69 @@ let profile_retained_reorder () =
   Core.close scene;
   print_sample "retained_reorder" ~iterations:reorder_iterations sample
 
+let pointer_iterations = 128
+
+let profile_retained_pointer () =
+  let scene =
+    expect_ok
+      (Core.create ~width:(Int32.of_int retained_width)
+         ~height:(Int32.of_int retained_height))
+  in
+  let root = expect_ok (Core.root scene) in
+  let nodes =
+    Array.init retained_height (fun row ->
+        expect_ok
+          (Core_node.create_text ~parent:root
+             ~width:(Float.of_int retained_width) ~height:1.0
+             ~text:(retained_row_text row) ()))
+  in
+  let handler node event =
+    if Core_node.is_destroyed node then Core.Stop
+    else if Int.equal event.Core.button 0 then Core.Continue
+    else Core.Stop
+  in
+  Array.iter
+    (fun node -> expect_unit (Core_node.set_pointer_handler node handler))
+    nodes;
+  let output = Bytes.create (retained_width * retained_height) in
+  let expected_bytes = Int32.of_int (Bytes.length output) in
+  (match Core.flush scene ~force:false ~output with
+  | Ok { Core.status = Core.Rendered; bytes_written } ->
+      if not (Int32.equal bytes_written expected_bytes) then
+        fail "profile retained pointer setup produced an unexpected output length"
+  | Ok { status = Core.Skipped; _ } ->
+      fail "profile retained pointer setup unexpectedly skipped a dirty frame"
+  | Ok { status = Core.Failed; _ } ->
+      fail "profile retained pointer setup failed to render"
+  | Error _ -> fail "profile retained pointer setup operation failed");
+  let events =
+    Array.init retained_height (fun row ->
+        {
+          Core.kind = Core.Move;
+          button = 0;
+          x = (row * 3) mod retained_width;
+          y = row;
+        })
+  in
+  let dispatch iteration =
+    match
+      Core.dispatch_pointer scene
+        (Array.get events (iteration mod retained_height))
+    with
+    | Ok (Core.Handled _) -> ()
+    | Ok Core.Unhandled -> fail "profile retained pointer event was unhandled"
+    | Error _ -> fail "profile retained pointer operation failed"
+  in
+  dispatch 0;
+  let sample =
+    measure (fun () ->
+        for iteration = 0 to pointer_iterations - 1 do
+          dispatch iteration
+        done)
+  in
+  Core.close scene;
+  print_sample "retained_pointer" ~iterations:pointer_iterations sample
+
 let teardown_iterations = 64
 
 let profile_retained_teardown () =
@@ -356,6 +419,7 @@ let () =
         profile_retained_text ();
         profile_retained_layout ();
         profile_retained_reorder ();
+        profile_retained_pointer ();
         profile_retained_teardown ();
         profile_frames ();
         Eio_main.run (fun env ->

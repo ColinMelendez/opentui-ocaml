@@ -429,6 +429,23 @@ fixtures use fixed representative paths so the exactness probe measures a
 stable operation; traversal-shape variation remains diagnostic work rather
 than a zero-tolerance gate. No production package or public API was widened.
 
+**Retained traversal diagnostic (2026-08-11):** `bench/profile.exe` now also
+reports a warmed 24-row pointer path that varies both the hit row and x
+coordinate across 128 dispatches. The current macOS release-profile sample
+was `retained_pointer iterations=128 elapsed_ns=14708` with zero minor or
+major allocation words. This profile path remains diagnostic: the exact
+allocation gate keeps its fixed representative pointer target, and no wall
+time threshold is inferred from either result.
+
+**Pinned-reference comparison (2026-08-11):** the vendored OpenTUI layout
+benchmark was run for its wide-shallow, deep-chain, and insert/remove cases;
+its mouse benchmark was run for direct bubbling and stdin-SGR bubbling. The
+commands and the host-local observations are recorded in
+[`bench/README.md`](bench/README.md). These comparisons confirm analogous
+traversal and event shapes, while remaining non-gating because the reference
+uses a different runtime, renderer, tree size, event path, and measurement
+protocol.
+
 The current host-local Dune release-profile run (`dune --profile release`)
 was captured on 2026-08-10 with macOS 14.7.6 arm64, OCaml 5.5.0, Dune 3.23.1,
 Zig 0.16.0, and the pinned OpenTUI revision
@@ -514,6 +531,16 @@ layout order, stable identities, invalid-operation preservation, replacement
 placement, nested descendant movement, pointer-hit retargeting, and teardown
 after a move.
 
+**Phase 4 exit (2026-08-11):** the retained-core gate now includes a combined
+black-box scenario that preserves nested node identities through reorder,
+checks leaf-to-branch propagation after both positions change, leaves a dirty
+leaf dirty after an output-capacity failure, retries the render successfully,
+and recursively tears down the removed branch without stale pointer hits. The
+release allocation cases and the varied traversal diagnostic are documented,
+and the pinned-reference comparison keeps the benchmark shapes explicit. The
+imperative retained scene therefore meets the Phase 4 exit contract; Lwd and
+widgets remain separate layers for Phase 5 and Phase 6.
+
 ## Phase 5 — Solid-like Lwd bindings
 
 - add `opentui-lwd` over the retained core rather than over a rebuilt virtual
@@ -555,25 +582,22 @@ suite, and consume the stable packages without the JavaScript runtime.
 
 ## Immediate next tasks
 
-Phase 3 is complete and the first Phase 4 retained-core increment is now
-checked in. The remaining implementation sequence is:
+Phase 4 is complete and the retained scene now has its correctness,
+allocation, traversal-diagnostic, and pinned-reference records. The remaining
+implementation sequence is:
 
-1. compare the checked-in profile across the supported compiler/native hosts,
-   retaining the macOS sample as the reference and the aarch64-linux Colima
-   sample as a caveated VM diagnostic; add x86_64-linux when a matching host
-   is available;
-2. run retained-core update benchmarks and keep expanding `opentui-core`
-   acceptance around retained containers, layout changes, pointer propagation,
-   and teardown without widening into terminal or reactive ownership; the
-   optional pinned-reference behavior and contextual performance harnesses now
-   cover terminal byte framing, while the Bun timing includes its typed-event
-   normalization beyond the OCaml framing layer;
+1. begin Phase 5 by designing `opentui-lwd` over the retained scene, keeping
+   mount scopes, cleanup, keyed children, and frame scheduling above the
+   imperative core rather than rebuilding a virtual tree;
+2. preserve the current allocation gate while measuring signal updates, list
+   changes, and event bursts; add x86_64-linux comparison when a matching host
+   is available, keeping the macOS and aarch64-linux samples as the existing
+   reference and caveated VM diagnostic;
 3. extend `opentui-native` only where a measured renderable contract remains
    missing; and
 4. keep the deferred output, pooling, and native-view candidates in
    [`future-performance.md`](future-performance.md) until the core profile
-   identifies a specific material hotspot, then design Lwd and widgets over
-   the stable imperative boundary.
+   identifies a specific material hotspot.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their
