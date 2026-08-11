@@ -146,6 +146,44 @@ scratch and batching do not address the real cost. No naked native pointer,
 Bigarray, or Cstruct should cross `opentui-raw` without its owner and lifetime
 contract.
 
+## Candidate E: Angstrom and Faraday
+
+[Angstrom](https://github.com/inhabitedtype/angstrom) and
+[Faraday](https://github.com/inhabitedtype/faraday) are related libraries for
+incremental parsing and allocation-controlled serialization. They are useful
+reference points for this project, but neither should become a dependency on
+the assumption that a general parser or serializer will automatically produce
+a better terminal hot path.
+
+Angstrom's incremental and unbuffered interfaces could be useful for a
+prototype of individual terminal protocol grammars. The existing framing
+contract is wider than parsing a complete value: it must preserve unknown and
+malformed bytes, expose the exact accepted source prefix when a sink is full,
+coordinate an externally clocked escape deadline, bound incomplete input, and
+retain paste data without loss. A parser-combinator implementation would still
+need the surrounding coordinator, ownership boundaries, and bounded fallback
+storage. It must also avoid hidden retention from backtracking or lookahead.
+Therefore, keep Angstrom out of the core framing layer unless a prototype
+proves equivalent chunk-shape behavior, recovery, backpressure, and lower
+allocation or latency on representative and adversarial input.
+
+Faraday could be useful for larger composed terminal output, especially if the
+sink can consume several output segments with a vectorized write. It is less
+compelling for the short mode-transition sequences or the native renderer's
+caller-owned output buffer. The first output optimization remains the narrower
+ownership and Bigarray/Cstruct seam in Candidate A; introducing Faraday would
+not by itself remove the renderer's native-to-caller copy. If Faraday is later
+adopted, keep it behind the output package and leave pure `Terminal_modes`
+transitions independent of the Eio writer.
+
+An evaluation of either library must compare against the current path for
+minor and major words, retained bytes, parser and output latency, and native or
+sink call volume. It must additionally prove byte-for-byte output ordering,
+short-write handling, no input loss under backpressure, no unbounded temporary
+storage, and no borrowed buffer escaping its documented operation. A small
+measured improvement is not sufficient if it makes malformed-input or
+ownership failures harder to diagnose.
+
 ## Suggested order when we return to this
 
 1. Stabilize and debug the imperative retained-core contracts using the current
@@ -160,6 +198,8 @@ contract.
    explicit bounded lease state machine and exhaustion tests.
 6. Consider Candidate D last, only with a measured need and a native lifetime
    proof.
+7. Evaluate Angstrom or Faraday only as isolated, optional alternatives after
+   the corresponding parser or output benchmark identifies a real gap.
 
 At every step, higher-level correctness tests and the copy-first profile remain
 the comparison point. If an optimization makes a failure harder to localize,
