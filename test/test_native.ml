@@ -3,6 +3,7 @@ open Windtrap
 module Renderer = Opentui_native.Renderer
 module Layout = Opentui_native.Layout
 module Text_renderable = Opentui_native.Text_renderable
+module Box_renderable = Opentui_native.Box_renderable
 
 let expect_ok result =
   match result with
@@ -170,12 +171,22 @@ let () =
                (Layout.Node.set_dimensions child ~width:10.0 ~height:5.0));
           ignore
             (expect_ok
+               (Layout.Node.set_padding root ~edge:Layout.Node.Left
+                  ~value:1.0));
+          ignore
+            (expect_ok
+               (Layout.Node.set_padding root ~edge:Layout.Node.Top
+                  ~value:1.0));
+          ignore
+            (expect_ok
                (Layout.calculate layout ~width:100.0 ~height:40.0
                   ~direction:Layout.Ltr));
           let root_layout = expect_ok (Layout.Node.layout root) in
           equal (float 0.0001) 100.0 root_layout.Layout.width;
           equal (float 0.0001) 40.0 root_layout.Layout.height;
           let child_layout = expect_ok (Layout.Node.layout child) in
+          equal (float 0.0001) 1.0 child_layout.Layout.left;
+          equal (float 0.0001) 1.0 child_layout.Layout.top;
           equal (float 0.0001) 10.0 child_layout.Layout.width;
           equal (float 0.0001) 5.0 child_layout.Layout.height;
           Layout.close layout;
@@ -288,5 +299,38 @@ let () =
                ~offset_x:0.0 ~offset_y:0.0
                ~foreground:Opentui_native.Color.white
                ~background:Opentui_native.Color.black ~attributes:0l);
+          Renderer.close renderer);
+      test "a box renderable draws its retained border through the frame seam"
+        (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let layout = expect_ok (Layout.create ()) in
+          let root = expect_ok (Layout.root layout) in
+          ignore
+            (expect_ok
+               (Layout.calculate layout ~width:4.0 ~height:2.0
+                  ~direction:Layout.Ltr));
+          let renderable =
+            Box_renderable.create ~node:root
+              ~border:Box_renderable.Single ()
+          in
+          let frame = expect_ok (Renderer.begin_frame renderer) in
+          ignore
+            (expect_ok
+               (Renderer.Frame.clear frame
+                  ~background:Opentui_native.Color.black));
+          ignore
+            (expect_ok
+               (Box_renderable.draw renderable frame
+                  ~offset_x:0.0 ~offset_y:0.0));
+          let output = Bytes.create 32 in
+          let written =
+            expect_ok
+              (Renderer.Frame.write_resolved_chars frame ~output
+                 ~add_line_breaks:false)
+          in
+          equal string "┌──┐└──┘"
+            (Bytes.sub_string output 0 (Int32.to_int written));
+          ignore (expect_ok (Renderer.present frame ~force:true));
+          Layout.close layout;
           Renderer.close renderer)
     ]

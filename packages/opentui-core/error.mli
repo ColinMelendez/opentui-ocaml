@@ -6,6 +6,7 @@ type t =
   | Cannot_move_root
   | Invalid_child_index
   | Not_container
+  | Not_box
   | Not_text
   | Invalid_dimensions
   | Invalid_layout

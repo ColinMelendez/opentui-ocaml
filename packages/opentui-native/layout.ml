@@ -22,6 +22,7 @@ and node = {
 
 module Node = struct
   type t = node
+  type edge = Opentui_raw.Yoga.Node.edge = Left | Top | Right | Bottom
 
   (* Keep the preflight rule aligned with the raw C facade's float32 bound. *)
   let max_dimension = 3.4028234663852886e38
@@ -49,7 +50,14 @@ module Node = struct
     | Ok () ->
         (match Opentui_raw.Yoga.Node.set_width node.raw width with
         | Error error -> Error (Error.Native error)
-        | Ok () -> map_native (Opentui_raw.Yoga.Node.set_height node.raw height))
+              | Ok () -> map_native (Opentui_raw.Yoga.Node.set_height node.raw height))
+
+  let set_padding node ~edge ~value =
+    match ensure_open node with
+    | Error error -> Error error
+    | Ok () ->
+        map_native
+          (Opentui_raw.Yoga.Node.set_padding node.raw ~edge ~value)
 
   let layout node =
     match ensure_open node with

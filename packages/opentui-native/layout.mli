@@ -24,8 +24,13 @@ module Node : sig
   (** A node owned by one layout tree. *)
   type t
 
+  type edge = Left | Top | Right | Bottom
+
   (** [set_dimensions node ...] sets validated fixed width and height. *)
   val set_dimensions : t -> width:float -> height:float -> (unit, Error.t) result
+
+  (** [set_padding node ~edge ~value] sets a validated point-valued inset. *)
+  val set_padding : t -> edge:edge -> value:float -> (unit, Error.t) result
 
   (** [layout node] returns the most recently calculated layout for [node]. *)
   val layout : t -> (layout, Error.t) result

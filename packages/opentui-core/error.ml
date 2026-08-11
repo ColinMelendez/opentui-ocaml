@@ -5,6 +5,7 @@ type t =
   | Cannot_move_root
   | Invalid_child_index
   | Not_container
+  | Not_box
   | Not_text
   | Invalid_dimensions
   | Invalid_layout
@@ -18,6 +19,7 @@ let message error =
   | Cannot_move_root -> "core scene root cannot be moved"
   | Invalid_child_index -> "core child index is invalid"
   | Not_container -> "core node cannot own children"
+  | Not_box -> "core node is not a box"
   | Not_text -> "core node is not a text node"
   | Invalid_dimensions -> "core node dimensions are invalid"
   | Invalid_layout -> "native layout returned invalid coordinates"

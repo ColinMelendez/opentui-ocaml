@@ -2,6 +2,8 @@ open Windtrap
 
 module Scene = Opentui_core.Scene
 module Node = Scene.Node
+module Box = Scene.Box
+module Text = Scene.Text
 
 let expect_ok result =
   match result with
@@ -61,6 +63,70 @@ let () =
           equal int32 0l
             (expect_skipped (Scene.flush scene ~force:false ~output));
           Scene.close scene);
+      test "typed box and text renderables share retained identity and teardown"
+        (fun () ->
+          let scene = expect_ok (Scene.create ~width:6l ~height:3l) in
+          let root = expect_ok (Scene.root scene) in
+          let box =
+            expect_ok
+              (Box.create ~parent:root ~width:6.0 ~height:3.0
+                 ~border:Scene.Single ~should_fill:false ())
+          in
+          let text =
+            expect_ok
+              (Text.create ~parent:(Box.node box) ~width:4.0 ~height:1.0
+                 ~text:"AB" ())
+          in
+          (match Node.kind (Box.node box) with
+          | Scene.Node.Box -> ()
+          | Scene.Node.Text -> fail "typed box lost its kind");
+          (match Node.kind (Text.node text) with
+          | Scene.Node.Text -> ()
+          | Scene.Node.Box -> fail "typed text lost its kind");
+          let text_id = Node.id (Text.node text) in
+          equal string "AB" (Text.content text);
+          let output = Bytes.create 64 in
+          let written = expect_rendered (Scene.flush scene ~force:false ~output) in
+          equal int32 46l written;
+          equal string "┌────┐│AB  │└────┘"
+            (Bytes.sub_string output 0 (Int32.to_int written));
+          ignore (expect_ok (Text.set text ~content:"AB"));
+          ignore
+            (expect_ok
+               (Box.set_border box ~border:Scene.Single));
+          equal int32 0l
+            (expect_skipped (Scene.flush scene ~force:false ~output));
+          ignore (expect_ok (Text.set text ~content:"CD"));
+          (match Box.border box with
+          | Scene.Single -> ()
+          | _ -> fail "typed box did not retain its border style");
+          let hits = ref 0 in
+          ignore
+            (expect_ok
+               (Node.set_pointer_handler (Text.node text) (fun node event ->
+                    equal int text_id (Node.id node);
+                    equal int 1 event.x;
+                    hits := !hits + 1;
+                    Scene.Stop)));
+          expect_handled text_id
+            (Scene.dispatch_pointer scene
+               { Scene.kind = Scene.Down; button = 0; x = 1; y = 1 });
+          equal int 1 !hits;
+          ignore (expect_ok (Box.set_border box ~border:Scene.Double));
+          let written = expect_rendered (Scene.flush scene ~force:false ~output) in
+          equal int32 46l written;
+          equal string "╔════╗║CD  ║╚════╝"
+            (Bytes.sub_string output 0 (Int32.to_int written));
+          ignore (expect_ok (Box.set_border box ~border:Scene.No_border));
+          let written = expect_rendered (Scene.flush scene ~force:false ~output) in
+          equal int32 18l written;
+          equal string ("CD" ^ String.make 16 ' ')
+            (Bytes.sub_string output 0 (Int32.to_int written));
+          equal int text_id (Node.id (Text.node text));
+          ignore (expect_ok (Node.destroy (Box.node box)));
+          equal bool true (Node.is_destroyed (Box.node box));
+          equal bool true (Node.is_destroyed (Text.node text));
+          Scene.close scene);
       test "moves retained children without recreating or losing teardown" (fun () ->
           let scene = expect_ok (Scene.create ~width:4l ~height:2l) in
           let root = expect_ok (Scene.root scene) in
@@ -116,7 +182,7 @@ let () =
           let root = expect_ok (Scene.root scene) in
           let first_branch =
             expect_ok
-              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+              (Node.create_box ~parent:root ~width:4.0 ~height:1.0 ())
           in
           let first_leaf =
             expect_ok
@@ -125,7 +191,7 @@ let () =
           in
           let second_branch =
             expect_ok
-              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+              (Node.create_box ~parent:root ~width:4.0 ~height:1.0 ())
           in
           let second_leaf =
             expect_ok
@@ -192,7 +258,7 @@ let () =
           let root = expect_ok (Scene.root scene) in
           let first_branch =
             expect_ok
-              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+              (Node.create_box ~parent:root ~width:4.0 ~height:1.0 ())
           in
           let first_leaf =
             expect_ok
@@ -201,7 +267,7 @@ let () =
           in
           let second_branch =
             expect_ok
-              (Node.create_container ~parent:root ~width:4.0 ~height:1.0)
+              (Node.create_box ~parent:root ~width:4.0 ~height:1.0 ())
           in
           let second_leaf =
             expect_ok
@@ -370,14 +436,14 @@ let () =
           let root = expect_ok (Scene.root scene) in
           let outer =
             expect_ok
-              (Node.create_container ~parent:root ~width:3.0 ~height:2.0)
+              (Node.create_box ~parent:root ~width:3.0 ~height:2.0 ())
           in
           ignore
             (expect_ok
-               (Node.create_container ~parent:outer ~width:2.0 ~height:1.0));
+               (Node.create_box ~parent:outer ~width:2.0 ~height:1.0 ()));
           let inner =
             expect_ok
-              (Node.create_container ~parent:outer ~width:2.0 ~height:1.0)
+              (Node.create_box ~parent:outer ~width:2.0 ~height:1.0 ())
           in
           ignore
             (expect_ok
@@ -456,11 +522,11 @@ let () =
           let root = expect_ok (Scene.root scene) in
           let branch =
             expect_ok
-              (Node.create_container ~parent:root ~width:4.0 ~height:2.0)
+              (Node.create_box ~parent:root ~width:4.0 ~height:2.0 ())
           in
           let nested =
             expect_ok
-              (Node.create_container ~parent:branch ~width:4.0 ~height:1.0)
+              (Node.create_box ~parent:branch ~width:4.0 ~height:1.0 ())
           in
           let leaf =
             expect_ok
@@ -538,7 +604,7 @@ let () =
           let root = expect_ok (Scene.root scene) in
           let child =
             expect_ok
-              (Node.create_container ~parent:root ~width:4.0 ~height:2.0)
+              (Node.create_box ~parent:root ~width:4.0 ~height:2.0 ())
           in
           let child_called = ref false in
           let root_called = ref false in

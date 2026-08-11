@@ -45,6 +45,15 @@ through a caller-owned `Renderer.Frame`. `Layout` remains responsible for node
 lifetime and invalidates the reference on close. The leaf has no child tree,
 measure callback, or retained-scene policy.
 
+`Box_renderable` is the first imperative container renderable over the same
+seams. It can fill its computed rectangle and draw a single-style border using
+checked cell writes. The retained core applies the corresponding one-cell
+Yoga inset when a border is enabled, so child composition does not paint over
+the border. Its layout node remains owned by `Layout`; it does not own
+children, focus, input, or a frame loop. The retained `opentui-core` layer
+supplies the persistent identity and parent/child ownership around these native
+renderable values.
+
 The package does not expose native handles or raw buffer pointers. It does not
 yet define retained renderables, measure callbacks, terminal modes, output
 flushing, an event loop, Lwd bindings, or widgets.

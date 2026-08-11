@@ -7,6 +7,15 @@
 
 (** {1:types Types} *)
 
+type border_style =
+  Opentui_native.Box_renderable.border_style =
+  | No_border
+  | Single
+  | Double
+  | Rounded
+  | Heavy
+(** The border styles supported by {!Box}. *)
+
 type pointer_kind = Down | Up | Move | Drag | Scroll
 (** Pointer propagation kinds reported to handlers. *)
 
@@ -45,6 +54,12 @@ module Node : sig
       operations return an error. *)
   type t
 
+  type kind = Box | Text
+  (** The retained renderable family of a node. *)
+
+  (** [kind node] is the renderable family of [node]. *)
+  val kind : t -> kind
+
   (** [id node] is the stable identity of [node] within its scene. *)
   val id : t -> int
 
@@ -64,12 +79,16 @@ module Node : sig
       descendants keep their identities. The root cannot be moved. *)
   val move_to_index : t -> index:int -> (unit, error) result
 
-  (** [create_container ~parent ~width ~height] attaches a fixed-size
-      container to a live container parent. *)
-  val create_container :
+  (** [create_box ...] attaches a styled box to a live Box parent. *)
+  val create_box :
     parent:t ->
     width:float ->
     height:float ->
+    ?background:Opentui_native.Color.t ->
+    ?border:border_style ->
+    ?border_color:Opentui_native.Color.t ->
+    ?should_fill:bool ->
+    unit ->
     (t, error) result
 
   (** [create_text ... ~text] attaches a text node. The text is copied at
@@ -104,6 +123,103 @@ module Node : sig
   (** [destroy node] recursively detaches and destroys [node] and its
       descendants. The scene root cannot be destroyed. *)
   val destroy : t -> (unit, error) result
+end
+
+module Box : sig
+  (** Typed access to an OpenTUI-shaped retained box. *)
+  type t
+
+  (** [create ...] attaches a box to [parent]. *)
+  val create :
+    parent:Node.t ->
+    width:float ->
+    height:float ->
+    ?background:Opentui_native.Color.t ->
+    ?border:border_style ->
+    ?border_color:Opentui_native.Color.t ->
+    ?should_fill:bool ->
+    unit ->
+    (t, error) result
+
+  (** [node box] exposes the common retained node for child operations and
+      generic event registration. *)
+  val node : t -> Node.t
+
+  (** [background box] is the current fill color. *)
+  val background : t -> Opentui_native.Color.t
+
+  (** [set_background box ~background] changes the fill color and invalidates
+      the scene. *)
+  val set_background :
+    t -> background:Opentui_native.Color.t -> (unit, error) result
+
+  (** [border box] is the current border style. *)
+  val border : t -> border_style
+
+  (** [set_border box ~border] changes the border style and invalidates the
+      scene. *)
+  val set_border : t -> border:border_style -> (unit, error) result
+
+  (** [border_color box] is the current border foreground color. *)
+  val border_color : t -> Opentui_native.Color.t
+
+  (** [set_border_color box ~border_color] changes the border color and
+      invalidates the scene. *)
+  val set_border_color :
+    t -> border_color:Opentui_native.Color.t -> (unit, error) result
+
+  (** [should_fill box] reports whether the box fills its rectangle. *)
+  val should_fill : t -> bool
+
+  (** [set_should_fill box ~should_fill] changes filling and invalidates the
+      scene. *)
+  val set_should_fill : t -> should_fill:bool -> (unit, error) result
+end
+
+module Text : sig
+  (** Typed access to an OpenTUI-shaped retained plain-text renderable. *)
+  type t
+
+  (** [create ...] attaches copied text to [parent]. *)
+  val create :
+    parent:Node.t ->
+    width:float ->
+    height:float ->
+    text:string ->
+    ?foreground:Opentui_native.Color.t ->
+    ?background:Opentui_native.Color.t ->
+    ?attributes:int32 ->
+    unit ->
+    (t, error) result
+
+  (** [node text] exposes the common retained node for generic operations. *)
+  val node : t -> Node.t
+
+  (** [content text] is the renderable's copied text. *)
+  val content : t -> string
+
+  (** [foreground text] is the current text foreground color. *)
+  val foreground : t -> Opentui_native.Color.t
+
+  (** [background text] is the current text background color. *)
+  val background : t -> Opentui_native.Color.t
+
+  (** [attributes text] is the current text attribute bitset. *)
+  val attributes : t -> int32
+
+  (** [set text ~content] replaces copied content and invalidates the scene. *)
+  val set : t -> content:string -> (unit, error) result
+
+  (** [set_foreground text ~foreground] changes the text foreground. *)
+  val set_foreground :
+    t -> foreground:Opentui_native.Color.t -> (unit, error) result
+
+  (** [set_background text ~background] changes the text background. *)
+  val set_background :
+    t -> background:Opentui_native.Color.t -> (unit, error) result
+
+  (** [set_attributes text ~attributes] changes text attributes. *)
+  val set_attributes : t -> attributes:int32 -> (unit, error) result
 end
 
 type dispatch_result = Unhandled | Handled of Node.t
