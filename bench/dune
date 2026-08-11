@@ -1,4 +1,25 @@
+(library
+ (name opentui_bench_workload)
+ (modules warmed_workload)
+ (libraries opentui-core opentui-native opentui-terminal-eio eio mtime.clock))
+
 (executable
  (name profile)
+ (public_name opentui-bench.profile)
+ (package opentui-bench)
  (modules profile)
- (libraries opentui-core opentui-native opentui-terminal-eio eio_main mtime.clock))
+ (libraries opentui_bench_workload opentui-core opentui-native
+  opentui-terminal-eio eio_main mtime.clock))
+
+(executable
+ (name regression)
+ (modules regression)
+ (libraries opentui_bench_workload thumper))
+
+(rule
+ (alias bench)
+ (locks bench)
+ (action
+  (progn
+   (run %{exe:regression.exe})
+   (diff? warmed.thumper warmed.thumper.corrected))))

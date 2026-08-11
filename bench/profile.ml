@@ -5,6 +5,7 @@ module Core_node = Core.Node
 module Input = Opentui_terminal_eio.Input_flow
 module Coordinator = Opentui_terminal.Input_coordinator
 module Output = Opentui_terminal_eio.Output_flow
+module Warmed = Opentui_bench_workload.Warmed_workload
 
 type sample = {
   elapsed_ns : int64;
@@ -339,12 +340,29 @@ let profile_output () =
     fail "profile output wrote an unexpected byte count";
   print_sample "output" ~iterations:output_iterations sample
 
+let profile_warmed_load = Warmed.profile
+
+let warmed_from_environment () =
+  match Sys.getenv_opt "OPENTUI_PROFILE_WORKLOAD" with
+  | None -> false
+  | Some value when String.equal value "warmed" -> true
+  | Some _ -> fail "OPENTUI_PROFILE_WORKLOAD must be warmed"
+
 let () =
-  profile_retained_text ();
-  profile_retained_layout ();
-  profile_retained_reorder ();
-  profile_retained_teardown ();
-  profile_frames ();
-  Eio_main.run (fun env ->
-      profile_input env;
-      profile_output ())
+  match Array.length Sys.argv with
+  | 1 ->
+      if warmed_from_environment () then Eio_main.run profile_warmed_load
+      else (
+        profile_retained_text ();
+        profile_retained_layout ();
+        profile_retained_reorder ();
+        profile_retained_teardown ();
+        profile_frames ();
+        Eio_main.run (fun env ->
+            profile_input env;
+            profile_output ()))
+  | 3 when
+      String.equal Sys.argv.(1) "--workload"
+      && String.equal Sys.argv.(2) "warmed" ->
+      Eio_main.run profile_warmed_load
+  | _ -> fail "usage: profile.exe [--workload warmed]"
