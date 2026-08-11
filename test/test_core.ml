@@ -61,6 +61,31 @@ let () =
           equal int32 0l
             (expect_skipped (Scene.flush scene ~force:false ~output));
           Scene.close scene);
+      test "retains dirty state after an output-capacity failure" (fun () ->
+          let scene = expect_ok (Scene.create ~width:2l ~height:1l) in
+          let root = expect_ok (Scene.root scene) in
+          let text =
+            expect_ok
+              (Node.create_text ~parent:root ~width:2.0 ~height:1.0
+                 ~text:"AB" ())
+          in
+          let undersized = Bytes.create 1 in
+          expect_core_error
+            (function
+              | Opentui_core.Error.Native
+                  (Opentui_native.Error.Native
+                     Opentui_raw.Error.Output_too_small) -> true
+              | _ -> false)
+            (Scene.flush scene ~force:false ~output:undersized);
+          equal bool true (Node.is_dirty text);
+          let output = Bytes.create 2 in
+          equal int32 2l
+            (expect_rendered (Scene.flush scene ~force:false ~output));
+          equal string "AB" (Bytes.to_string output);
+          equal bool false (Node.is_dirty text);
+          equal int32 0l
+            (expect_skipped (Scene.flush scene ~force:false ~output));
+          Scene.close scene);
       test "detaches destroyed native children before reusing their slot" (fun () ->
           let scene = expect_ok (Scene.create ~width:2l ~height:2l) in
           let root = expect_ok (Scene.root scene) in
