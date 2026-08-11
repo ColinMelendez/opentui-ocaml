@@ -401,6 +401,23 @@ The zero-copy and pooling ideas that may follow this review are recorded in
 deferred parking lot, not a Phase 4 prerequisite: the current copy-first
 seams remain the reference while retained-core correctness is established.
 
+Runtime tracing now has its own `opentui-bench` development package. Its
+`runtime_events_tools` dependency and `bench/trace_runtime_events.sh` wrapper
+capture runtime-event GC statistics or JSON traces without entering the
+production package graph. `bench/trace_eio.sh` provides an opt-in
+`eio-trace` capture for Eio-owned portions after the GTK-backed tool is
+installed separately; `obs` remains a later tooling integration because it is
+not available in the current Dune package universe.
+
+The warmed workload is now a reusable benchmark fixture rather than a
+profile-only closure. `bench/regression.exe` keeps fixture construction and
+warm-up outside the measured region, then gates exact `alloc_words` for a
+retained 80x24 frame, a lossless bounded input burst, and a caller-owned
+output write through the separate `@bench` alias. The committed
+`bench/warmed.thumper` baseline is intentionally allocation-only and
+machine-local; wall time remains diagnostic until a stable cross-host policy
+exists.
+
 The current host-local Dune release-profile run (`dune --profile release`)
 was captured on 2026-08-10 with macOS 14.7.6 arm64, OCaml 5.5.0, Dune 3.23.1,
 Zig 0.16.0, and the pinned OpenTUI revision
