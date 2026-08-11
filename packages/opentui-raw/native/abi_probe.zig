@@ -168,6 +168,11 @@ comptime {
         "yogaNodeInsertChild",
     );
     expectType(
+        @TypeOf(yoga.yogaNodeRemoveChild),
+        fn (yoga.YGNodeRef, yoga.YGNodeRef) callconv(.c) void,
+        "yogaNodeRemoveChild",
+    );
+    expectType(
         @TypeOf(yoga.yogaNodeGetChildCount),
         fn (yoga.YGNodeConstRef) callconv(.c) u32,
         "yogaNodeGetChildCount",

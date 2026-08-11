@@ -232,17 +232,20 @@ let () =
           ignore
             (expect_ok
                (Text_renderable.draw renderable frame
+                  ~offset_x:0.0 ~offset_y:0.0
                   ~foreground:Opentui_native.Color.white
                   ~background:Opentui_native.Color.black ~attributes:0l));
           ignore (expect_ok (Renderer.present frame ~force:true));
           expect_error Opentui_native.Error.Frame_not_open
             (Text_renderable.draw renderable frame
+               ~offset_x:0.0 ~offset_y:0.0
                ~foreground:Opentui_native.Color.white
                ~background:Opentui_native.Color.black ~attributes:0l);
           let next_frame = expect_ok (Renderer.begin_frame renderer) in
           Layout.close layout;
           expect_error Opentui_native.Error.Closed
             (Text_renderable.draw renderable next_frame
+               ~offset_x:0.0 ~offset_y:0.0
                ~foreground:Opentui_native.Color.white
                ~background:Opentui_native.Color.black ~attributes:0l);
           Renderer.close renderer)

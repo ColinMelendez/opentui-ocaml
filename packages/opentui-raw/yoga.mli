@@ -26,6 +26,9 @@ val root : t -> (Node.t, Error.t) result
 val add_child :
   t -> parent:Node.t -> (Node.t, Error.t) result
 
+val remove_child :
+  t -> parent:Node.t -> child:Node.t -> (unit, Error.t) result
+
 val calculate :
   t ->
   width:float ->

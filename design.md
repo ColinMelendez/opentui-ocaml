@@ -83,7 +83,7 @@ layers, not one package per Zig file:
 | `opentui-terminal` | byte queue, protocol framing, terminal modes, input decoding, validated resize payloads, bounded event handoff | foundation |
 | `opentui-terminal-eio` | Eio/Cstruct flow input, mode/output lifecycle, revision wakeups, and caller-run dispatch over the pure terminal foundation | Phase 3 runtime boundary |
 | `opentui-terminal-eio-unix` | validated Unix size probe, scoped `SIGWINCH` source, and saved-termios terminal session over `Eio_unix` | Phase 3 Unix runtime boundary |
-| `opentui-core` | retained scene tree, layout/render traversal, events | proposed |
+| `opentui-core` | retained scene tree, layout/render traversal, pointer events | Phase 4 initial increment |
 | `opentui-lwd` | Lwd-based fine-grained bindings and component scope | chosen direction; API tentative |
 | `opentui-widgets` | reusable controls and application-facing conveniences | later |
 
@@ -404,9 +404,10 @@ reactive scheduling.
 layout and renderer composition. It owns a copied text value and holds an
 opaque owner-scoped layout-node reference; `Layout` remains responsible for
 that node's lifetime. Each `draw` borrows the caller-owned frame for one
-operation, converts the copied layout origin through checked coordinates, and
-delegates text bytes to the native frame. It does not own children, callbacks,
-or a retained scene.
+operation, adds a caller-supplied parent origin to the copied local layout
+origin, converts the result through checked coordinates, and delegates text
+bytes to the native frame. It does not own children, callbacks, or a retained
+scene.
 
 `opentui-terminal-eio` is a separate optional runtime package. Its
 `Input_flow` owns one reusable Cstruct read buffer and one character-typed
@@ -447,6 +448,29 @@ host-gated PTY composition smoke now exercises raw tty restoration as well as
 ANSI mode restoration, input/resize handoff, native resize, and two frame
 flushes. This workspace has no `/dev/pts`, so the smoke is reported as skipped
 here while remaining runnable on a PTY-capable Unix host.
+
+### Retained core first increment
+
+`opentui-core.Scene` now owns one `opentui-native.Renderer` and one
+owner-scoped `Layout` tree. Its root and descendants are persistent abstract
+nodes with stable integer identities. The initial node kinds are fixed-size
+containers and text leaves; text and dimension mutations mark the retained
+scene dirty without recreating the node or its native Yoga object.
+
+`Scene.flush` calculates layout before opening one native frame, clears and
+traverses the retained tree, writes resolved characters into caller-owned
+`bytes`, and presents the frame. A clean scene skips the native work unless the
+caller requests `force:true`; a failed frame remains dirty. The core does not
+own an Eio sink, terminal event queue, clock, or output loop.
+
+The first event boundary is synthetic pointer input: hit testing selects the
+deepest node in the current layout, then handlers receive the event from that
+target toward its parents until one returns `Stop`. Terminal mouse decoders
+remain in `opentui-terminal` and will be adapted at a later composition point.
+Closing a scene invalidates all nodes; destroying a non-root node detaches and
+recursively frees its native Yoga subtree through the pinned
+`yogaNodeRemoveChild` export. Rich styles, keyboard/focus policy, custom
+renderables, keyed reconciliation, Lwd, and widgets remain later work.
 
 ### Eio and external data structures
 

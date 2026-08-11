@@ -88,6 +88,12 @@ external yoga_add_child :
   Native_token.Yoga_tree.t -> Native_token.Yoga_node.t -> int * Native_token.Yoga_node.t =
   "opentui_raw_yoga_add_child"
 
+external yoga_remove_child :
+  Native_token.Yoga_tree.t ->
+  Native_token.Yoga_node.t ->
+  Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_remove_child"
+
 external yoga_node_set_width : Native_token.Yoga_node.t -> float -> int =
   "opentui_raw_yoga_node_set_width"
 

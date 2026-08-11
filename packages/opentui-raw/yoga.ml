@@ -97,6 +97,16 @@ let add_child tree ~parent =
     | 0 -> Ok { Node.handle; owner = tree.owner }
     | _ -> Error (error_of_status status)
 
+let remove_child tree ~parent ~child =
+  if not (Native_owner.is_open tree.owner)
+     || not (Native_owner.is_open parent.Node.owner)
+     || not (Native_owner.is_open child.Node.owner)
+  then Error Error.Closed
+  else
+    result_of_status
+      (Native.yoga_remove_child tree.handle parent.Node.handle child.Node.handle)
+      ()
+
 let direction_code direction =
   match direction with
   | Inherit -> 0

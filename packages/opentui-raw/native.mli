@@ -53,6 +53,10 @@ val yoga_destroy : Native_token.Yoga_tree.t -> unit
 val yoga_root : Native_token.Yoga_tree.t -> int * Native_token.Yoga_node.t
 val yoga_add_child :
   Native_token.Yoga_tree.t -> Native_token.Yoga_node.t -> int * Native_token.Yoga_node.t
+val yoga_remove_child :
+  Native_token.Yoga_tree.t ->
+  Native_token.Yoga_node.t ->
+  Native_token.Yoga_node.t -> int
 val yoga_node_set_width : Native_token.Yoga_node.t -> float -> int
 val yoga_node_set_height : Native_token.Yoga_node.t -> float -> int
 val yoga_calculate : Native_token.Yoga_tree.t -> float -> float -> int -> int

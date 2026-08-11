@@ -25,6 +25,7 @@ typedef struct opentui_raw_yoga_node_slot {
   bool alive;
   opentui_yoga_node_ref node;
   uint32_t tree_handle;
+  uint32_t parent_handle;
 } opentui_raw_yoga_node_slot;
 
 static opentui_raw_yoga_tree_slot yoga_trees[OPENTUI_RAW_YOGA_TREE_CAPACITY];
@@ -76,6 +77,7 @@ static uint32_t yoga_allocate_node(
       slot->alive = true;
       slot->node = NULL;
       slot->tree_handle = tree_handle;
+      slot->parent_handle = 0;
       *output = slot;
       return yoga_handle(index, slot->generation);
     }
@@ -126,6 +128,23 @@ static void yoga_release_node(uint32_t handle) {
   slot->alive = false;
   slot->node = NULL;
   slot->tree_handle = 0;
+  slot->parent_handle = 0;
+}
+
+static void yoga_release_subtree_slots(
+    uint32_t tree_handle,
+    uint32_t root_handle) {
+  for (uint32_t index = 1; index < OPENTUI_RAW_YOGA_NODE_CAPACITY; index++) {
+    opentui_raw_yoga_node_slot *node = &yoga_nodes[index];
+    if (node->alive
+        && node->tree_handle == tree_handle
+        && node->parent_handle == root_handle) {
+      uint32_t child_handle = yoga_handle(index, node->generation);
+      yoga_release_subtree_slots(tree_handle, child_handle);
+    }
+  }
+
+  yoga_release_node(root_handle);
 }
 
 static value make_status_handle(int status, uint32_t handle) {
@@ -279,7 +298,33 @@ CAMLprim value opentui_raw_yoga_add_child(value tree_value, value parent_value) 
   uint32_t index = yogaNodeGetChildCount(parent->node);
   yogaNodeInsertChild(parent->node, child, index);
   child_slot->node = child;
+  child_slot->parent_handle = parent_handle;
   CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_OK, child_handle));
+}
+
+CAMLprim value opentui_raw_yoga_remove_child(
+    value tree_value,
+    value parent_value,
+    value child_value) {
+  CAMLparam3(tree_value, parent_value, child_value);
+
+  uint32_t tree_handle = (uint32_t)Int32_val(tree_value);
+  uint32_t parent_handle = (uint32_t)Int32_val(parent_value);
+  uint32_t child_handle = (uint32_t)Int32_val(child_value);
+  opentui_raw_yoga_tree_slot *tree = yoga_tree_from_handle(tree_handle);
+  opentui_raw_yoga_node_slot *parent = yoga_node_from_handle(parent_handle);
+  opentui_raw_yoga_node_slot *child = yoga_node_from_handle(child_handle);
+  if (tree == NULL || parent == NULL || child == NULL
+      || parent->tree_handle != tree_handle
+      || child->tree_handle != tree_handle
+      || child->parent_handle != parent_handle) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  yogaNodeRemoveChild(parent->node, child->node);
+  yogaNodeFreeRecursive(child->node);
+  yoga_release_subtree_slots(tree_handle, child_handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
 static int yoga_validate_dimension(value dimension_value, float *dimension) {

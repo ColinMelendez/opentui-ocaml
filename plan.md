@@ -249,11 +249,12 @@ increment.
 
 **Native text-renderable increment:** `opentui-native.Text_renderable` now
 owns one copied text value and holds one opaque owner-scoped layout-node
-reference, reads the copied layout origin, and draws through a caller-owned
-imperative frame. Layout remains responsible for node lifetime. Coordinate
-checks, layout close errors, frame lifetime, and text ownership remain explicit;
-child trees, measure callbacks, retained scene identity, terminal policy, and
-reactive layers remain outside this increment.
+reference, adds a caller-supplied parent origin to the copied local layout
+origin, and draws through a caller-owned imperative frame. Layout remains
+responsible for node lifetime. Coordinate checks, layout close errors, frame
+lifetime, and text ownership remain explicit; child trees, measure callbacks,
+retained scene identity, terminal policy, and reactive layers remain outside
+this increment.
 
 **Native frame-loop increment:** `opentui-native.Renderer.run_frame` now
 composes one caller-owned imperative frame from `begin_frame`, a
@@ -413,6 +414,16 @@ into this performance pass.
 **Exit:** the imperative core supports a small static and interactive scene with
 stable identities, deterministic teardown, and frame/update benchmarks.
 
+**First retained-core increment (2026-08-10):** `opentui-core.Scene` now owns
+one `opentui-native.Renderer` and one owner-scoped Yoga tree. Its persistent
+container and text nodes have stable IDs, validated dimensions, dirty/layout
+invalidation, layout-before-render traversal, caller-owned resolved output, and
+recursive teardown. A controlled flush skips clean scenes, leaves failed
+frames dirty, and does not own a terminal sink. Synthetic pointer events hit
+the deepest laid-out node and bubble through parent handlers until `Stop`.
+The increment intentionally does not include terminal-event adaptation, rich
+Yoga styles, keyboard/focus policy, custom renderables, Lwd, or widgets.
+
 ## Phase 5 — Solid-like Lwd bindings
 
 - add `opentui-lwd` over the retained core rather than over a rebuilt virtual
@@ -454,18 +465,19 @@ suite, and consume the stable packages without the JavaScript runtime.
 
 ## Immediate next tasks
 
-Phase 3 is complete. The pre-Phase-4 review now has a repeatable imperative
-profile and has tidied the measured input/output seams without starting the
-retained core. The remaining implementation sequence is:
+Phase 3 is complete and the first Phase 4 retained-core increment is now
+checked in. The remaining implementation sequence is:
 
 1. compare the checked-in profile across the supported compiler/native hosts;
-2. keep the deferred output, pooling, and native-view candidates in
-   [`future-performance.md`](future-performance.md) until a retained-core
-   profile identifies a specific material hotspot;
+2. expand `opentui-core` acceptance around retained containers, layout changes,
+   pointer propagation, and teardown without widening into terminal or
+   reactive ownership;
 3. extend `opentui-native` only where a measured renderable contract remains
    missing; and
-4. design `opentui-core`, then its Lwd and widget layers, only after the
-   imperative runtime contracts have been reviewed.
+4. keep the deferred output, pooling, and native-view candidates in
+   [`future-performance.md`](future-performance.md) until the core profile
+   identifies a specific material hotspot, then design Lwd and widgets over
+   the stable imperative boundary.
 
 The reusable stdin queue and framing parser are now implemented as
 `opentui-terminal.Byte_queue` and `opentui-terminal.Stdin_parser`. Their

@@ -24,12 +24,14 @@ observable current/next buffer mismatch as `Native_failure`, but hidden
 hit-grid or other internal allocation failures remain unobservable.
 
 The raw Yoga binding owns a generation-checked tree/node registry and copies
-the exact six-field layout result. The capability binding copies terminal
-strings and decodes the pinned enum codes into a typed snapshot. The
-`Span_feed` binding audits NativeSpanFeed ownership: it copies drained payloads
-into OCaml bytes, exposes an explicit idempotent release token, and keeps
-reservation commit/cancel explicit through a caller-owned staging buffer.
-These are ABI resources, not a retained scene or terminal runtime.
+the exact six-field layout result. It also validates direct-parent removal,
+recursively frees detached native subtrees, and invalidates their node tokens.
+The capability binding copies terminal strings and decodes the pinned enum
+codes into a typed snapshot. The `Span_feed` binding audits NativeSpanFeed
+ownership: it copies drained payloads into OCaml bytes, exposes an explicit
+idempotent release token, and keeps reservation commit/cancel explicit through
+a caller-owned staging buffer. These are ABI resources, not a retained scene
+or terminal runtime.
 
 It deliberately does not contain a renderer tree, terminal mode or parser
 state, native-owned zero-copy span views, a reactive graph, or a widget API.

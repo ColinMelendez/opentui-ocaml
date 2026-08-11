@@ -52,4 +52,12 @@ handles, and its `Text_renderable` leaf only holds a layout-node reference and
 maps its copied origin to a caller-owned frame. It does not introduce terminal,
 retained-scene, measure-callback, Lwd, or widget policy.
 
+`opentui-core` is now the first retained imperative layer above that native
+composition. It owns a scene renderer and Yoga tree, gives each container or
+text node a persistent identity, invalidates layout and rendering on mutation,
+flushes one caller-owned output frame, and dispatches synthetic pointer events
+to the deepest hit node before bubbling to its parents. It currently supports
+fixed-size containers and text only; terminal-event adaptation, richer Yoga
+styles, custom renderables, Lwd, and widgets remain outside this increment.
+
 The graph is a design target, not a promise to create a package for every subsystem. The `Buffer` module currently in `opentui-raw` is only the ABI-level borrowed view needed to exercise the pinned renderer; it is not the retained scene or renderable model. Yoga/layout and native renderables should initially be modules of `opentui-native`; they become separate packages only if they have a stable independent consumer.

@@ -109,6 +109,15 @@ let add_child ~parent =
     | Error error -> Error (error_of_native error)
     | Ok raw -> Ok { owner = parent.owner; raw }
 
+let remove_child ~parent ~child =
+  if parent.owner.closed || child.owner.closed then Error Error.Closed
+  else if not (parent.owner == child.owner) then
+    Error (Error.Native Opentui_raw.Error.Invalid_argument)
+  else
+    map_native
+      (Opentui_raw.Yoga.remove_child parent.owner.yoga
+         ~parent:parent.raw ~child:child.raw)
+
 let direction_code direction =
   match direction with
   | Inherit -> Opentui_raw.Yoga.Inherit

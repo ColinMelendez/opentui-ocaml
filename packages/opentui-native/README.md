@@ -14,8 +14,9 @@ clears the pinned transparent default into the native next buffer; it does not
 own a loop, clock, terminal sink, event dispatch, or retained scene.
 
 The package also exposes `Layout`, an owner-scoped composition over the raw
-Yoga tree. Its opaque nodes support validated width/height updates and copied
-six-field layout results; closing the layout invalidates its nodes.
+Yoga tree. Its opaque nodes support validated width/height updates, copied
+six-field layout results, and direct-child removal; removing a child frees its
+native subtree, while closing the layout invalidates every remaining node.
 
 `Opentui_native.Color` is the caller-facing color module for frame and text
 operations. It hides the raw color representation and maps invalid
@@ -38,10 +39,11 @@ swallows hidden hit-grid and other internal allocation failures, so those
 failures cannot be reported through this layer.
 
 `Text_renderable` is the first imperative leaf over those seams. It owns a
-copied text value and holds an owner-scoped layout-node reference, then obtains
-the node's copied origin and draws through a caller-owned `Renderer.Frame`.
-`Layout` remains responsible for node lifetime and invalidates the reference on
-close. The leaf has no child tree, measure callback, or retained-scene policy.
+copied text value and holds an owner-scoped layout-node reference, then adds a
+caller-supplied parent origin to the node's copied local origin before drawing
+through a caller-owned `Renderer.Frame`. `Layout` remains responsible for node
+lifetime and invalidates the reference on close. The leaf has no child tree,
+measure callback, or retained-scene policy.
 
 The package does not expose native handles or raw buffer pointers. It does not
 yet define retained renderables, measure callbacks, terminal modes, output

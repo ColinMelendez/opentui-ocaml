@@ -190,6 +190,7 @@ void yogaConfigFree(opentui_yoga_config_ref config);
 opentui_yoga_node_ref yogaNodeCreateWithConfig(opentui_yoga_config_const_ref config);
 void yogaNodeFreeRecursive(opentui_yoga_node_ref node);
 void yogaNodeInsertChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child, uint32_t index);
+void yogaNodeRemoveChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child);
 uint32_t yogaNodeGetChildCount(opentui_yoga_node_const_ref node);
 void yogaNodeCalculateLayout(opentui_yoga_node_ref node, float width, float height, uint32_t direction);
 void yogaNodeGetComputedLayout(
@@ -314,6 +315,7 @@ typedef void (*opentui_yoga_config_free_fn)(opentui_yoga_config_ref);
 typedef opentui_yoga_node_ref (*opentui_yoga_node_create_with_config_fn)(opentui_yoga_config_const_ref);
 typedef void (*opentui_yoga_node_free_recursive_fn)(opentui_yoga_node_ref);
 typedef void (*opentui_yoga_node_insert_child_fn)(opentui_yoga_node_ref, opentui_yoga_node_ref, uint32_t);
+typedef void (*opentui_yoga_node_remove_child_fn)(opentui_yoga_node_ref, opentui_yoga_node_ref);
 typedef uint32_t (*opentui_yoga_node_get_child_count_fn)(opentui_yoga_node_const_ref);
 typedef void (*opentui_yoga_node_calculate_layout_fn)(opentui_yoga_node_ref, float, float, uint32_t);
 typedef void (*opentui_yoga_node_get_computed_layout_fn)(opentui_yoga_node_const_ref, opentui_external_yoga_layout *);
@@ -360,6 +362,7 @@ _Static_assert(_Generic(&yogaConfigFree, opentui_yoga_config_free_fn: 1, default
 _Static_assert(_Generic(&yogaNodeCreateWithConfig, opentui_yoga_node_create_with_config_fn: 1, default: 0), "yogaNodeCreateWithConfig ABI drift");
 _Static_assert(_Generic(&yogaNodeFreeRecursive, opentui_yoga_node_free_recursive_fn: 1, default: 0), "yogaNodeFreeRecursive ABI drift");
 _Static_assert(_Generic(&yogaNodeInsertChild, opentui_yoga_node_insert_child_fn: 1, default: 0), "yogaNodeInsertChild ABI drift");
+_Static_assert(_Generic(&yogaNodeRemoveChild, opentui_yoga_node_remove_child_fn: 1, default: 0), "yogaNodeRemoveChild ABI drift");
 _Static_assert(_Generic(&yogaNodeGetChildCount, opentui_yoga_node_get_child_count_fn: 1, default: 0), "yogaNodeGetChildCount ABI drift");
 _Static_assert(_Generic(&yogaNodeCalculateLayout, opentui_yoga_node_calculate_layout_fn: 1, default: 0), "yogaNodeCalculateLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeGetComputedLayout, opentui_yoga_node_get_computed_layout_fn: 1, default: 0), "yogaNodeGetComputedLayout ABI drift");

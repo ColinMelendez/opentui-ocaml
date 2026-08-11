@@ -68,3 +68,16 @@
   (ocaml (>= 5.2))
   opentui-raw
   (windtrap :with-test)))
+
+(package
+ (name opentui-core)
+ (synopsis "Retained imperative scene foundation for OpenTUI")
+ (description
+  "A retained scene tree over opentui-native with persistent node identity, owner-scoped teardown, layout-before-render traversal, bounded pointer propagation, and caller-owned frame output. Reactive and widget layers remain separate.")
+ (license ISC)
+ (authors "Colin <cwrmcolin@gmail.com>")
+ (maintainers "Colin <cwrmcolin@gmail.com>")
+ (depends
+  (ocaml (>= 5.2))
+  opentui-native
+  (windtrap :with-test)))

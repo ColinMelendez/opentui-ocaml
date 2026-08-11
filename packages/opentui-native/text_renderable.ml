@@ -21,11 +21,15 @@ let coordinate value =
       then Error invalid_coordinate
       else Ok (Int32.of_float value)
 
-let draw renderable frame ~foreground ~background ~attributes =
+let draw renderable frame ~offset_x ~offset_y ~foreground ~background
+    ~attributes =
   match Layout.Node.layout renderable.node with
   | Error error -> Error error
   | Ok layout ->
-      (match coordinate layout.Layout.left, coordinate layout.Layout.top with
+      (match
+         coordinate (layout.Layout.left +. offset_x),
+         coordinate (layout.Layout.top +. offset_y)
+       with
       | Error error, _ | _, Error error -> Error error
       | Ok x, Ok y ->
           Renderer.Frame.draw_text frame ~text:renderable.text ~x ~y

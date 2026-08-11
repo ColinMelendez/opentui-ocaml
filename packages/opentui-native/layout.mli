@@ -22,6 +22,7 @@ val create : unit -> (t, Error.t) result
 val close : t -> unit
 val root : t -> (Node.t, Error.t) result
 val add_child : parent:Node.t -> (Node.t, Error.t) result
+val remove_child : parent:Node.t -> child:Node.t -> (unit, Error.t) result
 
 val calculate :
   t ->
