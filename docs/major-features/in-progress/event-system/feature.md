@@ -8,8 +8,17 @@ channels while keeping terminal input, keyboard dispatch, pointer bubbling,
 and Eio queues as separate systems.
 
 The active contract is in this file. Non-normative rationale and alternatives
-are recorded in
-[`context/design-review-2026-08-12.md`](context/design-review-2026-08-12.md).
+are recorded in the [`design-review`](context/design-review.md) and
+[`design-ideation`](context/design-ideation.md) documents. Keyboard and
+pointer routing have their own active feature records:
+[`keyboard-dispatch`](../keyboard-dispatch/feature.md) and
+[`pointer-dispatch`](../pointer-dispatch/feature.md).
+
+The contract covers the event abstraction and its ownership rules across the
+library. It is not an inventory of currently exported event producers. Audio,
+edit-buffer, and renderer integrations remain future component work even
+though their event vocabularies are specified here so that they use the same
+abstraction when implemented.
 
 ## Reference correspondence
 
@@ -57,12 +66,23 @@ use named records rather than positional argument lists.
 The channel kernel has the following semantic operations:
 
 ```ocaml
-type subscription
+module Event : sig
+  module Subscription : sig
+    type t
+    val cancel : t -> unit
+  end
 
-val on : 'a channel -> ('a -> unit) -> subscription
-val once : 'a channel -> ('a -> unit) -> subscription
-val cancel : subscription -> unit
-val emit : 'a channel -> 'a -> bool
+  module Channel : sig
+    type 'a t
+    val create : unit -> 'a t
+    val on : 'a t -> ('a -> unit) -> Subscription.t
+    val once : 'a t -> ('a -> unit) -> Subscription.t
+    val prepend : 'a t -> ('a -> unit) -> Subscription.t
+    val emit : 'a t -> 'a -> bool
+    val listener_count : 'a t -> int
+    val clear : 'a t -> unit
+  end
+end
 ```
 
 The channel type and its construction remain internal to the owning
@@ -72,7 +92,8 @@ heterogeneous payloads, `Obj` values, or arbitrary channel emission.
 
 The channel contract is:
 
-- `emit` invokes callbacks synchronously in registration order;
+- `on` appends a listener and `prepend` places it before existing listeners;
+- `emit` invokes callbacks synchronously in listener order;
 - duplicate registrations create independent subscriptions;
 - the listener set is snapshotted when `emit` starts;
 - listeners added during an emission wait for a later emission;
@@ -81,6 +102,9 @@ The channel contract is:
 - `once` removes its subscription before it invokes its callback, so recursive
   emission does not invoke that subscription again;
 - `cancel` is idempotent;
+- `clear` removes listeners from later emissions without changing an emission
+  already in progress;
+- `listener_count` reports the active listener count;
 - callback exceptions propagate from `emit` unless the producer explicitly
   defines a different error boundary; and
 - the Boolean result of `emit` reports whether the channel has a listener, not
@@ -112,7 +136,7 @@ module Event : sig
 end
 
 val on : 'metadata stream -> ('metadata, 'payload) Event.t ->
-  ('payload -> unit) -> subscription
+  ('payload -> unit) -> Event.Subscription.t
 ```
 
 The owner parameter prevents an event descriptor from one component from being
@@ -120,23 +144,25 @@ used with another component. A small event family may expose direct functions
 such as `on_resize` when that shape is clearer. Both forms preserve the same
 channel contract.
 
-The following component translations apply:
+The following component translations define event vocabularies for current and
+future owners. A deferred component entry specifies the event contract it must
+use; it does not imply that the component currently exists in `opentui-core`.
 
-- `AudioStream<M>` owns typed metadata, reconnecting, ended, error, and
-  disposed events. Deferred delivery is an audio-runtime operation followed by
-  synchronous channel emission.
-- `AudioRecorder` owns typed lifecycle and error events. Native capture
-  subscriptions use cancellation tokens instead of callback identity.
-- `EditBuffer` maps concrete native `eb_*` names to typed events such as
-  cursor-changed and content-changed. The dynamic native name does not become a
-  dynamic public OCaml event API.
+- `AudioStream<M>` is a future owner of typed metadata, reconnecting, ended,
+  error, and disposed events. Deferred delivery is an audio-runtime operation
+  followed by synchronous channel emission.
+- `AudioRecorder` is a future owner of typed lifecycle and error events. Native
+  capture subscriptions use cancellation tokens instead of callback identity.
+- `EditBuffer` is a future owner that maps concrete native `eb_*` names to
+  typed events such as cursor-changed and content-changed. The dynamic native
+  name does not become a dynamic public OCaml event API.
 - `Renderable` owns base lifecycle channels such as focused, blurred, and
   destroyed. A concrete renderable owns its component-specific channels. A
   concrete renderable exposes its common node separately from its specialized
   event vocabulary.
-- `CliRenderer` owns renderer channels. A normal `RenderContext` receives a
-  capability for those same channels. A snapshot or isolated render context
-  owns an independent event source when the reference context is independent.
+- The reference `CliRenderer` and its normal `RenderContext` share one
+  renderer event source. An isolated snapshot context owns an independent
+  event source when the reference context is independent.
 
 ## Separate dispatch systems
 
@@ -144,11 +170,14 @@ Keyboard dispatch is not an ordinary event channel. It has global-before-local
 priority, handler snapshots, `preventDefault`, `stopPropagation`, and a
 producer-defined exception policy. Its dedicated module may reuse subscription
 identity and snapshot helpers, but it does not inherit the ordinary channel
-contract as its complete dispatch model.
+contract as its complete dispatch model. The detailed contract is in the
+[`keyboard-dispatch` feature record](../keyboard-dispatch/feature.md).
 
 Pointer dispatch is not an ordinary event channel. `Scene.dispatch_pointer`
 hit-tests the latest layout, invokes handlers from the target toward the root,
-and applies `Continue` or `Stop` propagation decisions.
+and applies `Continue` or `Stop` propagation decisions. The detailed contract
+and the planned renderer integration are in the
+[`pointer-dispatch` feature record](../pointer-dispatch/feature.md).
 
 Terminal input is not an ordinary event channel. `Stdin_parser` owns framing
 and typed parser events. `Input_coordinator` owns deadlines and a blocked event
@@ -172,7 +201,8 @@ ownership, or destruction races and does not replace that handoff.
 
 The event source owner controls channel lifetime. Owner destruction makes later
 subscription and emission behavior fail or become no-ops according to the
-owning component's documented contract. Destruction is idempotent.
+owning component's documented contract. The channel kernel itself does not
+impose one universal closed-state exception. Destruction is idempotent.
 
 Renderable destruction preserves the reference lifecycle order: the destroyed
 notification is emitted before listener cleanup and relationship teardown is
@@ -205,12 +235,12 @@ The event-system implementation satisfies these criteria:
   and renderer notifications;
 - renderer and render-context tests prove shared-source behavior and isolated
   snapshot-context behavior where the reference distinguishes them;
-- keyboard tests preserve global/local priority, prevention, propagation, and
-  handler-error behavior without routing through the ordinary channel kernel;
 - lifecycle tests prove destruction ordering and internal subscription cleanup;
 - native event tests prove concrete `eb_*` names map to typed events; and
 - the source correspondence map and package documentation identify each
-  implemented event family and its owning module.
+  implemented ordinary event family and its owning module. Keyboard and
+  pointer dispatch have separate acceptance criteria in their linked feature
+  records; they are not ordinary-channel acceptance criteria.
 
 The feature record moves to `docs/major-features/implemented/event-system/`
 when these criteria are satisfied.
