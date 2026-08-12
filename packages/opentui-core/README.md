@@ -54,5 +54,5 @@ bindings. It is not a dependency of `opentui-core`. The documented
 - an Lwd reactive binding package; or
 - widget-level focus and keyboard-routing policy.
 
-The source location and status of each omitted reference feature are listed in
-the [source correspondence map](../../docs/upstream-map.md).
+The source location and deferred reference areas are listed in the [source
+correspondence map](../../docs/upstream-map.md).
