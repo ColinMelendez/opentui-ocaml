@@ -7,7 +7,9 @@ one of those packages.
 
 Use this map when a contributor finds a feature in the reference source. A
 destination may be a file, directory, package, or `deferred` when no OCaml
-destination is selected. The contributor workflow is in
+destination is selected. Cross-cutting rows identify the reference paths that
+share one feature contract and point to that contract as well as its owning
+modules. The contributor workflow is in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Reference packages
@@ -33,6 +35,7 @@ destination is selected. The contributor workflow is in
 | `renderer.ts` | `packages/opentui-core/src/renderer.ml` |
 | `yoga.ts` | `packages/opentui-core/src/yoga.ml` |
 | Cross-cutting event model in `Renderable.ts`, `renderer.ts`, `types.ts`, and `lib/KeyHandler.ts` | `docs/major-features/in-progress/event-system/feature.md` plus the owning `opentui-core` modules |
+| `Renderable.ts` mouse handlers and pointer dispatch in `renderer.ts` | `docs/major-features/in-progress/pointer-dispatch/feature.md` and `packages/opentui-core/src/scene.ml` |
 | `buffer.ts` | `packages/opentui-raw/buffer.ml` |
 | `NativeSpanFeed.ts` | `packages/opentui-raw/span_feed.ml` |
 | `renderables/Box.ts` | `packages/opentui-core/src/renderables/box.ml` |
@@ -57,7 +60,7 @@ destination is selected. The contributor workflow is in
 | `lib/queue.ts` | `deferred` |
 | private `ByteQueue` in `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/byte_queue.ml` |
 | OCaml input handoff | `packages/opentui-core/src/lib/input_coordinator.ml` and `event_queue.ml` |
-| `lib/KeyHandler.ts` (`KeyHandler`, `InternalKeyHandler`) | `deferred` |
+| `lib/KeyHandler.ts` (`KeyHandler`, `InternalKeyHandler`) | `docs/major-features/in-progress/keyboard-dispatch/feature.md` (implementation deferred) |
 | `lib/paste.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` |
 | `lib/clock.ts` | `packages/opentui-core/src/platform/eio_runtime` |
 | `lib/terminal-*`, `ansi.ts` | `packages/opentui-core/src/lib/terminal_modes.ml` and terminal modules |
@@ -65,7 +68,7 @@ destination is selected. The contributor workflow is in
 | `post/*` | `deferred` |
 | `animation/*` | `deferred` |
 | `plugins/*` | `deferred` |
-| `audio*` | no OCaml package |
+| `audio*` | `deferred` |
 | `image.ts` | `deferred` |
 | `text-buffer.ts`, `text-buffer-view.ts`, `edit-buffer.ts`, `editor-view.ts` | `deferred` |
 | `testing/*`, `tests/*` | `packages/opentui-core/test` |
