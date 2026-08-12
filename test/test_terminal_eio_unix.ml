@@ -1,8 +1,8 @@
 open Windtrap
-module Size_source = Opentui_terminal_eio_unix.Terminal_size_source
+module Size_source = Opentui_core.Platform.Eio_unix_runtime.Terminal_size_source
 
 let () =
-  run "opentui-terminal-eio-unix"
+  run "opentui-core-platform-eio-unix"
     [
       test "reports a structured error for a non-terminal descriptor" (fun () ->
           Eio_main.run @@ fun env ->

@@ -1,7 +1,7 @@
 open Windtrap
 
-module Modes = Opentui_terminal.Terminal_modes
-module Output = Opentui_terminal_eio.Output_flow
+module Modes = Opentui_core.Lib.Terminal_modes
+module Output = Opentui_core.Platform.Eio_runtime.Output_flow
 
 type Eio.Exn.err += Test_output_error
 
@@ -43,7 +43,7 @@ let expect_ok result =
   | Error error -> fail (Output.message error)
 
 let () =
-  run "opentui-terminal-output"
+  run "opentui-core-output"
     [
       test "poisons mode output after a partial flow error" (fun () ->
           Eio_main.run @@ fun _env ->

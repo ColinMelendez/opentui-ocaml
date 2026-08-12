@@ -1,15 +1,15 @@
 (library
  (name opentui_bench_workload)
  (modules warmed_workload retained_workload)
- (libraries opentui-core opentui-native opentui-terminal-eio eio mtime.clock))
+ (libraries opentui-core eio eio.unix mtime.clock))
 
 (executable
  (name profile)
  (public_name opentui-bench.profile)
  (package opentui-bench)
  (modules profile)
- (libraries opentui_bench_workload opentui-core opentui-native
-  opentui-terminal-eio eio_main mtime.clock))
+ (libraries opentui_bench_workload opentui-core eio_main eio.unix
+  mtime.clock))
 
 (executable
  (name regression)

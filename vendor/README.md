@@ -16,4 +16,5 @@ subsystems remain out of scope until they have a concrete OCaml consumer.
 
 When updating the submodule, review the upstream build metadata and exported
 surface together, update the parent gitlink, and record any changed ABI or
-ownership assumptions in [`../design.md`](../design.md).
+ownership assumptions in [`../docs/architecture.md`](../docs/architecture.md)
+and [`../docs/upstream-map.md`](../docs/upstream-map.md).

@@ -1,7 +1,7 @@
 open Windtrap
 
-module Parser = Opentui_terminal.Stdin_parser
-module Input = Opentui_terminal.Input_decoder
+module Parser = Opentui_core.Lib.Stdin_parser
+module Input = Opentui_core.Lib.Input_decoder
 
 let sequence text =
   Parser.Sequence { protocol = Parser.Csi; bytes = Bytes.of_string text }
@@ -15,7 +15,7 @@ let same_key_kind left right =
   | _ -> false
 
 let () =
-  run "opentui-terminal-input"
+  run "opentui-core-input"
     [
       test "composition decodes keys and mouse events" (fun () ->
           let decoder = Input.create () in
@@ -23,21 +23,21 @@ let () =
           let decoded = Input.decode decoder (Parser.Key payload) in
           Bytes.set_uint8 payload 0 0;
           (match decoded with
-          | Input.Key { key = Opentui_terminal.Key_decoder.Character bytes; modifiers } ->
+          | Input.Key { key = Opentui_core.Lib.Key_decoder.Character bytes; modifiers } ->
               equal string "A" (Bytes.to_string bytes);
-              equal bool true modifiers.Opentui_terminal.Key_decoder.shift
+              equal bool true modifiers.Opentui_core.Lib.Key_decoder.shift
           | _ -> fail "expected a composed character key");
           (match Input.decode decoder (sequence "\x1b[<0;6;6M") with
           | Input.Mouse event ->
-              (match event.Opentui_terminal.Mouse_decoder.kind with
-              | Opentui_terminal.Mouse_decoder.Down -> ()
+              (match event.Opentui_core.Lib.Mouse_decoder.kind with
+              | Opentui_core.Lib.Mouse_decoder.Down -> ()
               | _ -> fail "expected a mouse down")
           | _ -> fail "expected a composed mouse event");
           (match Input.decode decoder (sequence "\x1b[<32;8;6M") with
           | Input.Mouse event ->
-              equal int 7 event.Opentui_terminal.Mouse_decoder.x;
-              (match event.Opentui_terminal.Mouse_decoder.kind with
-              | Opentui_terminal.Mouse_decoder.Drag -> ()
+              equal int 7 event.Opentui_core.Lib.Mouse_decoder.x;
+              (match event.Opentui_core.Lib.Mouse_decoder.kind with
+              | Opentui_core.Lib.Mouse_decoder.Drag -> ()
               | _ -> fail "expected a composed drag")
           | _ -> fail "expected a composed mouse drag"));
       test "composition preserves unknown sequence ownership" (fun () ->
@@ -67,8 +67,8 @@ let () =
           Input.reset decoder;
           match Input.decode decoder (sequence "\x1b[<32;8;6M") with
           | Input.Mouse event ->
-              (match event.Opentui_terminal.Mouse_decoder.kind with
-              | Opentui_terminal.Mouse_decoder.Move -> ()
+              (match event.Opentui_core.Lib.Mouse_decoder.kind with
+              | Opentui_core.Lib.Mouse_decoder.Move -> ()
               | _ -> fail "expected reset mouse state to produce motion")
           | _ -> fail "expected a composed mouse event after reset");
       test "composition keeps paste events distinct" (fun () ->

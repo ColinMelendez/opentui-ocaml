@@ -1,6 +1,6 @@
 open Windtrap
 
-module Modes = Opentui_terminal.Terminal_modes
+module Modes = Opentui_core.Lib.Terminal_modes
 
 let output transition = Bytes.to_string (Modes.output transition)
 
@@ -17,7 +17,7 @@ let expect_mouse_mode expected actual =
   | _ -> fail "unexpected terminal mouse mode"
 
 let () =
-  run "opentui-terminal-modes"
+  run "opentui-core-modes"
     [
       test "transitions are immutable until their next state is selected" (fun () ->
           let initial = Modes.initial in

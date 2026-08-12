@@ -8,7 +8,7 @@ reproducible from the Nix/Dune environment alone.
 
 The first comparison targets the common byte-framing contract of
 `StdinParser`. The shared vectors feed identical chunks to the upstream parser
-and `opentui-terminal.Stdin_parser`; each runner emits a normalized line of
+and `opentui-core.Lib.Stdin_parser`; each runner emits a normalized line of
 
 ```text
 case<TAB>kind<TAB>protocol<TAB>payload-as-hex
@@ -41,7 +41,7 @@ latencies are not a single cross-runtime gate.
 
 The first optional performance comparison uses the same deterministic byte
 workloads at the adjacent terminal-parser seam. The OCaml runner measures
-`opentui-terminal.Stdin_parser` through owned framing events; the Bun runner
+`opentui-core.Lib.Stdin_parser` through owned framing events; the Bun runner
 measures the pinned OpenTUI `StdinParser`, which additionally normalizes those
 frames into typed key/mouse/response events. This is a useful contextual
 comparison, not an exact same-layer timing. `perf_manifest.tsv` carries the

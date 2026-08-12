@@ -1,5 +1,0 @@
-(library
- (name opentui_terminal_eio)
- (public_name opentui-terminal-eio)
- (modules input_flow output_flow wakeup dispatch)
- (libraries opentui-terminal eio cstruct mtime))

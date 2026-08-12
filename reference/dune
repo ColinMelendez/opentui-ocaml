@@ -1,9 +1,9 @@
 (executable
  (name parse_terminal_vectors)
  (modules parse_terminal_vectors)
- (libraries opentui-terminal))
+ (libraries opentui-core))
 
 (executable
  (name benchmark_terminal)
  (modules benchmark_terminal)
- (libraries opentui-terminal mtime.clock))
+ (libraries opentui-core mtime.clock))

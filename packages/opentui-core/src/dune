@@ -1,0 +1,6 @@
+(include_subdirs qualified)
+
+(library
+ (name opentui_core)
+ (public_name opentui-core)
+ (libraries opentui-raw eio cstruct mtime eio.unix))

@@ -1,10 +1,10 @@
-module Native = Opentui_native
+module Native = Opentui_core
 module Renderer = Native.Renderer
 module Core = Opentui_core.Scene
 module Core_node = Core.Node
-module Input = Opentui_terminal_eio.Input_flow
-module Coordinator = Opentui_terminal.Input_coordinator
-module Output = Opentui_terminal_eio.Output_flow
+module Input = Opentui_core.Platform.Eio_runtime.Input_flow
+module Coordinator = Opentui_core.Lib.Input_coordinator
+module Output = Opentui_core.Platform.Eio_runtime.Output_flow
 module Warmed = Opentui_bench_workload.Warmed_workload
 
 type sample = {

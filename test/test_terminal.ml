@@ -3,7 +3,7 @@ open Windtrap
 let expect_ok result =
   match result with
   | Ok value -> value
-  | Error error -> fail (Opentui_terminal.Byte_queue.message error)
+  | Error error -> fail (Opentui_core.Lib.Byte_queue.message error)
 
 let expect_error expected result =
   match result with
@@ -11,12 +11,12 @@ let expect_error expected result =
   | Error actual ->
       let same_error left right =
         match left, right with
-        | Opentui_terminal.Byte_queue.Invalid_capacity,
-          Opentui_terminal.Byte_queue.Invalid_capacity -> true
-        | Opentui_terminal.Byte_queue.Invalid_range,
-          Opentui_terminal.Byte_queue.Invalid_range -> true
-        | Opentui_terminal.Byte_queue.Max_capacity,
-          Opentui_terminal.Byte_queue.Max_capacity -> true
+        | Opentui_core.Lib.Byte_queue.Invalid_capacity,
+          Opentui_core.Lib.Byte_queue.Invalid_capacity -> true
+        | Opentui_core.Lib.Byte_queue.Invalid_range,
+          Opentui_core.Lib.Byte_queue.Invalid_range -> true
+        | Opentui_core.Lib.Byte_queue.Max_capacity,
+          Opentui_core.Lib.Byte_queue.Max_capacity -> true
         | _ -> false
       in
       equal bool true (same_error expected actual)
@@ -30,20 +30,20 @@ let byte_array values =
   result
 
 let queue_contents queue =
-  let result = Bytes.create (Opentui_terminal.Byte_queue.length queue) in
+  let result = Bytes.create (Opentui_core.Lib.Byte_queue.length queue) in
   for index = 0 to Bytes.length result - 1 do
-    match Opentui_terminal.Byte_queue.get queue index with
+    match Opentui_core.Lib.Byte_queue.get queue index with
     | Some value -> Bytes.set_uint8 result index value
     | None -> fail "queue index disappeared"
   done;
   result
 
-module Parser = Opentui_terminal.Stdin_parser
-module Decoder = Opentui_terminal.Key_decoder
-module Mouse = Opentui_terminal.Mouse_decoder
-module Size = Opentui_terminal.Terminal_size
-module Input = Opentui_terminal.Input_decoder
-module Events = Opentui_terminal.Event_queue
+module Parser = Opentui_core.Lib.Stdin_parser
+module Decoder = Opentui_core.Lib.Key_decoder
+module Mouse = Opentui_core.Lib.Mouse_decoder
+module Size = Opentui_core.Lib.Terminal_size
+module Input = Opentui_core.Lib.Input_decoder
+module Events = Opentui_core.Lib.Event_queue
 
 let parser_create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
   match Parser.create ?initial_capacity ?max_pending_bytes ?timeout_ms () with
@@ -105,12 +105,12 @@ let expect_parser_error expected result =
   let same_error left right =
     match left, right with
     | Parser.Invalid_timeout, Parser.Invalid_timeout -> true
-    | Parser.Queue_error Opentui_terminal.Byte_queue.Invalid_capacity,
-      Parser.Queue_error Opentui_terminal.Byte_queue.Invalid_capacity -> true
-    | Parser.Queue_error Opentui_terminal.Byte_queue.Invalid_range,
-      Parser.Queue_error Opentui_terminal.Byte_queue.Invalid_range -> true
-    | Parser.Queue_error Opentui_terminal.Byte_queue.Max_capacity,
-      Parser.Queue_error Opentui_terminal.Byte_queue.Max_capacity -> true
+    | Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_capacity,
+      Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_capacity -> true
+    | Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_range,
+      Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_range -> true
+    | Parser.Queue_error Opentui_core.Lib.Byte_queue.Max_capacity,
+      Parser.Queue_error Opentui_core.Lib.Byte_queue.Max_capacity -> true
     | _ -> false
   in
   match result with
@@ -207,7 +207,7 @@ let expect_scroll event direction delta =
   | None -> fail "expected mouse scroll details"
 
 let () =
-  run "opentui-terminal"
+  run "opentui-core-lib"
     [
       test "terminal size validates positive columns and rows" (fun () ->
           let size =
@@ -445,7 +445,7 @@ let () =
           | Some _ -> fail "ring wrap lost the newest event"
           | None -> fail "newest wrapped event was lost");
       test "bigarray input, consume, and compaction preserve byte order" (fun () ->
-          let module Queue = Opentui_terminal.Byte_queue in
+          let module Queue = Opentui_core.Lib.Byte_queue in
           let queue =
             expect_ok (Queue.create ~initial_capacity:4 ~max_capacity:8 ())
           in
@@ -466,7 +466,7 @@ let () =
           | None, None -> ()
           | _ -> fail "out-of-range reads were accepted"));
       test "growth is bounded and a rejected append is atomic" (fun () ->
-          let module Queue = Opentui_terminal.Byte_queue in
+          let module Queue = Opentui_core.Lib.Byte_queue in
           let queue =
             expect_ok (Queue.create ~initial_capacity:2 ~max_capacity:8 ())
           in
@@ -482,7 +482,7 @@ let () =
           equal string "abcde" (Bytes.to_string (queue_contents queue));
           equal int 5 (Queue.length queue));
       test "partial consumption compacts to reuse a leading hole" (fun () ->
-          let module Queue = Opentui_terminal.Byte_queue in
+          let module Queue = Opentui_core.Lib.Byte_queue in
           let queue =
             expect_ok (Queue.create ~initial_capacity:4 ~max_capacity:8 ())
           in
@@ -498,7 +498,7 @@ let () =
           equal string "bcde" (Bytes.to_string (queue_contents queue));
           equal int 4 (Queue.capacity queue));
       test "invalid capacities and ranges are structured errors" (fun () ->
-          let module Queue = Opentui_terminal.Byte_queue in
+          let module Queue = Opentui_core.Lib.Byte_queue in
           expect_error Queue.Invalid_capacity
             (Queue.create ~initial_capacity:0 ());
           expect_error Queue.Invalid_capacity
@@ -725,12 +725,12 @@ let () =
             (Parser.create ~timeout_ms:0 ());
           expect_parser_error
             (Parser.Queue_error
-               Opentui_terminal.Byte_queue.Invalid_capacity)
+               Opentui_core.Lib.Byte_queue.Invalid_capacity)
             (Parser.create ~initial_capacity:8 ~max_pending_bytes:4 ());
           let parser = parser_create () in
           let source = byte_array [ 1; 2 ] in
           expect_parser_error
-            (Parser.Queue_error Opentui_terminal.Byte_queue.Invalid_range)
+            (Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_range)
             (Parser.push parser ~source ~off:(-1) ~len:1));
       test "SGR mouse decoding preserves modifiers and coordinates" (fun () ->
           let decoder = Mouse.create () in

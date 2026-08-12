@@ -1,7 +1,7 @@
 open Windtrap
 
-module Coordinator = Opentui_terminal.Input_coordinator
-module Input = Opentui_terminal.Input_decoder
+module Coordinator = Opentui_core.Lib.Input_coordinator
+module Input = Opentui_core.Lib.Input_decoder
 
 let expect_ok result =
   match result with
@@ -34,7 +34,7 @@ let expect_deadline expected actual =
   | Some _, None -> fail "expected a timeout deadline"
 
 let () =
-  run "opentui-terminal-coordinator"
+  run "opentui-core-coordinator"
     [
       test "arms and fires one parser deadline" (fun () ->
           let coordinator =
@@ -55,7 +55,7 @@ let () =
             (Coordinator.fire_timeout coordinator ~now_ms:120L ~emit);
           expect_deadline None (Coordinator.deadline coordinator);
           match Queue.take events with
-          | Input.Key { key = Opentui_terminal.Key_decoder.Named Escape; _ } ->
+          | Input.Key { key = Opentui_core.Lib.Key_decoder.Named Escape; _ } ->
               ()
           | _ -> fail "timeout emitted the wrong key");
       test "continuation before deadline wins and disarms" (fun () ->
@@ -74,7 +74,7 @@ let () =
                   ~source:(Bytes.of_string "A") ~off:0 ~len:1));
           expect_deadline None (Coordinator.deadline coordinator);
           match Queue.take events with
-          | Input.Key { key = Opentui_terminal.Key_decoder.Named Up; _ } ->
+          | Input.Key { key = Opentui_core.Lib.Key_decoder.Named Up; _ } ->
               ()
           | _ -> fail "continuation emitted the wrong key");
       test "refreshes the deadline for a still-incomplete continuation" (fun () ->
@@ -100,11 +100,11 @@ let () =
           match Queue.take events with
           | Input.Key
               {
-                key = Opentui_terminal.Key_decoder.Character bytes;
+                key = Opentui_core.Lib.Key_decoder.Character bytes;
                 modifiers;
               } ->
               equal string "[" (Bytes.to_string bytes);
-              equal bool true modifiers.Opentui_terminal.Key_decoder.meta
+              equal bool true modifiers.Opentui_core.Lib.Key_decoder.meta
           | Input.Key _ -> fail "incomplete CSI emitted a key"
           | Input.Sequence _ ->
               fail "incomplete CSI remained an unexpected opaque sequence"
@@ -156,9 +156,9 @@ let () =
           equal int 2 (Queue.length events);
           match Queue.take events, Queue.take events with
           | ( Input.Key
-                { key = Opentui_terminal.Key_decoder.Character _; _ },
+                { key = Opentui_core.Lib.Key_decoder.Character _; _ },
               Input.Key
-                { key = Opentui_terminal.Key_decoder.Named Escape; _ } ) ->
+                { key = Opentui_core.Lib.Key_decoder.Named Escape; _ } ) ->
               ()
           | _ -> fail "blocked input or timeout escape was lost");
       test "reset clears pending bytes, framed events, deadline, and mouse state" (fun () ->
@@ -198,8 +198,8 @@ let () =
                   ~source:(Bytes.of_string "\x1b[<32;8;6M") ~off:0 ~len:10));
           match Queue.take events with
           | Input.Mouse event ->
-              (match event.Opentui_terminal.Mouse_decoder.kind with
-              | Opentui_terminal.Mouse_decoder.Move -> ()
+              (match event.Opentui_core.Lib.Mouse_decoder.kind with
+              | Opentui_core.Lib.Mouse_decoder.Move -> ()
               | _ -> fail "reset leaked mouse button state")
           | _ -> fail "reset emitted the wrong event");
       test "a complete event does not arm a deadline" (fun () ->
@@ -213,7 +213,7 @@ let () =
                   ~source:(Bytes.of_string "A") ~off:0 ~len:1));
           expect_deadline None (Coordinator.deadline coordinator);
           match Queue.take events with
-          | Input.Key { key = Opentui_terminal.Key_decoder.Character _; _ } ->
+          | Input.Key { key = Opentui_core.Lib.Key_decoder.Character _; _ } ->
               ()
           | _ -> fail "complete input emitted the wrong event");
       test "reports a precise prefix and preserves every blocked input byte" (fun () ->

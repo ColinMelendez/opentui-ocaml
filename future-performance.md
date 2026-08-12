@@ -17,8 +17,8 @@ state first.
 
 | Path | Current behavior | What it tells us |
 | --- | --- | --- |
-| Terminal input | `opentui-terminal-eio.Input_flow` reuses one `Cstruct.t` and one character `Bigarray` view. The coordinator offers decoded events synchronously to a caller-owned sink, bounds direct pushes to 4096-byte parser chunks, retains at most one blocked decoded event plus the parser's current chunk, and keeps an unread Eio suffix in the same reusable buffer. Emitted event payloads are owned. | The Eio read loop has no intermediate `Bytes` staging buffer or unbounded coordinator backlog. The remaining copies are deliberate ownership boundaries; an `Event_queue` sink supplies explicit backpressure and coalescing. |
-| Native output | `opentui-native.Renderer.Frame` writes resolved characters into caller-owned `bytes`. `Output_flow.write_subbytes` validates and writes only the returned range. | Output is bounded and safe, but the Eio sink path still has a copy-first `Bytes`-to-`Cstruct` conversion. |
+| Terminal input | `opentui-core.Platform.Eio_runtime.Input_flow` reuses one `Cstruct.t` and one character `Bigarray` view. The coordinator offers decoded events synchronously to a caller-owned sink, bounds direct pushes to 4096-byte parser chunks, retains at most one blocked decoded event plus the parser's current chunk, and keeps an unread Eio suffix in the same reusable buffer. Emitted event payloads are owned. | The Eio read loop has no intermediate `Bytes` staging buffer or unbounded coordinator backlog. The remaining copies are deliberate ownership boundaries; an `Event_queue` sink supplies explicit backpressure and coalescing. |
+| Native output | `opentui-core.Renderer.Frame` writes resolved characters into caller-owned `bytes`. `Platform.Eio_runtime.Output_flow.write_subbytes` validates and writes only the returned range. | Output is bounded and safe, but the Eio sink path still has a copy-first `Bytes`-to-`Cstruct` conversion. |
 | Frame mutation | `set_cell` crosses the FFI one cell at a time, constructs a six-field tuple, and converts each color into a fresh four-field tuple. | The frame profile's OCaml allocation is currently more obviously exposed here than in the output sink. Direct byte transport alone will not solve it. |
 | Native-owned storage | Optimized-buffer arrays and span-feed chunks remain native-owned and are not exposed as naked Bigarrays or Cstructs. | Resize, destruction, release, and renderer ownership remain explicit instead of being hidden behind a view that could outlive its owner. |
 
@@ -35,10 +35,10 @@ allocator activity is not represented by those counters.
    an optimization is being evaluated. This is a test and diagnostic reference,
    not a promise to preserve obsolete public APIs.
 2. Keep ownership in the layer that owns the resource. `opentui-raw` may define
-   an ABI-level borrow or release token; `opentui-native` may compose it for
-   rendering; `opentui-terminal-eio` may turn caller-owned storage into an Eio
-   flow view. A lower layer must not import a higher runtime to make a view
-   convenient.
+   an ABI-level borrow or release token; `opentui-core` may compose it for
+   rendering; `opentui-core.Platform.Eio_runtime` may turn caller-owned storage
+   into an Eio flow view. A lower layer must not import a higher runtime to
+   make a view convenient.
 3. A borrowed buffer cannot escape its documented operation or lease. If an
    event crosses fibers or survives a read, it must retain a valid lease or be
    copied into owned storage.
@@ -116,7 +116,7 @@ operations, and dirty-region submission.
 The retained core should accumulate mutations and flush them at one controlled
 frame boundary. It should not render by rebuilding a list or virtual tree for
 each update, and it should not require a per-cell OCaml object or native pointer
-view. The imperative `opentui-native` layer can expose only the narrow batch
+view. The imperative `opentui-core` renderer can expose only the narrow batch
 operation that the profile justifies.
 
 Acceptance requires stable native identity, equivalent frame output, explicit

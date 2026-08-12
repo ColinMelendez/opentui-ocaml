@@ -19,72 +19,20 @@
   (windtrap :with-test)))
 
 (package
- (name opentui-terminal-eio-unix)
- (synopsis "Unix terminal runtime boundary for the OpenTUI Eio layer")
+ (name opentui-core)
+ (synopsis "Eio-native OpenTUI core and source-tree correspondence")
  (description
-  "A Unix-only terminal runtime boundary over Eio_unix. It provides a validated size probe, scoped SIGWINCH source, and saved-termios terminal session without closing caller-owned resources.")
- (license ISC)
- (authors "Colin <cwrmcolin@gmail.com>")
- (maintainers "Colin <cwrmcolin@gmail.com>")
- (depends
-  (ocaml (>= 5.2))
-  opentui-terminal
-  opentui-terminal-eio
-  eio))
-
-(package
- (name opentui-terminal)
- (synopsis "Reusable OCaml terminal input foundations for OpenTUI")
- (description
-  "A terminal-side package for bounded reusable input storage, protocol framing, semantic key and mouse decoding, writer-free mode transitions, input-event composition, and deadline coordination. Output policy remains separate until its ownership contract is stable.")
- (license ISC)
- (authors "Colin <cwrmcolin@gmail.com>")
- (maintainers "Colin <cwrmcolin@gmail.com>")
- (depends
-  (ocaml (>= 5.2))
-  (windtrap :with-test)))
-
-(package
- (name opentui-terminal-eio)
- (synopsis "Eio flow adapter for the OpenTUI terminal foundation")
- (description
-  "A separate Eio/Cstruct runtime boundary over opentui-terminal. It supplies reusable input storage, caller-clocked timeout coordination, revision wakeups, and caller-run dispatch without moving Eio into the parser package or owning terminal resources.")
- (license ISC)
- (authors "Colin <cwrmcolin@gmail.com>")
- (maintainers "Colin <cwrmcolin@gmail.com>")
- (depends
-  (ocaml (>= 5.2))
-  opentui-terminal
-  eio
-  cstruct
-  mtime
-  (eio_main :with-test)
-  (windtrap :with-test)))
-
-(package
- (name opentui-native)
- (synopsis "Imperative native renderer foundation for OpenTUI")
- (description
-  "A small renderer and frame-lifecycle composition over opentui-raw. Retained scenes, Yoga renderables, terminal policy, and reactive bindings remain separate layers.")
+  "The Eio-native OpenTUI core. Its source tree mirrors the upstream core package and contains the renderer, retained renderables, terminal libraries, and Eio/Unix platform integrations. The audited OCaml-to-Zig ABI remains in opentui-raw.")
  (license ISC)
  (authors "Colin <cwrmcolin@gmail.com>")
  (maintainers "Colin <cwrmcolin@gmail.com>")
  (depends
   (ocaml (>= 5.2))
   opentui-raw
-  (windtrap :with-test)))
-
-(package
- (name opentui-core)
- (synopsis "Retained imperative scene foundation for OpenTUI")
- (description
-  "A retained scene tree over opentui-native with persistent node identity, owner-scoped teardown, layout-before-render traversal, bounded pointer propagation, and caller-owned frame output. Reactive and widget layers remain separate.")
- (license ISC)
- (authors "Colin <cwrmcolin@gmail.com>")
- (maintainers "Colin <cwrmcolin@gmail.com>")
- (depends
-  (ocaml (>= 5.2))
-  opentui-native
+  eio
+  cstruct
+  mtime
+  (eio_main :with-test)
   (windtrap :with-test)))
 
 (package
@@ -98,7 +46,6 @@
  (depends
   (ocaml (>= 5.2))
   opentui-core
-  opentui-terminal-eio
   eio_main
   mtime
   runtime_events_tools

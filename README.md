@@ -2,14 +2,14 @@
 
 This repository is the native OCaml side of an OpenTUI frontend. The target is a direct OCaml-to-Zig boundary; JavaScript is not an intermediate runtime.
 
-The current architecture and open decisions are in [`design.md`](design.md),
+The current architecture is in [`docs/architecture.md`](docs/architecture.md),
+the upstream correspondence map is in [`docs/upstream-map.md`](docs/upstream-map.md),
 and the implementation sequence is in [`plan.md`](plan.md). The pinned
 upstream OpenTUI source is documented in [`vendor/README.md`](vendor/README.md).
 Deferred allocation and zero-copy ideas are collected in
 [`future-performance.md`](future-performance.md); they are not prerequisites
 for the retained or reactive layers.
-The proposed OpenTUI-shaped retained/renderable direction is recorded in
-[`renderable-architecture.md`](renderable-architecture.md).
+Historical design notes are retained under [`docs/archive/`](docs/archive/).
 
 For a fresh checkout, initialize the pinned upstream source with:
 
@@ -17,7 +17,12 @@ For a fresh checkout, initialize the pinned upstream source with:
 git submodule update --init --recursive
 ```
 
-The repository is organized as a Dune monorepo. Local packages live under [`packages/`](packages/), while external OCaml dependencies are resolved by Dune's package-management mode. [`opentui-raw`](packages/opentui-raw/) establishes the narrow native boundary, and [`opentui-terminal`](packages/opentui-terminal/) provides the independent terminal-side input foundation before any retained-tree or reactive UI layer is added. The optional [`opentui-terminal-eio`](packages/opentui-terminal-eio/) package adds the Eio/Cstruct runtime boundary separately, while [`opentui-terminal-eio-unix`](packages/opentui-terminal-eio-unix/) adds scoped Unix signal, terminal-size, and termios restoration policy.
+The repository is organized as a Dune monorepo. `opentui-core` is the
+Eio-native public package and mirrors the upstream `packages/core/src` tree;
+its pure protocol modules are under `src/lib`, and its Eio/Unix integrations
+are under `src/platform`. `opentui-raw` is the separate audited OCaml-to-Zig
+ABI seam. Use [`docs/upstream-map.md`](docs/upstream-map.md) to locate the
+counterpart of an upstream feature.
 
 ## Development
 
@@ -80,6 +85,9 @@ tests:
 nix develop .#test -c dune build @bench --profile release
 ```
 
-## Package direction
+## Architecture
 
-The initial package graph is described in [`packages/README.md`](packages/README.md). Package boundaries follow independently useful dependency layers, not individual Zig source files. The reactive and widget layers remain future packages until the native ownership and update contracts are stable.
+The package overview is in [`docs/architecture.md`](docs/architecture.md).
+The short [`packages/README.md`](packages/README.md) exists only as a
+directory pointer; source correspondence belongs in the map, not in a second
+package-graph narrative.

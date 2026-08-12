@@ -6,37 +6,37 @@
 (test
  (name test_terminal)
  (modules test_terminal)
- (libraries opentui-terminal windtrap))
+ (libraries opentui-core windtrap))
 
 (test
  (name test_terminal_modes)
  (modules test_terminal_modes)
- (libraries opentui-terminal windtrap))
+ (libraries opentui-core windtrap))
 
 (test
  (name test_terminal_input)
  (modules test_terminal_input)
- (libraries opentui-terminal windtrap))
+ (libraries opentui-core windtrap))
 
 (test
  (name test_terminal_eio)
  (modules test_terminal_eio)
- (libraries opentui-terminal-eio eio_main eio.unix windtrap))
+ (libraries opentui-core eio_main eio.unix windtrap))
 
 (test
  (name test_terminal_output)
  (modules test_terminal_output)
- (libraries opentui-terminal-eio eio_main eio.unix windtrap))
+ (libraries opentui-core eio_main eio.unix windtrap))
 
 (test
  (name test_terminal_coordinator)
  (modules test_terminal_coordinator)
- (libraries opentui-terminal windtrap))
+ (libraries opentui-core windtrap))
 
 (test
  (name test_native)
  (modules test_native)
- (libraries opentui-native windtrap))
+ (libraries opentui-core windtrap))
 
 (test
  (name test_core)
@@ -46,16 +46,13 @@
 (test
  (name test_native_terminal)
  (modules test_native_terminal)
- (libraries opentui-native opentui-terminal-eio eio_main windtrap))
+ (libraries opentui-core eio_main eio.unix windtrap))
 
 (test
  (name test_native_terminal_pty)
  (modules test_native_terminal_pty)
  (libraries
-  opentui-native
-  opentui-terminal
-  opentui-terminal-eio
-  opentui-terminal-eio-unix
+  opentui-core
   eio_main
   eio.unix
   windtrap))
@@ -63,15 +60,13 @@
 (test
  (name test_terminal_eio_unix)
  (modules test_terminal_eio_unix)
- (libraries opentui-terminal-eio-unix eio_main eio.unix windtrap))
+ (libraries opentui-core eio_main eio.unix windtrap))
 
 (test
  (name test_terminal_runtime)
  (modules test_terminal_runtime)
  (libraries
-  opentui-terminal
-  opentui-terminal-eio
-  opentui-terminal-eio-unix
+  opentui-core
   eio_main
   eio.unix
   windtrap))

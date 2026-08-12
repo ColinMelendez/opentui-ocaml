@@ -1,14 +1,14 @@
 open Windtrap
 
-module Native = Opentui_native.Renderer
-module Output = Opentui_terminal_eio.Output_flow
-module Input_flow = Opentui_terminal_eio.Input_flow
-module Size_source = Opentui_terminal_eio_unix.Terminal_size_source
-module Session = Opentui_terminal_eio_unix.Terminal_session
-module Input = Opentui_terminal.Input_decoder
-module Events = Opentui_terminal.Event_queue
-module Modes = Opentui_terminal.Terminal_modes
-module Size = Opentui_terminal.Terminal_size
+module Native = Opentui_core.Renderer
+module Output = Opentui_core.Platform.Eio_runtime.Output_flow
+module Input_flow = Opentui_core.Platform.Eio_runtime.Input_flow
+module Size_source = Opentui_core.Platform.Eio_unix_runtime.Terminal_size_source
+module Session = Opentui_core.Platform.Eio_unix_runtime.Terminal_session
+module Input = Opentui_core.Lib.Input_decoder
+module Events = Opentui_core.Lib.Event_queue
+module Modes = Opentui_core.Lib.Terminal_modes
+module Size = Opentui_core.Lib.Terminal_size
 
 module Tty_source = struct
   type t = Eio_unix.Fd.t
@@ -47,7 +47,7 @@ end
 let expect_native_ok result =
   match result with
   | Ok value -> value
-  | Error error -> fail (Opentui_native.Error.message error)
+  | Error error -> fail (Opentui_core.Native.Error.message error)
 
 let expect_output_ok result =
   match result with
@@ -99,12 +99,12 @@ let render_text renderer output ~text ~width =
     Native.run_frame renderer ~force:true ~draw:(fun frame ->
         ignore
           (expect_native_ok
-             (Native.Frame.clear frame ~background:Opentui_native.Color.black));
+             (Native.Frame.clear frame ~background:Opentui_core.Color.black));
         ignore
           (expect_native_ok
              (Native.Frame.draw_text frame ~text ~x:0l ~y:0l
-                ~foreground:Opentui_native.Color.white
-                ~background:Opentui_native.Color.black ~attributes:0l));
+                ~foreground:Opentui_core.Color.white
+                ~background:Opentui_core.Color.black ~attributes:0l));
         let bytes = Bytes.create width in
         let written =
           expect_native_ok
@@ -120,10 +120,10 @@ let render_text renderer output ~text ~width =
   | Ok Native.Rendered -> ()
   | Ok Native.Skipped -> fail "PTY frame was unexpectedly skipped"
   | Ok Native.Failed -> fail "PTY frame failed"
-  | Error error -> fail (Opentui_native.Error.message error)
+  | Error error -> fail (Opentui_core.Native.Error.message error)
 
 let () =
-  run "opentui-native-terminal-pty"
+  run "opentui-core-pty"
     [
       test "composes modes input resize native frames and restoration" (fun () ->
           if not (Sys.file_exists "/dev/pts") then
@@ -155,9 +155,9 @@ let () =
               in
               let emit event =
                 match Events.push queue (Events.Input event) with
-                | Ok () -> Opentui_terminal.Input_coordinator.Accepted
+                | Ok () -> Opentui_core.Lib.Input_coordinator.Accepted
                 | Error Events.Full ->
-                    Opentui_terminal.Input_coordinator.Full
+                    Opentui_core.Lib.Input_coordinator.Full
                 | Error Events.Invalid_capacity ->
                     fail "a queue created successfully reported Invalid_capacity"
               in
@@ -209,7 +209,7 @@ let () =
                       (Events.Input
                         (Input.Key
                           {
-                            key = Opentui_terminal.Key_decoder.Named Up;
+                            key = Opentui_core.Lib.Key_decoder.Named Up;
                             _;
                           })) ->
                       ()

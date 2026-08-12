@@ -336,7 +336,7 @@ let () =
           expect_core_error
             (function
               | Opentui_core.Error.Native
-                  (Opentui_native.Error.Native
+                  (Opentui_core.Native.Error.Native
                      Opentui_raw.Error.Output_too_small) -> true
               | _ -> false)
             (Scene.flush scene ~force:false ~output:(Bytes.create 1));
@@ -372,7 +372,7 @@ let () =
           expect_core_error
             (function
               | Opentui_core.Error.Native
-                  (Opentui_native.Error.Native
+                  (Opentui_core.Native.Error.Native
                      Opentui_raw.Error.Output_too_small) -> true
               | _ -> false)
             (Scene.flush scene ~force:false ~output:undersized);
@@ -387,7 +387,7 @@ let () =
           expect_core_error
             (function
               | Opentui_core.Error.Native
-                  (Opentui_native.Error.Native
+                  (Opentui_core.Native.Error.Native
                      Opentui_raw.Error.Output_too_small) -> true
               | _ -> false)
             (Scene.flush scene ~force:true ~output:undersized);

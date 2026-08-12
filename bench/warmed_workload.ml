@@ -1,12 +1,12 @@
 module Core = Opentui_core.Scene
 module Core_node = Core.Node
-module Input = Opentui_terminal_eio.Input_flow
-module Coordinator = Opentui_terminal.Input_coordinator
-module Events = Opentui_terminal.Event_queue
-module Input_event = Opentui_terminal.Input_decoder
-module Key = Opentui_terminal.Key_decoder
-module Mouse = Opentui_terminal.Mouse_decoder
-module Output = Opentui_terminal_eio.Output_flow
+module Input = Opentui_core.Platform.Eio_runtime.Input_flow
+module Coordinator = Opentui_core.Lib.Input_coordinator
+module Events = Opentui_core.Lib.Event_queue
+module Input_event = Opentui_core.Lib.Input_decoder
+module Key = Opentui_core.Lib.Key_decoder
+module Mouse = Opentui_core.Lib.Mouse_decoder
+module Output = Opentui_core.Platform.Eio_runtime.Output_flow
 
 let fail message =
   prerr_endline message;
@@ -97,9 +97,9 @@ let pointer_kind = function
 
 let key_text key modifiers =
   let prefix =
-    if modifiers.Opentui_terminal.Key_decoder.ctrl then "ctrl-"
-    else if modifiers.Opentui_terminal.Key_decoder.meta then "meta-"
-    else if modifiers.Opentui_terminal.Key_decoder.shift then "shift-"
+    if modifiers.Opentui_core.Lib.Key_decoder.ctrl then "ctrl-"
+    else if modifiers.Opentui_core.Lib.Key_decoder.meta then "meta-"
+    else if modifiers.Opentui_core.Lib.Key_decoder.shift then "shift-"
     else ""
   in
   match key with
@@ -158,13 +158,13 @@ let profile env =
     | Input_event.Key { key; modifiers } ->
         update_row (1 + !selected_row) (key_text key modifiers)
     | Input_event.Mouse event ->
-        select_row (event.Opentui_terminal.Mouse_decoder.y - 1);
+        select_row (event.Opentui_core.Lib.Mouse_decoder.y - 1);
         let pointer_event =
           {
-            Core.kind = pointer_kind event.Opentui_terminal.Mouse_decoder.kind;
-            button = event.Opentui_terminal.Mouse_decoder.button;
-            x = event.Opentui_terminal.Mouse_decoder.x;
-            y = event.Opentui_terminal.Mouse_decoder.y;
+            Core.kind = pointer_kind event.Opentui_core.Lib.Mouse_decoder.kind;
+            button = event.Opentui_core.Lib.Mouse_decoder.button;
+            x = event.Opentui_core.Lib.Mouse_decoder.x;
+            y = event.Opentui_core.Lib.Mouse_decoder.y;
           }
         in
         ignore (expect_ok (Core.dispatch_pointer scene pointer_event))
@@ -203,8 +203,8 @@ let profile env =
             handle_input_event event;
             processed := !processed + 1
         | Some (Events.Resize size) ->
-            let columns = Opentui_terminal.Terminal_size.columns size in
-            let rows = Opentui_terminal.Terminal_size.rows size in
+            let columns = Opentui_core.Lib.Terminal_size.columns size in
+            let rows = Opentui_core.Lib.Terminal_size.rows size in
             update_row (1 + !selected_row)
               (Printf.sprintf "resize %dx%d" columns rows);
             processed := !processed + 1

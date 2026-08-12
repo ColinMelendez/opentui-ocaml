@@ -1,4 +1,4 @@
-module Parser = Opentui_terminal.Stdin_parser
+module Parser = Opentui_core.Lib.Stdin_parser
 
 let fail message =
   prerr_endline message;

@@ -1,9 +1,9 @@
 open Windtrap
 
-module Flow = Opentui_terminal_eio.Input_flow
-module Coordinator = Opentui_terminal.Input_coordinator
-module Input = Opentui_terminal.Input_decoder
-module Events = Opentui_terminal.Event_queue
+module Flow = Opentui_core.Platform.Eio_runtime.Input_flow
+module Coordinator = Opentui_core.Lib.Input_coordinator
+module Input = Opentui_core.Lib.Input_decoder
+module Events = Opentui_core.Lib.Event_queue
 
 let expect_ok result =
   match result with
@@ -29,7 +29,7 @@ let expect_accepted = function
   | Coordinator.Full -> fail "event sink unexpectedly reported Full"
 
 let () =
-  run "opentui-terminal-eio"
+  run "opentui-core-platform-eio"
     [
       test "rejects a zero-sized reusable flow buffer" (fun () ->
           match Flow.create ~buffer_size:0 () with
@@ -56,7 +56,7 @@ let () =
               equal int 3 count;
               expect_deadline None (Flow.deadline input));
           (match Events.read queue with
-          | Some (Events.Input (Input.Key { key = Opentui_terminal.Key_decoder.Named Up; _ })) ->
+          | Some (Events.Input (Input.Key { key = Opentui_core.Lib.Key_decoder.Named Up; _ })) ->
               ()
           | Some _ -> fail "flow adapter emitted the wrong event"
           | None -> fail "flow adapter emitted no event");
@@ -91,7 +91,7 @@ let () =
             (expect_ok
                (Flow.fire_timeout input ~clock ~emit:(emit_to queue)));
           match Events.read queue with
-          | Some (Events.Input (Input.Key { key = Opentui_terminal.Key_decoder.Named Escape; _ })) ->
+          | Some (Events.Input (Input.Key { key = Opentui_core.Lib.Key_decoder.Named Escape; _ })) ->
               ()
           | Some _ -> fail "timeout emitted the wrong event"
           | None -> fail "timeout emitted no event");
@@ -154,13 +154,13 @@ let () =
               (Events.Input
                 (Input.Key
                   {
-                    key = Opentui_terminal.Key_decoder.Character bytes;
+                    key = Opentui_core.Lib.Key_decoder.Character bytes;
                     modifiers;
                   })) ->
               equal string "a" (Bytes.to_string bytes);
-              equal bool false modifiers.Opentui_terminal.Key_decoder.shift;
-              equal bool false modifiers.Opentui_terminal.Key_decoder.meta;
-              equal bool false modifiers.Opentui_terminal.Key_decoder.ctrl
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.shift;
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.meta;
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.ctrl
           | Some _ -> fail "first event was not key a"
           | None -> fail "first event was lost");
           (match
@@ -176,13 +176,13 @@ let () =
               (Events.Input
                 (Input.Key
                   {
-                    key = Opentui_terminal.Key_decoder.Character bytes;
+                    key = Opentui_core.Lib.Key_decoder.Character bytes;
                     modifiers;
                   })) ->
               equal string "b" (Bytes.to_string bytes);
-              equal bool false modifiers.Opentui_terminal.Key_decoder.shift;
-              equal bool false modifiers.Opentui_terminal.Key_decoder.meta;
-              equal bool false modifiers.Opentui_terminal.Key_decoder.ctrl
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.shift;
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.meta;
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.ctrl
           | Some _ -> fail "second event was not key b"
           | None -> fail "second event was lost");
       test "retains a source suffix across a blocked sink" (fun () ->
@@ -280,14 +280,14 @@ let () =
           | Error error -> fail (Flow.message error));
           match Events.read queue with
           | Some (Events.Input (Input.Mouse event)) ->
-              (match event.Opentui_terminal.Mouse_decoder.kind with
-              | Opentui_terminal.Mouse_decoder.Move ->
-                  equal int 2 event.Opentui_terminal.Mouse_decoder.x;
-                  equal int 2 event.Opentui_terminal.Mouse_decoder.y
-              | Opentui_terminal.Mouse_decoder.Down
-              | Opentui_terminal.Mouse_decoder.Up
-              | Opentui_terminal.Mouse_decoder.Drag
-              | Opentui_terminal.Mouse_decoder.Scroll ->
+              (match event.Opentui_core.Lib.Mouse_decoder.kind with
+              | Opentui_core.Lib.Mouse_decoder.Move ->
+                  equal int 2 event.Opentui_core.Lib.Mouse_decoder.x;
+                  equal int 2 event.Opentui_core.Lib.Mouse_decoder.y
+              | Opentui_core.Lib.Mouse_decoder.Down
+              | Opentui_core.Lib.Mouse_decoder.Up
+              | Opentui_core.Lib.Mouse_decoder.Drag
+              | Opentui_core.Lib.Mouse_decoder.Scroll ->
                   fail "motion coalescing changed the event kind")
           | Some _ -> fail "coalesced motion emitted a non-mouse event"
           | None -> fail "coalesced motion was lost")

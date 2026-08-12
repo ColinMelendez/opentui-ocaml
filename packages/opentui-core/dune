@@ -1,5 +1,0 @@
-(library
- (name opentui_core)
- (public_name opentui-core)
- (modules error scene)
- (libraries opentui-native))

@@ -1,12 +1,12 @@
 open Windtrap
 
-module Native_renderer = Opentui_native.Renderer
-module Output = Opentui_terminal_eio.Output_flow
+module Native_renderer = Opentui_core.Renderer
+module Output = Opentui_core.Platform.Eio_runtime.Output_flow
 
 let expect_renderer_ok result =
   match result with
   | Ok value -> value
-  | Error error -> fail (Opentui_native.Error.message error)
+  | Error error -> fail (Opentui_core.Native.Error.message error)
 
 let expect_output_ok result =
   match result with
@@ -14,7 +14,7 @@ let expect_output_ok result =
   | Error error -> fail (Output.message error)
 
 let () =
-  run "opentui-native-terminal"
+  run "opentui-core-renderer-terminal"
     [
       test "composes a native frame with an Eio output sink" (fun () ->
           Eio_main.run @@ fun _env ->
@@ -28,17 +28,17 @@ let () =
           ignore
             (expect_renderer_ok
                (Native_renderer.Frame.clear frame
-                  ~background:Opentui_native.Color.black));
+                  ~background:Opentui_core.Color.black));
           ignore
             (expect_renderer_ok
                (Native_renderer.Frame.set_cell frame ~x:0l ~y:0l ~character:65l
-                  ~foreground:Opentui_native.Color.white
-                  ~background:Opentui_native.Color.black ~attributes:0l));
+                  ~foreground:Opentui_core.Color.white
+                  ~background:Opentui_core.Color.black ~attributes:0l));
           ignore
             (expect_renderer_ok
                (Native_renderer.Frame.set_cell frame ~x:1l ~y:0l ~character:66l
-                  ~foreground:Opentui_native.Color.white
-                  ~background:Opentui_native.Color.black ~attributes:0l));
+                  ~foreground:Opentui_core.Color.white
+                  ~background:Opentui_core.Color.black ~attributes:0l));
           let resolved = Bytes.create 4 in
           let written =
             expect_renderer_ok

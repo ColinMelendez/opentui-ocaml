@@ -1,10 +1,10 @@
 open Windtrap
 
-module Events = Opentui_terminal.Event_queue
-module Size = Opentui_terminal.Terminal_size
-module Wakeup = Opentui_terminal_eio.Wakeup
-module Dispatch = Opentui_terminal_eio.Dispatch
-module Resize = Opentui_terminal_eio_unix.Resize_source
+module Events = Opentui_core.Lib.Event_queue
+module Size = Opentui_core.Lib.Terminal_size
+module Wakeup = Opentui_core.Platform.Eio_runtime.Wakeup
+module Dispatch = Opentui_core.Platform.Eio_runtime.Dispatch
+module Resize = Opentui_core.Platform.Eio_unix_runtime.Resize_source
 
 let expect_size result =
   match result with
@@ -22,7 +22,7 @@ let expect_push result =
   | Error error -> fail (Events.message error)
 
 let () =
-  run "opentui-terminal-runtime"
+  run "opentui-core-runtime"
     [
       test "wakeup preserves notification-before-wait" (fun () ->
           Eio_main.run @@ fun _env ->
