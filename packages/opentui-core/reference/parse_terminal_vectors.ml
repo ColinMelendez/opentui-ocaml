@@ -56,11 +56,13 @@ let emit name kind protocol bytes =
   Printf.printf "%s\t%s\t%s\t%s\n%!" name kind protocol (hex_of_bytes bytes)
 
 let emit_event name = function
-  | Parser.Key bytes when Bytes.length bytes > 0
-                          && Int.equal (Bytes.get_uint8 bytes 0) 0x1b ->
-      emit name "sequence" (protocol_from_escape bytes) bytes
-  | Parser.Key bytes -> emit name "key" "ground" bytes
-  | Parser.Sequence { protocol; bytes } ->
+  | Parser.Key { raw; _ } when Bytes.length raw > 0
+                               && Int.equal (Bytes.get_uint8 raw 0) 0x1b ->
+      emit name "sequence" (protocol_from_escape raw) raw
+  | Parser.Key { raw; _ } -> emit name "key" "ground" raw
+  | Parser.Mouse { raw; _ } ->
+      emit name "sequence" (protocol_from_escape raw) raw
+  | Parser.Response { protocol; bytes } ->
       emit name "sequence" (protocol_name protocol bytes) bytes
   | Parser.Paste bytes -> emit name "paste" "-" bytes
 

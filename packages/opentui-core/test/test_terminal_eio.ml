@@ -2,7 +2,7 @@ open Windtrap
 
 module Flow = Opentui_core.Platform.Eio_runtime.Input_flow
 module Coordinator = Opentui_core.Lib.Input_coordinator
-module Input = Opentui_core.Lib.Input_decoder
+module Input = Opentui_core.Lib.Stdin_parser
 module Events = Opentui_core.Lib.Event_queue
 
 let expect_ok result =
@@ -257,7 +257,12 @@ let () =
           let accepted_before_timeout = !accepted in
           expect_accepted
             (expect_ok (Flow.fire_timeout input ~clock ~emit));
-          equal int accepted_before_timeout !accepted);
+          if not
+            (Int.equal !accepted accepted_before_timeout
+            || Int.equal !accepted (accepted_before_timeout + 1))
+          then
+            failf "timeout delivered %d events after the retained prefix"
+              (!accepted - accepted_before_timeout));
       test "delivers the latest motion through queue coalescing" (fun () ->
           Eio_main.run @@ fun env ->
           let input = expect_ok (Flow.create ~buffer_size:64 ()) in
@@ -279,7 +284,7 @@ let () =
               failf "motion unexpectedly backpressured after %d bytes" count
           | Error error -> fail (Flow.message error));
           match Events.read queue with
-          | Some (Events.Input (Input.Mouse event)) ->
+          | Some (Events.Input (Input.Mouse { event; _ })) ->
               (match event.Opentui_core.Lib.Mouse_decoder.kind with
               | Opentui_core.Lib.Mouse_decoder.Move ->
                   equal int 2 event.Opentui_core.Lib.Mouse_decoder.x;

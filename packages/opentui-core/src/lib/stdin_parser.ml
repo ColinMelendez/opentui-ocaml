@@ -1,9 +1,18 @@
 type protocol = Csi | Ss3 | Osc | Dcs | Apc | Unknown
 
 type event =
-  | Key of bytes
-  | Sequence of { protocol : protocol; bytes : bytes }
+  | Key of {
+      raw : bytes;
+      key : Key_decoder.key;
+      modifiers : Key_decoder.modifiers;
+    }
+  | Mouse of {
+      raw : bytes;
+      encoding : Mouse_decoder.encoding;
+      event : Mouse_decoder.event;
+    }
   | Paste of bytes
+  | Response of { protocol : protocol; bytes : bytes }
 
 type error = Invalid_timeout | Queue_error of Byte_queue.error
 
@@ -25,6 +34,7 @@ type t = {
   max_pending_bytes : int;
   timeout_ms : int;
   events : event Queue.t;
+  mouse : Mouse_decoder.t;
   mutable state : state;
   mutable cursor : int;
   mutable unit_start : int;
@@ -75,6 +85,7 @@ let create ?initial_capacity ?(max_pending_bytes = default_max_pending_bytes)
             max_pending_bytes = Byte_queue.max_capacity pending;
             timeout_ms;
             events = Queue.create ();
+            mouse = Mouse_decoder.create ();
             state = Ground;
             cursor = 0;
             unit_start = 0;
@@ -155,24 +166,38 @@ let set_ground parser =
   parser.state <- Ground;
   parser.saw_esc <- false
 
-let emit_key parser ~start ~end_exclusive =
-  Queue.add (Key (copy_range parser ~start ~end_exclusive)) parser.events
+let emit_key_bytes parser raw =
+  match Key_decoder.decode raw with
+  | Some { key; modifiers } ->
+      Queue.add (Key { raw; key; modifiers }) parser.events
+  | None -> Queue.add (Response { protocol = Unknown; bytes = raw }) parser.events
 
-let emit_empty_key parser = Queue.add (Key Bytes.empty) parser.events
+let emit_key parser ~start ~end_exclusive =
+  emit_key_bytes parser (copy_range parser ~start ~end_exclusive)
+
+let emit_empty_key parser = emit_key_bytes parser Bytes.empty
 
 let emit_sequence parser protocol ~start ~end_exclusive =
-  Queue.add
-    (Sequence { protocol; bytes = copy_range parser ~start ~end_exclusive })
-    parser.events
+  let raw = copy_range parser ~start ~end_exclusive in
+  match Mouse_decoder.decode parser.mouse raw with
+  | Some { encoding; event } ->
+      Queue.add (Mouse { raw; encoding; event }) parser.events
+  | None ->
+      (match Key_decoder.decode raw with
+      | Some { key; modifiers } ->
+          Queue.add (Key { raw; key; modifiers }) parser.events
+      | None -> Queue.add (Response { protocol; bytes = raw }) parser.events)
 
 let emit_sequence_with_escape parser protocol ~start ~end_exclusive =
-  Queue.add
-    (Sequence
-       {
-         protocol;
-         bytes = copy_range_with_escape parser ~start ~end_exclusive;
-       })
-    parser.events
+  let raw = copy_range_with_escape parser ~start ~end_exclusive in
+  match Mouse_decoder.decode parser.mouse raw with
+  | Some { encoding; event } ->
+      Queue.add (Mouse { raw; encoding; event }) parser.events
+  | None ->
+      (match Key_decoder.decode raw with
+      | Some { key; modifiers } ->
+          Queue.add (Key { raw; key; modifiers }) parser.events
+      | None -> Queue.add (Response { protocol; bytes = raw }) parser.events)
 
 let clear_paste_storage parser =
   parser.paste_parts <- [];
@@ -659,5 +684,6 @@ let reset parser =
   parser.state <- Ground;
   parser.just_flushed_esc <- false;
   parser.paste_active <- false;
+  Mouse_decoder.reset parser.mouse;
   clear_paste_storage parser;
   reset_unit parser

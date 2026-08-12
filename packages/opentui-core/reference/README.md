@@ -6,19 +6,18 @@ reference, not an ABI specification. The checks are outside `dune runtest`
 because they require Bun and the reference source, while the OCaml test suite
 must remain reproducible from the Nix/Dune environment alone.
 
-The byte-framing comparison targets the common contract of `StdinParser`. The
-shared vectors feed identical chunks to the reference parser and
-`opentui-core.Lib.Stdin_parser`; each runner emits a normalized line of
+The parser comparison targets the common typed-event contract of
+`StdinParser`. The shared vectors feed identical chunks to the reference parser
+and `opentui-core.Lib.Stdin_parser`; each runner emits a normalized line of
 
 ```text
 case<TAB>kind<TAB>protocol<TAB>payload-as-hex
 ```
 
-The comparison ends before semantic key and mouse decoding.
-OpenTUI's parser emits typed key/mouse events, while the OCaml design keeps
-framing, key decoding, mouse decoding, and event handoff in separate layers.
-Escape-shaped reference key and mouse events are therefore normalized back to
-their wire sequence, while ordinary keys and paste bodies remain byte events.
+Both parsers emit typed key, mouse, paste, and response events. The normalized
+format represents key and mouse wire payloads as `sequence`, ordinary keys as
+`key`, responses as `sequence`, and paste bodies as `paste`. This preserves
+wire-level comparison while retaining the parser's typed event boundary.
 
 Run the comparison from the repository root:
 
@@ -40,11 +39,10 @@ and OCaml/native latencies are not a single cross-runtime gate.
 ## Comparative performance
 
 The optional parser comparison uses the same deterministic byte workloads at
-the terminal-parser boundary. The OCaml runner measures
-`opentui-core.Lib.Stdin_parser` through owned framing events; the Bun runner
-measures the reference `StdinParser`, which additionally normalizes those
-frames into typed key/mouse/response events. This is a useful contextual
-comparison, not an exact same-layer timing. `perf_manifest.tsv` carries the
+the terminal-parser boundary. The OCaml and Bun runners measure their typed
+parser events and normalize them to the same wire-oriented output. This is a
+contextual comparison of equivalent parser responsibilities.
+`perf_manifest.tsv` carries the
 pattern bytes, event multiplicity, payload size, and chunk shape so neither
 runner needs a private pattern table.
 

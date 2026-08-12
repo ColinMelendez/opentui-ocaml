@@ -1,4 +1,4 @@
-type event = Input_decoder.event
+type event = Stdin_parser.event
 type delivery = Accepted | Full
 type push_result = Accepted_all | Full_after of int
 
@@ -6,7 +6,6 @@ type error = Parser_error of Stdin_parser.error
 
 type t = {
   parser : Stdin_parser.t;
-  decoder : Input_decoder.t;
   mutable pending : event option;
   mutable deadline : int64 option;
 }
@@ -27,7 +26,6 @@ let create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
       Ok
         {
           parser;
-          decoder = Input_decoder.create ();
           pending = None;
           deadline = None;
         }
@@ -62,8 +60,7 @@ let drain coordinator ~emit =
         (match Stdin_parser.read coordinator.parser with
         | None -> running := false
         | Some input ->
-            coordinator.pending <-
-              Some (Input_decoder.decode coordinator.decoder input))
+            coordinator.pending <- Some input)
   done;
   !status
 
@@ -154,6 +151,5 @@ let fire_timeout coordinator ~now_ms ~emit =
 
 let reset coordinator =
   Stdin_parser.reset coordinator.parser;
-  Input_decoder.reset coordinator.decoder;
   coordinator.pending <- None;
   coordinator.deadline <- None

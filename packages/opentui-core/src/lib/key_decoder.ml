@@ -38,10 +38,12 @@ type modifiers = {
 
 type key = Character of bytes | Named of named_key
 
-type event =
-  | Key of { key : key; modifiers : modifiers }
-  | Sequence of { protocol : Stdin_parser.protocol; bytes : bytes }
-  | Paste of bytes
+type decoded = {
+  key : key;
+  modifiers : modifiers;
+}
+
+type parse_result = Key of decoded
 
 let named_key_name = function
   | Return -> "return"
@@ -379,9 +381,7 @@ let csi_key bytes =
                key;
                modifiers = { modifiers with meta = true };
              })
-    | None -> None
-    | Some (Sequence _) -> None
-    | Some (Paste _) -> None)
+    | None -> None)
   else None
 
 let ss3_key_core bytes =
@@ -457,8 +457,6 @@ let ss3_key bytes =
                modifiers = { modifiers with meta = true };
              })
     | None -> None
-    | Some (Sequence _) -> None
-    | Some (Paste _) -> None
   else None
 
 let unknown_key bytes =
@@ -476,17 +474,34 @@ let unknown_key bytes =
     else None
   else None
 
-let decode_sequence protocol bytes =
-  match protocol with
-  | Stdin_parser.Csi -> csi_key bytes
-  | Stdin_parser.Ss3 -> ss3_key bytes
-  | Stdin_parser.Unknown -> unknown_key bytes
-  | Stdin_parser.Osc | Stdin_parser.Dcs | Stdin_parser.Apc -> None
+let sequence_kind bytes =
+  let length = Bytes.length bytes in
+  let leading_escapes = leading_escape_count bytes in
+  if Int.compare leading_escapes length >= 0 then `Unknown
+  else
+    match Bytes.get_uint8 bytes leading_escapes with
+    | 0x5b -> `Csi
+    | 0x4f -> `Ss3
+    | _ -> `Unknown
 
-let decode = function
-  | Stdin_parser.Key bytes -> ground_key bytes
-  | Stdin_parser.Sequence { protocol; bytes } ->
-      (match decode_sequence protocol bytes with
-      | Some event -> event
-      | None -> Sequence { protocol; bytes = Bytes.copy bytes })
-  | Stdin_parser.Paste bytes -> Paste (Bytes.copy bytes)
+let decode bytes =
+  let length = Bytes.length bytes in
+  if Int.compare length 1 <= 0
+     || not (Int.equal (Bytes.get_uint8 bytes 0) 0x1b)
+  then
+    let Key decoded = ground_key bytes in
+    Some decoded
+  else
+    match sequence_kind bytes with
+    | `Csi ->
+        (match csi_key bytes with
+        | Some (Key decoded) -> Some decoded
+        | None -> None)
+    | `Ss3 ->
+        (match ss3_key bytes with
+        | Some (Key decoded) -> Some decoded
+        | None -> None)
+    | `Unknown ->
+        (match unknown_key bytes with
+        | Some (Key decoded) -> Some decoded
+        | None -> None)

@@ -1,5 +1,5 @@
 type event =
-  | Input of Input_decoder.event
+  | Input of Stdin_parser.event
   | Resize of Terminal_size.t
 
 type error =
@@ -46,16 +46,16 @@ let is_resize = function
   | Input _ -> false
 
 let is_mouse_motion = function
-  | Input (Input_decoder.Mouse mouse) ->
+  | Input (Stdin_parser.Mouse { event = mouse; _ }) ->
       (match mouse.Mouse_decoder.kind with
       | Mouse_decoder.Move
       | Mouse_decoder.Drag -> true
       | Mouse_decoder.Down
       | Mouse_decoder.Up
       | Mouse_decoder.Scroll -> false)
-  | Input (Input_decoder.Key _)
-  | Input (Input_decoder.Sequence _)
-  | Input (Input_decoder.Paste _)
+  | Input (Stdin_parser.Key _)
+  | Input (Stdin_parser.Response _)
+  | Input (Stdin_parser.Paste _)
   | Resize _ -> false
 
 let replace_pending queue matches replacement =

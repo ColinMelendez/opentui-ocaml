@@ -37,12 +37,16 @@ containing Text, two property updates, and the resulting frame output.
 
 ## Terminal modules
 
-`Lib` contains the terminal protocol, input decoding, mode descriptions, and
-bounded event handoff modules. `Platform.Eio_runtime` contains Eio flow,
-wakeup, output, and dispatch modules. `Platform.Eio_unix_runtime` contains
-Unix terminal-size, signal, and termios-session modules. These modules expose
-the building blocks needed to compose an application runtime; this package
-does not provide a single implicit application loop.
+`Lib.Stdin_parser` is the terminal input boundary. It frames input bytes and
+emits typed key, mouse, paste, and response events. `Lib.Key_decoder` and
+`Lib.Mouse_decoder` are the low-level parsing helpers used by
+`Lib.Stdin_parser`; they are not a required second input stage.
+`Lib.Input_coordinator` and `Lib.Event_queue` provide deadline, backpressure,
+and event-handoff policies. `Platform.Eio_runtime` contains Eio flow, wakeup,
+output, and dispatch modules. `Platform.Eio_unix_runtime` contains Unix
+terminal-size, signal, and termios-session modules. These modules expose the
+building blocks needed to compose an application runtime; this package does
+not provide a single implicit application loop.
 
 Lwd is the OCaml incremental-computation library intended for reactive UI
 bindings. It is not a dependency of `opentui-core`. The documented

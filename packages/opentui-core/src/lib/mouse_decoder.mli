@@ -33,6 +33,15 @@ type event = {
 }
 (** A decoded mouse event in terminal cell coordinates. *)
 
+type encoding = Sgr | X10
+(** The wire encoding used for a decoded mouse frame. *)
+
+type decoded = {
+  encoding : encoding;
+  event : event;
+}
+(** A mouse event together with its wire encoding. *)
+
 type t
 (** Mouse-button state used to classify motion as drag. *)
 
@@ -42,6 +51,6 @@ val create : unit -> t
 (** [reset decoder] clears pressed-button state. *)
 val reset : t -> unit
 
-(** [decode decoder input] returns [Some event] for a mouse frame and [None]
-    for other parser events. *)
-val decode : t -> Stdin_parser.event -> event option
+(** [decode decoder bytes] returns [Some decoded] for a complete SGR or X10
+    mouse frame and [None] for other byte sequences. *)
+val decode : t -> bytes -> decoded option

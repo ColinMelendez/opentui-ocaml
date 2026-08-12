@@ -1,18 +1,29 @@
-(** Incremental terminal framing above {!Byte_queue}.
+(** Incremental terminal parsing above {!Byte_queue}.
 
-    The parser preserves protocol units across input chunks, emits owned byte
-    payloads, and uses a caller-driven timeout for incomplete escape prefixes.
-    The pending protocol prefix is bounded by [max_pending_bytes]; callers
-    should consume emitted events with {!read}, {!drain}, or their handoff. *)
+    The parser preserves protocol units across input chunks, recognizes keys,
+    mouse events, paste bodies, and terminal responses, and emits owned event
+    payloads. The pending protocol prefix is bounded by
+    [max_pending_bytes]. A caller-driven timeout completes incomplete escape
+    prefixes. *)
 
 type protocol = Csi | Ss3 | Osc | Dcs | Apc | Unknown
-(** The protocol family of an opaque framed sequence. *)
+(** The protocol family of an opaque terminal response. *)
 
 type event =
-  | Key of bytes
-  | Sequence of { protocol : protocol; bytes : bytes }
+  | Key of {
+      raw : bytes;
+      key : Key_decoder.key;
+      modifiers : Key_decoder.modifiers;
+    }
+  | Mouse of {
+      raw : bytes;
+      encoding : Mouse_decoder.encoding;
+      event : Mouse_decoder.event;
+    }
   | Paste of bytes
-(** A copied ground key, framed sequence, or bracketed-paste body. *)
+  | Response of { protocol : protocol; bytes : bytes }
+(** A typed key, mouse event, paste body, or opaque terminal response. All
+    byte payloads are owned by the parser. *)
 
 type t
 (** Mutable incremental parser state. *)
@@ -46,7 +57,7 @@ val buffer_capacity : t -> int
 val push :
   t -> source:Byte_queue.buffer -> off:int -> len:int -> (unit, error) result
 (** [push] copies and parses an integer Bigarray range. A zero-length range
-    emits one empty {!event} without changing pending protocol state. *)
+    emits one empty key event without changing pending protocol state. *)
 
 val push_chars :
   t ->
@@ -69,8 +80,8 @@ val drain : t -> (event -> unit) -> unit
     order. *)
 
 val flush_timeout : t -> unit
-(** [flush_timeout parser] force-flushes an incomplete non-paste prefix as an
-    opaque event. It does not inspect time; callers invoke it after the
+(** [flush_timeout parser] force-flushes an incomplete non-paste prefix as a
+    response event. It does not inspect time; callers invoke it after the
     configured timeout, typically through {!Input_coordinator.fire_timeout}. *)
 
 val reset : t -> unit

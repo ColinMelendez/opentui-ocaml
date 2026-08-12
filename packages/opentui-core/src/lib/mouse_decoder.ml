@@ -26,6 +26,13 @@ type event = {
   scroll : scroll option;
 }
 
+type encoding = Sgr | X10
+
+type decoded = {
+  encoding : encoding;
+  event : event;
+}
+
 type t = { pressed : bool array }
 
 let create () = { pressed = Array.make 3 false }
@@ -186,15 +193,16 @@ let decode_x10 ~button_code ~x ~y =
     let kind = if Int.equal button 3 then Up else Down in
     Some (mouse_event ~kind ~button:(button_value button) ~x ~y ~modifiers ())
 
-let decode decoder = function
-  | Stdin_parser.Sequence { protocol = Stdin_parser.Csi; bytes } ->
-      (match parse_sgr bytes with
-      | Some (button_code, x, y, press) ->
-          sgr_event decoder ~button_code ~x ~y ~press
-      | None ->
-          (match parse_x10 bytes with
-          | Some (button_code, x, y) -> decode_x10 ~button_code ~x ~y
-          | None -> None))
-  | Stdin_parser.Key _
-  | Stdin_parser.Sequence _
-  | Stdin_parser.Paste _ -> None
+let decode decoder bytes =
+  match parse_sgr bytes with
+  | Some (button_code, x, y, press) ->
+      (match sgr_event decoder ~button_code ~x ~y ~press with
+      | Some event -> Some { encoding = Sgr; event }
+      | None -> None)
+  | None ->
+      (match parse_x10 bytes with
+      | Some (button_code, x, y) ->
+          (match decode_x10 ~button_code ~x ~y with
+          | Some event -> Some { encoding = X10; event }
+          | None -> None)
+      | None -> None)

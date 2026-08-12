@@ -1,15 +1,15 @@
-(** Parser/decoder coordination above {!Stdin_parser}.
+(** Eio-facing coordination above {!Stdin_parser}.
 
-    Input bytes are copied into the parser's bounded pending storage. Decoded
+    Input bytes are copied into the parser's bounded pending storage. Typed
     events are offered synchronously to a caller-owned sink; when that sink is
     full, the coordinator retains the blocked event and reports the exact
     source prefix it accepted. *)
 
-type event = Input_decoder.event
-(** A decoded terminal event. *)
+type event = Stdin_parser.event
+(** A typed terminal event emitted by {!Stdin_parser}. *)
 
 type delivery = Accepted | Full
-(** The result of offering one decoded event to a caller-owned sink.
+(** The result of offering one typed event to a caller-owned sink.
     [Accepted] means that the sink now owns the event. [Full] leaves the event
     owned by the coordinator for a later {!drain} or {!push}. An [emit]
     callback must not retain or mutate the event when it returns [Full]. *)
@@ -23,7 +23,7 @@ type error = Parser_error of Stdin_parser.error
 (** Errors returned while accepting input bytes. *)
 
 type t
-(** A mutable parser, decoder, and deadline coordinator. *)
+(** A mutable parser, retained-event slot, and deadline coordinator. *)
 
 val message : error -> string
 (** [message error] is a diagnostic string for [error]. *)
@@ -60,7 +60,7 @@ val push :
   len:int ->
   (push_result, error) result
 (** [push coordinator ~now_ms ~emit ...] copies and parses an integer
-    Bigarray source range, offering each decoded event to [emit]. It returns
+    Bigarray source range, offering each typed event to [emit]. It returns
     [Full_after 0] without consuming new source bytes if an earlier event is
     still blocked. A zero-length range emits one empty key event after any
     earlier blocked event is delivered. *)
@@ -86,7 +86,7 @@ val push_bytes :
 (** [push_bytes] is the [bytes] variant of {!push}. *)
 
 val drain : t -> emit:(event -> delivery) -> delivery
-(** [drain coordinator ~emit] offers all already-framed events to [emit] in
+(** [drain coordinator ~emit] offers all already-parsed events to [emit] in
     order, stopping without loss when [emit] reports {!Full}. *)
 
 val fire_timeout :
@@ -98,5 +98,5 @@ val fire_timeout :
     prefix and offers the resulting events to [emit]. *)
 
 val reset : t -> unit
-(** [reset coordinator] discards pending bytes, framed events, and deadline
+(** [reset coordinator] discards pending bytes, typed events, and deadline
     state. *)

@@ -62,11 +62,13 @@ Code that exercises one package is stored in that package directory:
 | `packages/opentui-core/bench` | Release-profile workloads, allocation baselines, and tracing wrappers for core behavior. |
 | `packages/opentui-raw/test` | Tests for the raw ABI, C stubs, foreign ownership, and the native link seam. |
 
-The repository-level `docs/` directory is intentionally different. Its active
-documents describe the relationship between both OCaml packages, the checked
-out reference source, and repository-wide implementation decisions. They are
-not features owned by one package. Historical notes remain under
-`docs/archive/` and are not part of the active package contract.
+The repository-level `docs/` directory contains architecture documents,
+source mapping, and cross-cutting feature records. Architecture documents
+describe the relationship between both OCaml packages, the checked-out
+reference source, and repository-wide implementation decisions. Feature
+records describe contracts that span several modules or packages. Historical
+notes remain under `docs/archive/` and are not part of the active package
+contract.
 
 The repository does not contain a widget package or an Lwd integration
 package. The source map lists the React and Solid reference packages and the
@@ -88,7 +90,6 @@ src/
 │   ├── stdin_parser.ml
 │   ├── byte_queue.ml
 │   ├── input_coordinator.ml
-│   ├── input_decoder.ml
 │   ├── event_queue.ml
 │   ├── key_decoder.ml
 │   ├── mouse_decoder.ml
@@ -136,7 +137,7 @@ TypeScript class syntax or JavaScript runtime mechanisms.
 | Constructor option bag | Labelled arguments and typed records for reusable groups of values. |
 | Public mutable property | A typed accessor and setter that preserve reference validation, clamping, equality/no-op, invalidation, and error behavior. |
 | `EventEmitter` | Owner-local typed event channels composed into the scene, renderer, render context, or component. Synchronous registration-order dispatch, snapshot semantics, reentrancy, duplicate subscriptions, one-shot removal, callback exceptions, cleanup, and producer-owned scheduling remain explicit. Keyboard priority, pointer propagation, queueing, and backpressure remain separate dispatch systems. |
-| Reference input handoff | `Input_coordinator` and `Event_queue` are explicit OCaml adapters. Backpressure and coalescing require tests for order, replacement position, multiplicity, ownership, and handoff behavior. |
+| Reference input handoff | `Stdin_parser` emits typed events. `Input_coordinator` and `Event_queue` are explicit OCaml adapters. Backpressure and coalescing require tests for order, replacement position, multiplicity, ownership, and handoff behavior. |
 | `RenderContext` / renderer reference | Explicit render-context capabilities retained by nodes; Eio capabilities remain at runtime/platform boundaries. |
 | `requestRender()` | Dirty-state invalidation plus a coalesced future-frame request, distinct from an explicit `Scene.flush`/presentation operation. |
 | React/Solid reconciliation | An Lwd binding, if added, attaches to the retained nodes rather than creating a second required tree. |
@@ -146,6 +147,17 @@ architecture or feature documentation. The documentation must state the
 ownership invariant and observable test behavior. The source map remains
 path-oriented; detailed adapter and decomposition rationale belongs in the
 longer documentation.
+
+## Major feature records
+
+Cross-cutting contracts are recorded under
+[`docs/major-features/`](major-features/). The directory separates in-progress
+and implemented features. Each feature record has one active `feature.md`
+document and may have non-normative context records alongside it.
+
+The [event-system feature record](major-features/in-progress/event-system/feature.md)
+defines the typed channel, renderer-context, lifecycle, keyboard, pointer, and
+input-boundary relationships that the translation table summarizes.
 
 ## Contribution workflow
 

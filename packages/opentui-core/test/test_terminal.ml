@@ -10,13 +10,16 @@ let expect_error expected result =
   | Ok _ -> fail "expected an error"
   | Error actual ->
       let same_error left right =
-        match left, right with
-        | Opentui_core.Lib.Byte_queue.Invalid_capacity,
-          Opentui_core.Lib.Byte_queue.Invalid_capacity -> true
-        | Opentui_core.Lib.Byte_queue.Invalid_range,
-          Opentui_core.Lib.Byte_queue.Invalid_range -> true
-        | Opentui_core.Lib.Byte_queue.Max_capacity,
-          Opentui_core.Lib.Byte_queue.Max_capacity -> true
+        match (left, right) with
+        | ( Opentui_core.Lib.Byte_queue.Invalid_capacity,
+            Opentui_core.Lib.Byte_queue.Invalid_capacity ) ->
+            true
+        | ( Opentui_core.Lib.Byte_queue.Invalid_range,
+            Opentui_core.Lib.Byte_queue.Invalid_range ) ->
+            true
+        | ( Opentui_core.Lib.Byte_queue.Max_capacity,
+            Opentui_core.Lib.Byte_queue.Max_capacity ) ->
+            true
         | _ -> false
       in
       equal bool true (same_error expected actual)
@@ -42,7 +45,7 @@ module Parser = Opentui_core.Lib.Stdin_parser
 module Decoder = Opentui_core.Lib.Key_decoder
 module Mouse = Opentui_core.Lib.Mouse_decoder
 module Size = Opentui_core.Lib.Terminal_size
-module Input = Opentui_core.Lib.Input_decoder
+module Input = Parser
 module Events = Opentui_core.Lib.Event_queue
 
 let parser_create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
@@ -65,24 +68,28 @@ let expect_no_event parser =
 
 let expect_key parser expected =
   match Parser.read parser with
-  | Some (Parser.Key actual) ->
-      equal string expected (Bytes.to_string actual)
-  | Some _ -> fail "expected a key event"
+  | Some (Parser.Key { raw; _ }) -> equal string expected (Bytes.to_string raw)
+  | Some (Parser.Response { bytes; _ }) ->
+      failf "expected a key event, got a response of %d bytes"
+        (Bytes.length bytes)
+  | Some (Parser.Mouse _) -> fail "expected a key event, got a mouse event"
+  | Some (Parser.Paste _) -> fail "expected a key event, got a paste"
   | None -> fail "expected a key event, but the parser queue was empty"
 
 let same_protocol left right =
-  match left, right with
+  match (left, right) with
   | Parser.Csi, Parser.Csi
   | Parser.Ss3, Parser.Ss3
   | Parser.Osc, Parser.Osc
   | Parser.Dcs, Parser.Dcs
   | Parser.Apc, Parser.Apc
-  | Parser.Unknown, Parser.Unknown -> true
+  | Parser.Unknown, Parser.Unknown ->
+      true
   | _ -> false
 
 let expect_sequence parser protocol expected =
   match Parser.read parser with
-  | Some (Parser.Sequence { protocol = actual_protocol; bytes }) ->
+  | Some (Parser.Response { protocol = actual_protocol; bytes }) ->
       equal bool true (same_protocol protocol actual_protocol);
       equal string expected (Bytes.to_string bytes)
   | Some _ -> fail "expected a protocol sequence"
@@ -90,8 +97,7 @@ let expect_sequence parser protocol expected =
 
 let expect_paste parser expected =
   match Parser.read parser with
-  | Some (Parser.Paste actual) ->
-      equal string expected (Bytes.to_string actual)
+  | Some (Parser.Paste actual) -> equal string expected (Bytes.to_string actual)
   | Some _ -> fail "expected a paste event"
   | None -> fail "expected a paste event, but the parser queue was empty"
 
@@ -103,14 +109,17 @@ let expect_paste_bytes parser expected =
 
 let expect_parser_error expected result =
   let same_error left right =
-    match left, right with
+    match (left, right) with
     | Parser.Invalid_timeout, Parser.Invalid_timeout -> true
-    | Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_capacity,
-      Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_capacity -> true
-    | Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_range,
-      Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_range -> true
-    | Parser.Queue_error Opentui_core.Lib.Byte_queue.Max_capacity,
-      Parser.Queue_error Opentui_core.Lib.Byte_queue.Max_capacity -> true
+    | ( Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_capacity,
+        Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_capacity ) ->
+        true
+    | ( Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_range,
+        Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_range ) ->
+        true
+    | ( Parser.Queue_error Opentui_core.Lib.Byte_queue.Max_capacity,
+        Parser.Queue_error Opentui_core.Lib.Byte_queue.Max_capacity ) ->
+        true
     | _ -> false
   in
   match result with
@@ -124,39 +133,41 @@ let expect_modifiers ~shift ~meta ~ctrl actual =
 
 let expect_named event expected_name ~shift ~meta ~ctrl =
   match event with
-  | Decoder.Key { key = Decoder.Named actual; modifiers } ->
+  | Parser.Key { key = Decoder.Named actual; modifiers; _ } ->
       equal string expected_name (Decoder.named_key_name actual);
       expect_modifiers ~shift ~meta ~ctrl modifiers
-  | Decoder.Key { key = Decoder.Character _; modifiers = _ } ->
+  | Parser.Key { key = Decoder.Character _; modifiers = _; _ } ->
       fail "expected a named key"
-  | Decoder.Sequence _ -> fail "expected a semantic key, got a sequence"
-  | Decoder.Paste _ -> fail "expected a semantic key, got paste"
+  | Parser.Mouse _ -> fail "expected a key, got a mouse event"
+  | Parser.Response _ -> fail "expected a semantic key, got a response"
+  | Parser.Paste _ -> fail "expected a semantic key, got paste"
 
 let expect_character event expected_text ~shift ~meta ~ctrl =
   match event with
-  | Decoder.Key { key = Decoder.Character actual; modifiers } ->
+  | Parser.Key { key = Decoder.Character actual; modifiers; _ } ->
       equal string expected_text (Bytes.to_string actual);
       expect_modifiers ~shift ~meta ~ctrl modifiers
-  | Decoder.Key { key = Decoder.Named _; modifiers = _ } ->
+  | Parser.Key { key = Decoder.Named _; modifiers = _; _ } ->
       fail "expected a character key"
-  | Decoder.Sequence _ -> fail "expected a semantic key, got a sequence"
-  | Decoder.Paste _ -> fail "expected a semantic key, got paste"
+  | Parser.Mouse _ -> fail "expected a character key, got a mouse event"
+  | Parser.Response _ -> fail "expected a semantic key, got a response"
+  | Parser.Paste _ -> fail "expected a semantic key, got paste"
 
 let expect_decoded_sequence event protocol expected =
   match event with
-  | Decoder.Sequence { protocol = actual_protocol; bytes } ->
+  | Parser.Response { protocol = actual_protocol; bytes } ->
       equal bool true (same_protocol protocol actual_protocol);
       equal string expected (Bytes.to_string bytes)
-  | Decoder.Key _ -> fail "expected an undecoded sequence"
-  | Decoder.Paste _ -> fail "expected an undecoded sequence, got paste"
+  | Parser.Key _ -> fail "expected an undecoded sequence"
+  | Parser.Mouse _ -> fail "expected an undecoded sequence, got mouse"
+  | Parser.Paste _ -> fail "expected an undecoded sequence, got paste"
 
 let read_parser_event parser =
   match Parser.read parser with
   | Some event -> event
   | None -> fail "expected a parser event"
 
-let mouse_sequence text =
-  Parser.Sequence { protocol = Parser.Csi; bytes = Bytes.of_string text }
+let mouse_sequence text = Bytes.of_string text
 
 let x10_sequence ~button_code ~x ~y =
   let bytes = Bytes.create 6 in
@@ -166,20 +177,21 @@ let x10_sequence ~button_code ~x ~y =
   Bytes.set_uint8 bytes 3 (button_code + 0x20);
   Bytes.set_uint8 bytes 4 (x + 0x21);
   Bytes.set_uint8 bytes 5 (y + 0x21);
-  Parser.Sequence { protocol = Parser.Csi; bytes }
+  bytes
 
 let read_mouse decoder text =
   match Mouse.decode decoder (mouse_sequence text) with
-  | Some event -> event
+  | Some { event; _ } -> event
   | None -> fail "expected a mouse event"
 
 let same_mouse_kind left right =
-  match left, right with
+  match (left, right) with
   | Mouse.Down, Mouse.Down
   | Mouse.Up, Mouse.Up
   | Mouse.Move, Mouse.Move
   | Mouse.Drag, Mouse.Drag
-  | Mouse.Scroll, Mouse.Scroll -> true
+  | Mouse.Scroll, Mouse.Scroll ->
+      true
   | _ -> false
 
 let expect_mouse event ~kind ~button ~x ~y ~shift ~alt ~ctrl =
@@ -195,11 +207,12 @@ let expect_scroll event direction delta =
   match event.Mouse.scroll with
   | Some scroll ->
       let same_direction left right =
-        match left, right with
+        match (left, right) with
         | Mouse.Scroll_up, Mouse.Scroll_up
         | Mouse.Scroll_down, Mouse.Scroll_down
         | Mouse.Scroll_left, Mouse.Scroll_left
-        | Mouse.Scroll_right, Mouse.Scroll_right -> true
+        | Mouse.Scroll_right, Mouse.Scroll_right ->
+            true
         | _ -> false
       in
       equal bool true (same_direction direction scroll.Mouse.direction);
@@ -240,7 +253,12 @@ let () =
           in
           let input =
             Events.Input
-              (Input.Key { key = Decoder.Named Decoder.Return; modifiers })
+              (Input.Key
+                 {
+                   raw = Bytes.empty;
+                   key = Decoder.Named Decoder.Return;
+                   modifiers;
+                 })
           in
           let first_size =
             match Size.create ~columns:80 ~rows:24 with
@@ -265,11 +283,12 @@ let () =
           (match Events.read queue with
           | Some
               (Events.Input
-                (Input.Key
-                  {
-                    key = Decoder.Named Decoder.Return;
-                    modifiers = actual;
-                  })) ->
+                 (Input.Key
+                    {
+                      raw = _;
+                      key = Decoder.Named Decoder.Return;
+                      modifiers = actual;
+                    })) ->
               expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
           | Some _ -> fail "resize coalescing changed input order"
           | None -> fail "input event was lost");
@@ -281,7 +300,8 @@ let () =
           match Events.read queue with
           | None -> ()
           | Some _ -> fail "event handoff contained an extra event");
-      test "event handoff reports lossless overflow and coalesces motion" (fun () ->
+      test "event handoff reports lossless overflow and coalesces motion"
+        (fun () ->
           let queue =
             match Events.create ~capacity:1 () with
             | Ok value -> value
@@ -290,7 +310,9 @@ let () =
           let modifiers =
             { Decoder.shift = false; meta = false; ctrl = false }
           in
-          let key key = Events.Input (Input.Key { key; modifiers }) in
+          let key key =
+            Events.Input (Input.Key { raw = Bytes.empty; key; modifiers })
+          in
           (match Events.push queue (key (Decoder.Named Decoder.Return)) with
           | Ok () -> ()
           | Error error -> fail (Events.message error));
@@ -310,8 +332,7 @@ let () =
               button = 0;
               x = 1;
               y = 2;
-              modifiers =
-                { Mouse.shift = false; alt = false; ctrl = false };
+              modifiers = { Mouse.shift = false; alt = false; ctrl = false };
               scroll = None;
             }
           in
@@ -326,35 +347,48 @@ let () =
             }
           in
           (match
-             Events.push motion_queue (Events.Input (Input.Mouse first_motion))
+             Events.push motion_queue
+               (Events.Input
+                  (Input.Mouse
+                     {
+                       raw = Bytes.empty;
+                       encoding = Mouse.Sgr;
+                       event = first_motion;
+                     }))
+           with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          (match Events.push motion_queue (key (Decoder.Named Decoder.Tab)) with
+          | Ok () -> ()
+          | Error error -> fail (Events.message error));
+          let second_drag = { first_motion with x = 4; y = 5 } in
+          (match
+             Events.push motion_queue
+               (Events.Input
+                  (Input.Mouse
+                     {
+                       raw = Bytes.empty;
+                       encoding = Mouse.Sgr;
+                       event = second_drag;
+                     }))
            with
           | Ok () -> ()
           | Error error -> fail (Events.message error));
           (match
-             Events.push motion_queue (key (Decoder.Named Decoder.Tab))
-           with
-          | Ok () -> ()
-          | Error error -> fail (Events.message error));
-          let second_drag =
-            {
-              first_motion with
-              x = 4;
-              y = 5;
-            }
-          in
-          (match
-             Events.push motion_queue (Events.Input (Input.Mouse second_drag))
-           with
-          | Ok () -> ()
-          | Error error -> fail (Events.message error));
-          (match
-             Events.push motion_queue (Events.Input (Input.Mouse latest_motion))
+             Events.push motion_queue
+               (Events.Input
+                  (Input.Mouse
+                     {
+                       raw = Bytes.empty;
+                       encoding = Mouse.Sgr;
+                       event = latest_motion;
+                     }))
            with
           | Ok () -> ()
           | Error error -> fail (Events.message error));
           equal int 2 (Events.length motion_queue);
           (match Events.read motion_queue with
-          | Some (Events.Input (Input.Mouse actual)) ->
+          | Some (Events.Input (Input.Mouse { event = actual; _ })) ->
               expect_mouse actual ~kind:Mouse.Move ~button:0 ~x:9 ~y:10
                 ~shift:true ~alt:false ~ctrl:false
           | Some _ -> fail "expected the coalesced motion event"
@@ -362,8 +396,12 @@ let () =
           match Events.read motion_queue with
           | Some
               (Events.Input
-                (Input.Key
-                  { key = Decoder.Named Decoder.Tab; modifiers = actual })) ->
+                 (Input.Key
+                    {
+                      raw = _;
+                      key = Decoder.Named Decoder.Tab;
+                      modifiers = actual;
+                    })) ->
               expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
           | Some _ -> fail "motion coalescing changed the following event"
           | None -> fail "following input event was lost");
@@ -405,7 +443,9 @@ let () =
             { Decoder.shift = false; meta = false; ctrl = false }
           in
           let key named =
-            Events.Input (Input.Key { key = Decoder.Named named; modifiers })
+            Events.Input
+              (Input.Key
+                 { raw = Bytes.empty; key = Decoder.Named named; modifiers })
           in
           equal int 2 (Events.capacity queue);
           (match Events.push queue (key Decoder.Return) with
@@ -417,8 +457,12 @@ let () =
           (match Events.read queue with
           | Some
               (Events.Input
-                (Input.Key
-                  { key = Decoder.Named Decoder.Return; modifiers = actual })) ->
+                 (Input.Key
+                    {
+                      raw = _;
+                      key = Decoder.Named Decoder.Return;
+                      modifiers = actual;
+                    })) ->
               expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
           | Some _ -> fail "unexpected first wrapped event"
           | None -> fail "first wrapped event was lost");
@@ -428,31 +472,38 @@ let () =
           (match Events.read queue with
           | Some
               (Events.Input
-                (Input.Key
-                  { key = Decoder.Named Decoder.Tab; modifiers = actual })) ->
+                 (Input.Key
+                    {
+                      raw = _;
+                      key = Decoder.Named Decoder.Tab;
+                      modifiers = actual;
+                    })) ->
               expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
           | Some _ -> fail "ring wrap changed FIFO order"
           | None -> fail "second wrapped event was lost");
           match Events.read queue with
           | Some
               (Events.Input
-                (Input.Key
-                  {
-                    key = Decoder.Named Decoder.Backspace;
-                    modifiers = actual;
-                  })) ->
+                 (Input.Key
+                    {
+                      raw = _;
+                      key = Decoder.Named Decoder.Backspace;
+                      modifiers = actual;
+                    })) ->
               expect_modifiers ~shift:false ~meta:false ~ctrl:false actual
           | Some _ -> fail "ring wrap lost the newest event"
           | None -> fail "newest wrapped event was lost");
-      test "bigarray input, consume, and compaction preserve byte order" (fun () ->
+      test "bigarray input, consume, and compaction preserve byte order"
+        (fun () ->
           let module Queue = Opentui_core.Lib.Byte_queue in
           let queue =
             expect_ok (Queue.create ~initial_capacity:4 ~max_capacity:8 ())
           in
           ignore
             (expect_ok
-               (Queue.append queue ~source:(byte_array [ 48; 49; 50; 51 ]) ~off:0
-                  ~len:4));
+               (Queue.append queue
+                  ~source:(byte_array [ 48; 49; 50; 51 ])
+                  ~off:0 ~len:4));
           equal int 4 (Queue.length queue);
           equal int 4 (Queue.capacity queue);
           ignore (expect_ok (Queue.consume queue 2));
@@ -462,9 +513,9 @@ let () =
                   ~len:2));
           equal string "2345" (Bytes.to_string (queue_contents queue));
           equal int 4 (Queue.capacity queue);
-          (match Queue.get queue (-1), Queue.get queue 4 with
+          match (Queue.get queue (-1), Queue.get queue 4) with
           | None, None -> ()
-          | _ -> fail "out-of-range reads were accepted"));
+          | _ -> fail "out-of-range reads were accepted");
       test "growth is bounded and a rejected append is atomic" (fun () ->
           let module Queue = Opentui_core.Lib.Byte_queue in
           let queue =
@@ -488,8 +539,8 @@ let () =
           in
           ignore
             (expect_ok
-               (Queue.append_bytes queue ~source:(Bytes.of_string "abcd")
-                  ~off:0 ~len:4));
+               (Queue.append_bytes queue ~source:(Bytes.of_string "abcd") ~off:0
+                  ~len:4));
           ignore (expect_ok (Queue.consume queue 1));
           ignore
             (expect_ok
@@ -513,7 +564,7 @@ let () =
           equal int 0 (Queue.length queue);
           ignore (expect_ok (Queue.append queue ~source ~off:0 ~len:0));
           equal int 0 (Queue.length queue));
-      test "stdin framing preserves split UTF-8 and protocol boundaries" (fun () ->
+      test "stdin parsing preserves split UTF-8 and emits typed keys" (fun () ->
           let parser = parser_create () in
           push_string parser "a";
           expect_key parser "a";
@@ -524,78 +575,86 @@ let () =
           push_string parser "\x1b[";
           expect_no_event parser;
           push_string parser "A";
-          expect_sequence parser Parser.Csi "\x1b[A";
+          expect_named (read_parser_event parser) "up" ~shift:false ~meta:false
+            ~ctrl:false;
           push_string parser "\x1b[";
           push_string parser "[";
           expect_no_event parser;
           push_string parser "A";
-          expect_sequence parser Parser.Csi "\x1b[[A";
+          expect_named (read_parser_event parser) "f1" ~shift:false ~meta:false
+            ~ctrl:false;
           push_string parser "\x1bO";
           expect_no_event parser;
           push_string parser "P";
-          expect_sequence parser Parser.Ss3 "\x1bOP");
-      test "semantic key decoding stays above framing" (fun () ->
+          expect_named (read_parser_event parser) "f1" ~shift:false ~meta:false
+            ~ctrl:false);
+      test "stdin parsing emits semantic key details" (fun () ->
           let parser = parser_create () in
           push_string parser "A";
-          expect_character (Decoder.decode (read_parser_event parser)) "A"
-            ~shift:true ~meta:false ~ctrl:false;
+          expect_character (read_parser_event parser) "A" ~shift:true
+            ~meta:false ~ctrl:false;
           push_string parser "\x01";
-          expect_character (Decoder.decode (read_parser_event parser)) "a"
-            ~shift:false ~meta:false ~ctrl:true;
+          expect_character (read_parser_event parser) "a" ~shift:false
+            ~meta:false ~ctrl:true;
           push_string parser "\r";
-          expect_named (Decoder.decode (read_parser_event parser)) "return"
-            ~shift:false ~meta:false ~ctrl:false;
+          expect_named (read_parser_event parser) "return" ~shift:false
+            ~meta:false ~ctrl:false;
           push_string parser "\x1b[1;5A";
-          expect_named (Decoder.decode (read_parser_event parser)) "up"
-            ~shift:false ~meta:false ~ctrl:true;
+          expect_named (read_parser_event parser) "up" ~shift:false ~meta:false
+            ~ctrl:true;
           push_string parser "\x1b[27;5;13~";
-          expect_named (Decoder.decode (read_parser_event parser)) "return"
-            ~shift:false ~meta:false ~ctrl:true;
+          expect_named (read_parser_event parser) "return" ~shift:false
+            ~meta:false ~ctrl:true;
           push_string parser "\x1b[27;5;65~";
-          expect_character (Decoder.decode (read_parser_event parser)) "A"
-            ~shift:false ~meta:false ~ctrl:true;
+          expect_character (read_parser_event parser) "A" ~shift:false
+            ~meta:false ~ctrl:true;
           push_string parser "\x1b[3~";
-          expect_named (Decoder.decode (read_parser_event parser)) "delete"
-            ~shift:false ~meta:false ~ctrl:false;
+          expect_named (read_parser_event parser) "delete" ~shift:false
+            ~meta:false ~ctrl:false;
           push_string parser "\x1b[Z";
-          expect_named (Decoder.decode (read_parser_event parser)) "tab"
-            ~shift:true ~meta:false ~ctrl:false;
+          expect_named (read_parser_event parser) "tab" ~shift:true ~meta:false
+            ~ctrl:false;
           push_string parser "\x1bOP";
-          expect_named (Decoder.decode (read_parser_event parser)) "f1"
-            ~shift:false ~meta:false ~ctrl:false;
+          expect_named (read_parser_event parser) "f1" ~shift:false ~meta:false
+            ~ctrl:false;
           push_string parser "\x1b[[5~";
-          expect_named (Decoder.decode (read_parser_event parser)) "pageup"
-            ~shift:false ~meta:false ~ctrl:false;
+          expect_named (read_parser_event parser) "pageup" ~shift:false
+            ~meta:false ~ctrl:false;
           push_string parser "\x1b[1;1R";
-          expect_decoded_sequence (Decoder.decode (read_parser_event parser))
-            Parser.Csi "\x1b[1;1R";
+          expect_decoded_sequence (read_parser_event parser) Parser.Csi
+            "\x1b[1;1R";
           push_string parser "\x1bf";
-          expect_character (Decoder.decode (read_parser_event parser)) "f"
-            ~shift:false ~meta:true ~ctrl:false;
+          expect_character (read_parser_event parser) "f" ~shift:false
+            ~meta:true ~ctrl:false;
           push_string parser "\x1b\x1b[A";
-          expect_named (Decoder.decode (read_parser_event parser)) "up"
-            ~shift:false ~meta:true ~ctrl:false;
+          expect_named (read_parser_event parser) "up" ~shift:false ~meta:true
+            ~ctrl:false;
           push_string parser "\x1b\x1bOA";
-          expect_named (Decoder.decode (read_parser_event parser)) "up"
-            ~shift:false ~meta:true ~ctrl:false;
+          expect_named (read_parser_event parser) "up" ~shift:false ~meta:true
+            ~ctrl:false;
           push_string parser "\x1b[1;9A";
-          expect_decoded_sequence (Decoder.decode (read_parser_event parser))
-            Parser.Csi "\x1b[1;9A");
-      test "semantic decoding preserves unknown protocol ownership" (fun () ->
-          let raw = Bytes.of_string "\x1b[M !\"" in
-          let decoded =
-            Decoder.decode
-              (Parser.Sequence { protocol = Parser.Csi; bytes = raw })
-          in
+          expect_decoded_sequence (read_parser_event parser) Parser.Csi
+            "\x1b[1;9A");
+      test "stdin parsing preserves owned response and paste payloads"
+        (fun () ->
+          let parser = parser_create () in
+          let raw = Bytes.of_string "\x1b[1;1R" in
+          (match
+             Parser.push_bytes parser ~source:raw ~off:0 ~len:(Bytes.length raw)
+           with
+          | Ok () -> ()
+          | Error error -> fail (Parser.message error));
           Bytes.set_uint8 raw 0 0;
-          expect_decoded_sequence decoded Parser.Csi "\x1b[M !\"";
+          expect_decoded_sequence (read_parser_event parser) Parser.Csi
+            "\x1b[1;1R";
           let paste = Bytes.of_string "paste" in
-          let decoded_paste = Decoder.decode (Parser.Paste paste) in
+          push_string parser "\x1b[200~";
+          (match Parser.push_bytes parser ~source:paste ~off:0 ~len:5 with
+          | Ok () -> ()
+          | Error error -> fail (Parser.message error));
           Bytes.set_uint8 paste 0 0;
-          match decoded_paste with
-          | Decoder.Paste actual -> equal string "paste" (Bytes.to_string actual)
-          | Decoder.Key _ -> fail "expected decoded paste"
-          | Decoder.Sequence _ -> fail "expected decoded paste");
+          push_string parser "\x1b[201~";
+          expect_paste parser "paste");
       test "stdin framing recognizes split opaque responses" (fun () ->
           let parser = parser_create () in
           push_string parser "\x1b]title";
@@ -624,9 +683,8 @@ let () =
           | Ok () -> ()
           | Error error -> fail (Parser.message error));
           match Parser.read parser with
-          | Some (Parser.Sequence { protocol = Parser.Csi; bytes }) ->
-              equal bool true
-                (Bytes.equal bytes (Bytes.of_string "\x1b[M !\""))
+          | Some (Parser.Mouse { raw = bytes; encoding = Mouse.X10; _ }) ->
+              equal bool true (Bytes.equal bytes (Bytes.of_string "\x1b[M !\""))
           | Some _ -> fail "expected a CSI sequence"
           | None -> fail "expected an X10 CSI sequence");
       test "empty pushes emit an empty key event" (fun () ->
@@ -675,12 +733,20 @@ let () =
           push_string parser "[<0;1;2";
           expect_no_event parser;
           push_string parser "M";
-          expect_sequence parser Parser.Csi "\x1b[<0;1;2M";
+          (match Parser.read parser with
+          | Some (Parser.Mouse { raw; encoding = Mouse.Sgr; event = _ }) ->
+              equal string "\x1b[<0;1;2M" (Bytes.to_string raw)
+          | Some _ -> fail "expected a framed SGR mouse event"
+          | None -> fail "expected a framed SGR mouse event");
           push_string parser "\x1b";
           Parser.flush_timeout parser;
           expect_key parser "\x1b";
           push_string parser "[M !\"";
-          expect_sequence parser Parser.Csi "\x1b[M !\"";
+          (match Parser.read parser with
+          | Some (Parser.Mouse { raw; encoding = Mouse.X10; event = _ }) ->
+              equal string "\x1b[M !\"" (Bytes.to_string raw)
+          | Some _ -> fail "expected a framed X10 mouse event"
+          | None -> fail "expected a framed X10 mouse event");
           push_string parser "\x1b";
           Parser.flush_timeout parser;
           expect_key parser "\x1b";
@@ -742,8 +808,7 @@ let () =
           expect_parser_error Parser.Invalid_timeout
             (Parser.create ~timeout_ms:0 ());
           expect_parser_error
-            (Parser.Queue_error
-               Opentui_core.Lib.Byte_queue.Invalid_capacity)
+            (Parser.Queue_error Opentui_core.Lib.Byte_queue.Invalid_capacity)
             (Parser.create ~initial_capacity:8 ~max_pending_bytes:4 ());
           let parser = parser_create () in
           let source = byte_array [ 1; 2 ] in
@@ -786,48 +851,51 @@ let () =
             ~shift:false ~alt:false ~ctrl:false;
           expect_scroll scroll Mouse.Scroll_down 1;
           let motion = read_mouse decoder "\x1b[<96;11;6M" in
-          expect_mouse motion ~kind:Mouse.Move ~button:0 ~x:10 ~y:5
-            ~shift:false ~alt:false ~ctrl:false;
+          expect_mouse motion ~kind:Mouse.Move ~button:0 ~x:10 ~y:5 ~shift:false
+            ~alt:false ~ctrl:false;
           (match motion.Mouse.scroll with
           | None -> ()
           | Some _ -> fail "motion must not carry scroll details");
           let release = read_mouse decoder "\x1b[<64;11;6m" in
-          expect_mouse release ~kind:Mouse.Up ~button:0 ~x:10 ~y:5
-            ~shift:false ~alt:false ~ctrl:false;
-          (match release.Mouse.scroll with
+          expect_mouse release ~kind:Mouse.Up ~button:0 ~x:10 ~y:5 ~shift:false
+            ~alt:false ~ctrl:false;
+          match release.Mouse.scroll with
           | None -> ()
-          | Some _ -> fail "scroll release must not carry scroll details"));
+          | Some _ -> fail "scroll release must not carry scroll details");
       test "X10 mouse press, scroll, and motion precedence" (fun () ->
           let decoder = Mouse.create () in
           let down =
-            match Mouse.decode decoder (x10_sequence ~button_code:0 ~x:2 ~y:3) with
-            | Some event -> event
+            match
+              Mouse.decode decoder (x10_sequence ~button_code:0 ~x:2 ~y:3)
+            with
+            | Some { event; _ } -> event
             | None -> fail "expected an X10 press"
           in
           expect_mouse down ~kind:Mouse.Down ~button:0 ~x:2 ~y:3 ~shift:false
             ~alt:false ~ctrl:false;
           let scroll =
-            match Mouse.decode decoder
-                    (x10_sequence ~button_code:64 ~x:2 ~y:3) with
-            | Some event -> event
+            match
+              Mouse.decode decoder (x10_sequence ~button_code:64 ~x:2 ~y:3)
+            with
+            | Some { event; _ } -> event
             | None -> fail "expected an X10 scroll"
           in
           expect_mouse scroll ~kind:Mouse.Scroll ~button:0 ~x:2 ~y:3
             ~shift:false ~alt:false ~ctrl:false;
           expect_scroll scroll Mouse.Scroll_up 1;
           let motion =
-            match Mouse.decode decoder
-                    (x10_sequence ~button_code:96 ~x:2 ~y:3) with
-            | Some event -> event
+            match
+              Mouse.decode decoder (x10_sequence ~button_code:96 ~x:2 ~y:3)
+            with
+            | Some { event; _ } -> event
             | None -> fail "expected an X10 motion"
           in
-          expect_mouse motion ~kind:Mouse.Move ~button:0 ~x:2 ~y:3
-            ~shift:false ~alt:false ~ctrl:false;
-          (match motion.Mouse.scroll with
+          expect_mouse motion ~kind:Mouse.Move ~button:0 ~x:2 ~y:3 ~shift:false
+            ~alt:false ~ctrl:false;
+          match motion.Mouse.scroll with
           | None -> ()
-          | Some _ -> fail "X10 motion must not carry scroll details"));
+          | Some _ -> fail "X10 motion must not carry scroll details");
       test "X10 mouse high coordinates survive framing" (fun () ->
-          let decoder = Mouse.create () in
           let parser = parser_create () in
           let source = Bytes.create 6 in
           Bytes.set_uint8 source 0 0x1b;
@@ -841,17 +909,15 @@ let () =
           | Error error -> fail (Parser.message error));
           let event =
             match Parser.read parser with
-            | Some parser_event ->
-                (match Mouse.decode decoder parser_event with
-                | Some event -> event
-                | None -> fail "expected an X10 mouse event")
+            | Some (Parser.Mouse { event; encoding = Mouse.X10; _ }) -> event
+            | Some _ -> fail "expected an X10 mouse event"
             | None -> fail "expected a framed X10 mouse event"
           in
-          expect_mouse event ~kind:Mouse.Move ~button:0 ~x:95 ~y:1
-            ~shift:false ~alt:false ~ctrl:false);
+          expect_mouse event ~kind:Mouse.Move ~button:0 ~x:95 ~y:1 ~shift:false
+            ~alt:false ~ctrl:false);
       test "non-mouse sequences remain available to other decoders" (fun () ->
           let decoder = Mouse.create () in
           match Mouse.decode decoder (mouse_sequence "\x1b[1;5A") with
           | None -> ()
-          | Some _ -> fail "a keyboard CSI sequence was decoded as mouse")
+          | Some _ -> fail "a keyboard CSI sequence was decoded as mouse");
     ]

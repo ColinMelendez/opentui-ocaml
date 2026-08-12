@@ -178,7 +178,10 @@ let measure workload =
   let parser = parser_for_workload workload in
   let completed_events = ref 0 in
   let consume_event = function
-    | Parser.Key _ | Parser.Sequence _ | Parser.Paste _ -> incr completed_events
+    | Parser.Key _
+    | Parser.Mouse _
+    | Parser.Response _
+    | Parser.Paste _ -> incr completed_events
   in
   for _ = 1 to warmup_batches do
     ignore (run_batch parser workload consume_event completed_events)

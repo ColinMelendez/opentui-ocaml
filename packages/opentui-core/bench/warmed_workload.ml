@@ -3,7 +3,7 @@ module Core_node = Core.Node
 module Input = Opentui_core.Platform.Eio_runtime.Input_flow
 module Coordinator = Opentui_core.Lib.Input_coordinator
 module Events = Opentui_core.Lib.Event_queue
-module Input_event = Opentui_core.Lib.Input_decoder
+module Input_event = Opentui_core.Lib.Stdin_parser
 module Key = Opentui_core.Lib.Key_decoder
 module Mouse = Opentui_core.Lib.Mouse_decoder
 module Output = Opentui_core.Platform.Eio_runtime.Output_flow
@@ -155,9 +155,9 @@ let profile env =
   let handle_input_event event =
     delivered_events := !delivered_events + 1;
     match event with
-    | Input_event.Key { key; modifiers } ->
+    | Input_event.Key { key; modifiers; _ } ->
         update_row (1 + !selected_row) (key_text key modifiers)
-    | Input_event.Mouse event ->
+    | Input_event.Mouse { event; _ } ->
         select_row (event.Opentui_core.Lib.Mouse_decoder.y - 1);
         let pointer_event =
           {
@@ -168,7 +168,7 @@ let profile env =
           }
         in
         ignore (expect_ok (Core.dispatch_pointer scene pointer_event))
-    | Input_event.Sequence sequence ->
+    | Input_event.Response sequence ->
         update_row (1 + !selected_row) (Bytes.to_string sequence.bytes)
     | Input_event.Paste bytes ->
         update_row (1 + !selected_row) (Bytes.to_string bytes)
@@ -342,7 +342,7 @@ module Input_burst = struct
           | Input_event.Paste bytes ->
               counters.paste_events <- counters.paste_events + 1;
               counters.paste_bytes <- counters.paste_bytes + Bytes.length bytes
-          | Input_event.Sequence _ ->
+          | Input_event.Response _ ->
               counters.sequence_events <- counters.sequence_events + 1
           | Input_event.Mouse _ ->
               counters.mouse_events <- counters.mouse_events + 1);

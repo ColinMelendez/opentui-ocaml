@@ -28,7 +28,9 @@ Contributors porting a reference feature should start with
 parity, ownership translation, and the review checklist.
 Allocation and zero-copy candidates are recorded separately in
 [`future-performance.md`](future-performance.md). Historical design notes are
-retained under [`docs/archive/`](docs/archive/).
+retained under [`docs/archive/`](docs/archive/). Cross-cutting feature
+contracts and their development context are recorded under
+[`docs/major-features/`](docs/major-features/).
 
 For a fresh checkout, initialize the fixed reference source with:
 

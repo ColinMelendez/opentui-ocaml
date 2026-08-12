@@ -6,8 +6,8 @@ this repository. In this document, “reference package” means a directory und
 one of those packages.
 
 Use this map when a contributor finds a feature in the reference source. A
-destination may be a file, directory, package, or `deferred` when no current
-OCaml destination is selected. The contributor workflow is in
+destination may be a file, directory, package, or `deferred` when no OCaml
+destination is selected. The contributor workflow is in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Reference packages
@@ -32,6 +32,7 @@ OCaml destination is selected. The contributor workflow is in
 | `Renderable.ts` | `packages/opentui-core/src/scene.ml` and `packages/opentui-core/src/renderables/` |
 | `renderer.ts` | `packages/opentui-core/src/renderer.ml` |
 | `yoga.ts` | `packages/opentui-core/src/yoga.ml` |
+| Cross-cutting event model in `Renderable.ts`, `renderer.ts`, `types.ts`, and `lib/KeyHandler.ts` | `docs/major-features/in-progress/event-system/feature.md` plus the owning `opentui-core` modules |
 | `buffer.ts` | `packages/opentui-raw/buffer.ml` |
 | `NativeSpanFeed.ts` | `packages/opentui-raw/span_feed.ml` |
 | `renderables/Box.ts` | `packages/opentui-core/src/renderables/box.ml` |
@@ -50,9 +51,9 @@ OCaml destination is selected. The contributor workflow is in
 | `renderables/Code.ts`, `Diff.ts`, `Markdown.ts`, `TextTable.ts` | `deferred` |
 | `renderables/Image.ts`, `ASCIIFont.ts` | `deferred` |
 | `renderables/composition/*` | `deferred` |
-| `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` |
-| `lib/parse.keypress.ts` | `packages/opentui-core/src/lib/key_decoder.ml` |
-| `lib/parse.mouse.ts` | `packages/opentui-core/src/lib/mouse_decoder.ml` |
+| `lib/stdin-parser.ts` (framing and typed event production) | `packages/opentui-core/src/lib/stdin_parser.ml` |
+| `lib/parse.keypress.ts` (parser helper) | `packages/opentui-core/src/lib/key_decoder.ml` |
+| `lib/parse.mouse.ts` (parser helper) | `packages/opentui-core/src/lib/mouse_decoder.ml` |
 | `lib/queue.ts` | `deferred` |
 | private `ByteQueue` in `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/byte_queue.ml` |
 | OCaml input handoff | `packages/opentui-core/src/lib/input_coordinator.ml` and `event_queue.ml` |

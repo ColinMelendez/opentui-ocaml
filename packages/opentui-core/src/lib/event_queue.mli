@@ -1,9 +1,9 @@
 (** Bounded terminal event handoff with coalescing for resize and pointer
-    motion events. Key, paste, opaque sequence, button, and scroll events are
+    motion events. Key, paste, response, button, and scroll events are
     lossless until the queue reports {!Full}. *)
 
 type event =
-  | Input of Input_decoder.event
+  | Input of Stdin_parser.event
   | Resize of Terminal_size.t
 
 type t

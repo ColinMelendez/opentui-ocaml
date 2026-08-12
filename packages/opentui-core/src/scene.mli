@@ -142,7 +142,7 @@ module Box : sig
     (t, error) result
 
   (** [node box] exposes the common retained node for child operations and
-      generic event registration. *)
+      common node queries. *)
   val node : t -> Node.t
 
   (** [background box] is the current fill color. *)

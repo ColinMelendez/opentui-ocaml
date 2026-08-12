@@ -18,8 +18,9 @@ The port has two goals:
 This document is the working guide for that translation. The
 [source correspondence map](docs/upstream-map.md) is the path index, and
 the [architecture document](docs/architecture.md) defines the package and
-effect boundaries. If a reference path is not in the map, add it before or
-with the implementation.
+effect boundaries. Cross-cutting feature contracts are indexed in
+[`docs/major-features/`](docs/major-features/). If a reference path is not in
+the map, add it before or with the implementation.
 
 ## The porting rule
 
@@ -68,6 +69,7 @@ Use the following placement rules before creating a file.
 | Reference core benchmarks | <code>packages/opentui-core/bench</code> | Keep workloads, allocation checks, and tracing entry points with the package they measure. |
 | ABI and native-link tests | <code>packages/opentui-raw/test</code> | Test the foreign boundary where its handles and link rules are owned. |
 | Cross-package architecture, mapping, and performance policy | repository root <code>docs/</code> and <code>future-performance.md</code> | Keep documents that describe both packages or the whole port at repository level. |
+| Cross-cutting feature contract | <code>docs/major-features/&lt;status&gt;/&lt;feature&gt;/feature.md</code> | Keep one active contract with the feature; store historical discussions and discarded alternatives under that feature's <code>context/</code>. |
 
 The package boundary is not a reason to lose source correspondence. It is the
 explicit exception for the native seam: a reader following the reference
@@ -88,22 +90,25 @@ the [source correspondence map](docs/upstream-map.md).
 | <code>core/src/yoga.ts</code> | <code>opentui-core/src/yoga.ml</code> and <code>opentui-raw</code> Yoga bindings | A Yoga node belongs to one owner tree. Layout is calculated before readback, and closed or detached nodes cannot be used. |
 | <code>core/src/buffer.ts</code> | <code>opentui-raw/buffer.ml</code> | Native cell storage stays native. The public OCaml layer does not invent a second cell grid with different copying or lifetime rules. |
 | <code>core/src/NativeSpanFeed.ts</code> | <code>opentui-raw/span_feed.ml</code> | Borrowed native spans are never exposed without a lifetime proof. The OCaml boundary copies drained payloads and makes release, reservation, commit, and cancel explicit. |
-| <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/stdin_parser.ml</code> | Input is framed incrementally across arbitrary chunks. Paste bodies and opaque sequences remain byte-preserving and ordered. |
-| <code>core/src/lib/parse.keypress.ts</code> | <code>opentui-core/src/lib/key_decoder.ml</code> | Complete key frames are decoded into typed keys; unsupported or malformed input remains an opaque sequence. |
-| <code>core/src/lib/parse.mouse.ts</code> | <code>opentui-core/src/lib/mouse_decoder.ml</code> | SGR and X10 frames retain coordinates, modifiers, button state, and move/drag classification. |
+| <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/stdin_parser.ml</code> | The parser frames arbitrary input chunks and emits typed key, mouse, paste, and response events with owned byte payloads. |
+| <code>core/src/lib/parse.keypress.ts</code> | <code>opentui-core/src/lib/key_decoder.ml</code> | The helper recognizes complete key frames for <code>Stdin_parser</code>; unsupported or malformed frames remain responses. |
+| <code>core/src/lib/parse.mouse.ts</code> | <code>opentui-core/src/lib/mouse_decoder.ml</code> | The helper recognizes SGR and X10 frames; <code>Stdin_parser</code> owns mouse-button state and emits coordinates, modifiers, and move/drag classification. |
 | <code>core/src/lib/queue.ts</code> | <code>opentui-core/src/lib/queue.ml</code> (deferred) | The reference <code>ProcessQueue</code> is an unbounded FIFO microtask work queue. It is not the parser byte queue or the OCaml event handoff. |
 | Private <code>ByteQueue</code> in <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/byte_queue.ml</code> | The parser's pending-prefix storage keeps its bounded capacity, growth, compaction, and copy semantics. |
-| OCaml input handoff with no direct reference file | <code>opentui-core/src/lib/input_coordinator.ml</code> and <code>event_queue.ml</code> | These adapters make the Eio sink boundary explicit. They must retain the reference event order and never turn backpressure into loss. <code>input_decoder.ml</code> is the separate framing-to-event composition layer. |
-| <code>core/src/lib/KeyHandler.ts</code> (<code>KeyHandler</code> and <code>InternalKeyHandler</code>) | <code>opentui-core/src/lib/key_handler.ml</code> (deferred) | No keyboard-dispatch module is exposed yet. When added, replace <code>EventEmitter</code> mechanics, not event priority: global-before-local dispatch, prevention, propagation, and cleanup remain explicit. |
+| OCaml input handoff with no direct reference file | <code>opentui-core/src/lib/input_coordinator.ml</code> and <code>event_queue.ml</code> | These adapters receive typed events from <code>Stdin_parser</code>, retain the claimed event order, and never turn backpressure into loss. |
+| <code>core/src/lib/KeyHandler.ts</code> (<code>KeyHandler</code> and <code>InternalKeyHandler</code>) | <code>opentui-core/src/lib/key_handler.ml</code> (deferred) | No keyboard-dispatch module is exposed. Its OCaml translation replaces <code>EventEmitter</code> mechanics while preserving event priority: global-before-local dispatch, prevention, propagation, and cleanup remain explicit. |
 | <code>core/src/platform/*</code> | <code>opentui-core/src/platform</code> | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into <code>eio_runtime</code> and <code>eio_unix_runtime</code>; the map records this as an OCaml-specific boundary rather than inventing reference subdirectories. |
 | <code>core/src/testing</code>, <code>core/src/tests</code>, and <code>core/src/benchmark</code> | <code>opentui-core/test</code>, <code>reference</code>, and <code>bench</code> | Behavior checks, reference comparisons, and performance workloads remain package-local and discoverable beside the implementation. |
 | <code>packages/react</code> and <code>packages/solid</code> | No OCaml package; an Lwd bridge can provide this role | A reactive bridge must update the existing retained tree. It must not introduce a second required render tree or change the imperative core contract. |
 
-The separation between parser framing and semantic decoding is an OCaml
-module boundary, not a license to change the protocol. The reference parser
-also emits key, mouse, paste, and response events in input order. The OCaml
-implementation may represent that as parser events followed by decoder events,
-provided the resulting events have the same bytes, order, and ownership.
+The reference <code>StdinParser</code> is the typed-event boundary. The OCaml
+<code>Stdin_parser</code> has the same responsibility: it owns byte framing,
+protocol recognition, key and mouse helper state, and typed key, mouse, paste,
+and response event production. <code>Key_decoder</code> and
+<code>Mouse_decoder</code> correspond to the reference parse helpers; they do
+not form a required public two-stage pipeline. <code>Input_coordinator</code>
+adds Eio deadlines and lossless sink backpressure after typed event production.
+Differential vectors cover bytes, event kinds, order, ownership, and timing.
 
 ## Input and event flow
 
@@ -111,7 +116,8 @@ The input path has a fixed responsibility order:
 
     Eio source
       -> Input_flow reusable read buffer
-      -> Input_coordinator (Stdin_parser -> Input_decoder)
+      -> Input_coordinator (deadlines and lossless backpressure)
+      -> Stdin_parser (framing and typed event production)
       -> caller-owned event sink or Event_queue
          (coordinator retains blocked events; Input_flow retains unread suffixes)
       -> application and scene dispatch
@@ -129,21 +135,21 @@ The output path has a corresponding boundary:
 Each stage has one job:
 
 - <code>Stdin_parser</code> recognizes protocol boundaries, incomplete escape
-  prefixes, bracketed paste, and opaque responses. It does not decide which
-  renderable handles a key.
-- <code>Key_decoder</code> and <code>Mouse_decoder</code> interpret complete
-  frames. A decoder must not consume bytes that the parser has not framed.
-- <code>Input_coordinator</code> coordinates framing and decoding, owns the
-  blocked decoded event, and reports how many source bytes were accepted.
-  <code>Full</code> means retry later; it does not mean discard.
+  prefixes, bracketed paste, keys, mouse events, and opaque responses. It
+  emits typed events and does not decide which renderable handles a key.
+- <code>Key_decoder</code> and <code>Mouse_decoder</code> are parser helpers for
+  complete frames. A helper must not consume bytes that the parser has not
+  framed.
+- <code>Input_coordinator</code> owns the blocked typed event and reports how
+  many source bytes were accepted. <code>Full</code> means retry later; it does
+  not mean discard.
 - <code>Platform.Eio_runtime.Input_flow</code> retries unread input before
   reading a new chunk. This is the backpressure point that prevents user input
   from being lost while the consumer is full.
 - <code>Event_queue</code> is a caller-owned FIFO handoff. Its default capacity
   is 64; pending resize and mouse-motion events may replace an event of the same
-  coalescing class. Keys, paste, opaque sequences, button events, and scroll
-  events are not coalesced and report <code>Full</code> instead of being
-  dropped.
+  coalescing class. Keys, paste, responses, button events, and scroll events are
+  not coalesced and report <code>Full</code> instead of being dropped.
 - <code>Scene.dispatch_pointer</code> hit-tests using the latest layout and
   bubbles from the target toward the root. <code>Stop</code> ends propagation;
   <code>Continue</code> preserves the route.
@@ -195,7 +201,7 @@ For a queue, record:
 The reference parser uses a 256-byte initial pending buffer, grows up to a
 64 KiB pending-prefix limit, and uses a 20 ms timeout for an incomplete escape
 prefix. The OCaml <code>Byte_queue</code> and <code>Stdin_parser</code> keep
-those parser values. <code>Input_coordinator</code> retains a blocked decoded
+those parser values. <code>Input_coordinator</code> retains a blocked typed
 event, while <code>Platform.Eio_runtime.Input_flow</code> retains the unread
 source suffix and retries it when a downstream sink reports <code>Full</code>.
 A bracketed paste is
@@ -415,6 +421,12 @@ boundary, or translation rule changes. Update the package README when a
 user-facing module or package-local tool becomes available. Avoid development
 chronology such as “initial” or “next”; describe what exists and what it
 guarantees.
+
+For a cross-cutting feature, create or update the matching record under
+[`docs/major-features/`](docs/major-features/). Keep `feature.md` declarative
+and present-tense. Store design discussions, rejected alternatives, and older
+wording under the feature's `context/` directory. The context is evidence, not
+the active contract.
 
 ## Review checklist
 
