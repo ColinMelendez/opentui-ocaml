@@ -17,7 +17,8 @@ modules. The contributor workflow is in
 | Reference package or path | Repository-relative OCaml location |
 | --- | --- |
 | `packages/core` | `packages/opentui-core/src` |
-| `packages/core/src/zig`, `buffer.ts`, `NativeSpanFeed.ts` | `packages/opentui-raw` |
+| `packages/core/src/zig` | `packages/opentui-raw` |
+| `packages/core/src/buffer.ts`, `NativeSpanFeed.ts` | `packages/opentui-raw` for ABI bindings and the [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md) for core-facing ports |
 | `packages/keymap` | `deferred` |
 | `packages/react` | `deferred` |
 | `packages/solid` | `deferred` |
@@ -31,17 +32,18 @@ modules. The contributor workflow is in
 
 | Reference path | Repository-relative OCaml path |
 | --- | --- |
-| `Renderable.ts` | `packages/opentui-core/src/scene.ml` and `packages/opentui-core/src/renderables/` |
-| `renderer.ts` | `packages/opentui-core/src/renderer.ml` |
-| `yoga.ts` | `packages/opentui-core/src/yoga.ml` |
+| `Renderable.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/renderable.ml` and `layout_children.ml` |
+| `renderer.ts` (`CliRenderer`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/renderer.ml` |
+| `types.ts` (`RenderContext`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/render_context.ml` |
+| `yoga.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/yoga.ml` with private per-renderable ownership |
 | Cross-cutting event model in `Renderable.ts`, `renderer.ts`, `types.ts`, and `lib/KeyHandler.ts` | `docs/major-features/in-progress/event-system/feature.md` plus the owning `opentui-core` modules |
-| `Renderable.ts` mouse handlers and pointer dispatch in `renderer.ts` | `docs/major-features/in-progress/pointer-dispatch/feature.md` and `packages/opentui-core/src/scene.ml` |
-| `buffer.ts` | `packages/opentui-raw/buffer.ml` |
+| `Renderable.ts` mouse handlers and pointer dispatch in `renderer.ts` | `docs/major-features/in-progress/pointer-dispatch/feature.md` and the `renderable-core` renderer/renderable modules |
+| `buffer.ts` (`OptimizedBuffer`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/buffer.ml`; ABI binding: `packages/opentui-raw/buffer.ml` |
 | `NativeSpanFeed.ts` | `packages/opentui-raw/span_feed.ml` |
-| `renderables/Box.ts` | `packages/opentui-core/src/renderables/box.ml` |
-| `renderables/Text.ts` | `packages/opentui-core/src/renderables/text.ml` |
-| `renderables/TextNode.ts` | `deferred` |
-| `renderables/TextBufferRenderable.ts` | `deferred` |
+| `renderables/Box.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md) and `packages/opentui-core/src/renderables/box.ml` |
+| `renderables/Text.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md) and `packages/opentui-core/src/renderables/text.ml` with `text_children.ml` |
+| `renderables/TextNode.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/renderables/text_node.ml` |
+| `renderables/TextBufferRenderable.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/renderables/text_buffer_renderable.ml` |
 | `renderables/EditBufferRenderable.ts` | `deferred` |
 | `renderables/FrameBuffer.ts` | `deferred` |
 | `renderables/Input.ts` | `deferred` |
@@ -70,7 +72,11 @@ modules. The contributor workflow is in
 | `plugins/*` | `deferred` |
 | `audio*` | `deferred` |
 | `image.ts` | `deferred` |
-| `text-buffer.ts`, `text-buffer-view.ts`, `edit-buffer.ts`, `editor-view.ts` | `deferred` |
+| `text-buffer.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/text_buffer.ml` |
+| `text-buffer-view.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/text_buffer_view.ml` |
+| `lib/styled-text.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/lib/styled_text.ml` |
+| `syntax-style.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/syntax_style.ml` |
+| `edit-buffer.ts`, `editor-view.ts` | `deferred` |
 | `testing/*`, `tests/*` | `packages/opentui-core/test` |
 | `benchmark/*` | `packages/opentui-core/bench` |
 | core parser comparison harness | `packages/opentui-core/reference` |

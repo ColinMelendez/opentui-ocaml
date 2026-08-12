@@ -15,11 +15,11 @@ for translating a reference feature into OCaml is in
 | Reference source | The OpenTUI source in `vendor/opentui`. It defines the behavior and source paths that the OCaml implementation follows. |
 | ABI | The C-compatible function and data representation used to call the Zig renderer. |
 | Retained UI tree | A tree whose nodes remain allocated and keep their identities while properties change between frames. |
-| Scene | The `opentui-core.Scene` owner of one retained UI tree, one renderer, and one Yoga layout tree. |
-| Renderable | A retained node that contributes visual output, such as `Scene.Box` or `Scene.Text`. |
+| Renderer | The `opentui-core.Renderer` owner of the retained root, frame buffers, render-context capabilities, frame lifecycle, terminal output, and renderer-level events. It corresponds to the reference `CliRenderer`. |
+| Render context | The capability view that gives a renderable access to renderer-owned dimensions, layout, events, input, focus, and render requests. It corresponds to the reference `RenderContext`. |
+| Renderable | A retained node that contributes visual output and participates in parent-child ownership, layout, lifecycle, and rendering. `Box` and `Text` are concrete renderables. |
 | Yoga | The layout engine used by `opentui-core` to calculate node positions and dimensions. |
 | Eio | The OCaml library used for structured concurrency, terminal I/O, clocks, cancellation, and resource cleanup. |
-| Lwd | The OCaml incremental-computation library intended for a reactive binding layer. It is not a dependency of the public packages. |
 
 ## Packages and dependency direction
 
@@ -56,7 +56,7 @@ Code that exercises one package is stored in that package directory:
 
 | Package directory | Contents |
 | --- | --- |
-| `packages/opentui-core/test` | Tests for scenes, renderables, the renderer, terminal protocols, and Eio/Unix integrations. |
+| `packages/opentui-core/test` | Tests for the retained renderable tree, renderer, terminal protocols, and Eio/Unix integrations. |
 | `packages/opentui-core/examples` | Executable examples of the public core API and their Cram transcripts. |
 | `packages/opentui-core/reference` | Optional comparisons between core behavior and the TypeScript reference source. |
 | `packages/opentui-core/bench` | Release-profile workloads, allocation baselines, and tracing wrappers for core behavior. |
@@ -70,10 +70,6 @@ records describe contracts that span several modules or packages. Historical
 notes remain under `docs/archive/` and are not part of the active package
 contract.
 
-The repository does not contain a widget package or an Lwd integration
-package. The source map lists the React and Solid reference packages and the
-control and composition paths that are deferred.
-
 ## `opentui-core/src`
 
 The `opentui-core/src` tree follows `vendor/opentui/packages/core/src`. A
@@ -81,12 +77,23 @@ directory or module with a different OCaml name is listed in the source map.
 
 ```text
 src/
-├── renderer.ml              frame lifecycle and output
-├── yoga.ml                  layout ownership and readback
+├── renderer.ml              CliRenderer ownership, frame lifecycle, and output
+├── render_context.ml        capabilities supplied to renderables
+├── renderable.ml            common retained-node ownership and traversal
+├── layout_children.ml       typed layout-child capability
+├── buffer.ml                renderable-facing buffer operations
+├── yoga.ml                  private layout-node ownership and readback
 ├── renderables/             retained visual nodes
 │   ├── box.ml
-│   └── text.ml
+│   ├── text.ml
+│   ├── text_children.ml
+│   ├── text_buffer_renderable.ml
+│   └── text_node.ml
+├── text_buffer.ml            styled text storage and measurement
+├── text_buffer_view.ml       wrapping, viewport, and visible-line state
+├── syntax_style.ml           text syntax-style state
 ├── lib/                     terminal protocol and input support
+│   ├── styled_text.ml
 │   ├── stdin_parser.ml
 │   ├── byte_queue.ml
 │   ├── input_coordinator.ml
@@ -98,7 +105,6 @@ src/
 ├── platform/                Eio and operating-system integration
 │   ├── eio_runtime/         Eio flows, output, wakeups, and dispatch
 │   └── eio_unix_runtime/    termios, SIGWINCH, and terminal-size support
-├── scene.ml                 retained UI-tree owner
 └── native/                  OCaml errors for native composition
 ```
 
@@ -113,18 +119,18 @@ are not directories in the reference source.
 
 The application-facing runtime is Eio-native. One Eio switch can own terminal
 setup, input, output, clocks, cancellation, and cleanup. `opentui-core` keeps
-the rendering and parsing operations synchronous: `Scene`, `Renderer`, Yoga,
-renderable setters, the byte parser, and the bounded event queue do not start
-fibers or perform terminal I/O.
+the rendering and parsing operations synchronous: `Renderer`, `Renderable`,
+Yoga, renderable setters, the byte parser, and the bounded event queue do not
+start fibers or perform terminal I/O.
 
 An application fiber calls the synchronous renderer and parser operations. The
-controlled API exposes `Scene.flush` as an explicit presentation boundary, so
-an application may decide when to present a frame. That operation
-is not the semantic replacement for reference `requestRender()`: a scheduler
-added above this boundary must keep dirty-state invalidation, coalesced frame
-requests, timing, and presentation distinct. This boundary keeps scheduling
-and terminal resource lifetime out of per-cell rendering operations while
-allowing Eio to own the surrounding application runtime.
+renderer exposes an explicit frame and presentation boundary, so an application
+may decide when to present a frame. That operation is not the semantic
+replacement for reference `requestRender()`: a scheduler added above this
+boundary must keep dirty-state invalidation, coalesced frame requests, timing,
+and presentation distinct. This boundary keeps scheduling and terminal
+resource lifetime out of per-cell rendering operations while allowing Eio to
+own the surrounding application runtime.
 
 ## Translating TypeScript concepts
 
@@ -133,14 +139,15 @@ TypeScript class syntax or JavaScript runtime mechanisms.
 
 | Reference mechanism | OCaml representation |
 | --- | --- |
-| Base class and inheritance | An owned retained `Scene.Node` owns identity, tree ownership, and lifecycle. Concrete renderable modules own typed state and use the shared `Node.kind` dispatch shape. |
+| Base class and inheritance | `Renderable.t` owns identity, tree ownership, lifecycle, and the private behavior hooks that concrete renderable modules compose with their typed state. Behavior hooks preserve replacement semantics at reference virtual-method boundaries. |
+| Child attachment methods | Concrete modules expose typed `Layout_children.t` or `Text_children.t` capabilities. `Renderable.t` has no universal public `add`, `remove`, or `insertBefore` operation. |
 | Constructor option bag | Labelled arguments and typed records for reusable groups of values. |
 | Public mutable property | A typed accessor and setter that preserve reference validation, clamping, equality/no-op, invalidation, and error behavior. |
-| `EventEmitter` | Owner-local typed event channels composed into the scene, renderer, render context, or component. Synchronous registration-order dispatch, snapshot semantics, reentrancy, duplicate subscriptions, one-shot removal, callback exceptions, cleanup, and producer-owned scheduling remain explicit. Keyboard priority, pointer propagation, queueing, and backpressure remain separate dispatch systems. |
+| `EventEmitter` | Owner-local typed event channels composed into the renderer, render context, or component. Synchronous registration-order dispatch, snapshot semantics, reentrancy, duplicate subscriptions, one-shot removal, callback exceptions, cleanup, and producer-owned scheduling remain explicit. Keyboard priority, pointer propagation, queueing, and backpressure remain separate dispatch systems. |
+| Render invalidation and command-list reuse | Separate renderable dirty state, Yoga layout generation, and render-list revision. The root stores a reuse decision when it rebuilds a list; later frames reuse it only while that decision and both recorded generations remain valid. |
 | Reference input handoff | `Stdin_parser` emits typed events. `Input_coordinator` and `Event_queue` are explicit OCaml adapters. Backpressure and coalescing require tests for order, replacement position, multiplicity, ownership, and handoff behavior. |
 | `RenderContext` / renderer reference | Explicit render-context capabilities retained by nodes; Eio capabilities remain at runtime/platform boundaries. |
-| `requestRender()` | Dirty-state invalidation plus a coalesced future-frame request, distinct from an explicit `Scene.flush`/presentation operation. |
-| React/Solid reconciliation | An Lwd binding, if added, attaches to the retained nodes rather than creating a second required tree. |
+| `requestRender()` | Dirty-state invalidation plus a coalesced future-frame request, distinct from an explicit renderer frame/presentation operation. |
 
 Each non-literal translation must have a corresponding source-map path and
 architecture or feature documentation. The documentation must state the
@@ -158,6 +165,10 @@ document and may have non-normative context records alongside it.
 The [event-system feature record](major-features/in-progress/event-system/feature.md)
 defines the typed channel, renderer-context, lifecycle, keyboard, pointer, and
 input-boundary relationships that the translation table summarizes.
+
+The [renderable-core feature record](major-features/in-progress/renderable-core/feature.md)
+defines the retained tree, renderer, render context, buffer, Yoga ownership,
+and concrete Box and Text relationships.
 
 The specialized dispatch contracts are recorded separately in the
 [keyboard-dispatch feature record](major-features/in-progress/keyboard-dispatch/feature.md)

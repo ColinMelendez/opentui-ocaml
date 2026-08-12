@@ -3,7 +3,7 @@
 Status: in progress.
 
 This feature defines how decoded mouse input is routed through the retained
-scene. It is a specialized dispatch system, not an instance of the ordinary
+renderable tree. It is a specialized dispatch system, not an instance of the ordinary
 [`Event.Channel`](../event-system/feature.md) abstraction.
 
 The shared rationale and alternatives are in the event-system
@@ -15,28 +15,29 @@ pointer design is recorded in [`context/design.md`](context/design.md).
 Pointer dispatch combines input classification, layout hit-testing, target
 selection, bubbling, pointer state, and renderer-owned default actions. These
 responsibilities must remain visible at their boundaries: decoding a mouse
-frame is not the same operation as routing a pointer event through the scene.
+frame is not the same operation as routing a pointer event through the retained
+renderable tree.
 
 ## Reference correspondence
 
 | Reference source | OCaml correspondence | Responsibility |
 | --- | --- | --- |
 | `vendor/opentui/packages/core/src/lib/parse.mouse.ts` | `opentui-core.Mouse_decoder` and `Stdin_parser` | Decode X10/SGR frames, modifiers, scroll data, button state, and move/drag classification. |
-| `vendor/opentui/packages/core/src/Renderable.ts` mouse handling | `opentui-core.Scene.Node` pointer handlers | Invoke the target's handlers and expose the current route node while bubbling. |
-| `vendor/opentui/packages/core/src/renderer.ts` mouse dispatch | `opentui-core.Scene.dispatch_pointer` plus renderer/runtime policy | Hit-test the latest layout, derive pointer lifecycle events, manage capture/hover, and apply focus/selection defaults. |
+| `vendor/opentui/packages/core/src/Renderable.ts` mouse handling | `opentui-core.Renderable.t` pointer handlers | Invoke the target's handlers and expose the current route node while bubbling. |
+| `vendor/opentui/packages/core/src/renderer.ts` mouse dispatch | `opentui-core.Renderer.t` and retained-tree pointer route | Hit-test the latest layout, derive pointer lifecycle events, manage capture/hover, and apply focus/selection defaults. |
 
 The current OCaml decoder already carries modifiers and scroll information.
-The current scene dispatcher is intentionally smaller: it hit-tests the latest
-layout, routes a five-kind pointer event from target to root, and supports
-`Continue` or `Stop`. Full reference mouse-event lifecycle, capture, hover,
-derived events, and default actions remain in progress.
+The minimal retained-tree route hit-tests the latest layout, routes a
+five-kind pointer event from target to root, and supports `Continue` or
+`Stop`. Full reference mouse-event lifecycle, capture, hover, derived events,
+and default actions remain in progress.
 
 ## Active contract
 
 ### Boundary between decoding and routing
 
 The decoder owns terminal protocol recognition and emits an owned decoded mouse
-event. The scene dispatcher consumes that event only after the input handoff
+event. The retained-tree dispatcher consumes that event only after the input handoff
 has established its lifetime and ordering. Queue capacity and motion
 coalescing are input-adapter behavior; they must not be smuggled into a node's
 pointer handler semantics.
@@ -61,17 +62,17 @@ The reference renderer derives `over`, `out`, `drag-end`, and `drop` behavior,
 tracks the pressed/captured target, updates hover state, and uses pointer
 events in focus and selection decisions. Those are part of this feature's
 compatibility target, but they are not implicit consequences of the small
-`Scene.dispatch_pointer` route currently exposed.
+minimal retained-tree route currently exposed.
 
-The scene owns tree routing and node-local lifecycle. The renderer/runtime
+The retained renderable tree owns tree routing and node-local lifecycle. The renderer/runtime
 owns capture, hover transitions, focus and selection defaults, and any terminal
 policy that depends on the active render loop. A default action must not be
-added to `Scene.dispatch_pointer` merely because the reference renderer has
+added to the retained-tree route merely because the reference renderer has
 one.
 
 ### Handler errors and lifecycle
 
-The current scene handler contract propagates handler exceptions. The
+The current minimal route propagates handler exceptions. The
 reference renderer catches pointer-handler failures and applies its
 handler-error/reporting policy. The eventual routed API must choose and
 document the corresponding owner boundary; it must not silently conflate
@@ -83,7 +84,8 @@ when their owner is destroyed, and repeated cleanup must be safe.
 
 ## Current scope
 
-Mouse decoding and a minimal target-to-root scene route are implemented. The
+Mouse decoding and a minimal target-to-root retained-tree route are
+implemented. The
 full reference pointer lifecycle and its renderer integration remain in
 progress. This record deliberately does not promise a new public event shape
 until target/current-target identity, propagation, default-action prevention,
@@ -99,9 +101,9 @@ capture, cleanup, and handler-error behavior have a single tested owner.
   parser-to-dispatch boundary;
 - hover, drag, drag-end, drop, and capture behavior match the reference when
   those event families are enabled;
-- renderer default actions are separately defined from scene bubbling and
+- renderer default actions are separately defined from retained-tree bubbling and
   respect prevention;
 - destroyed nodes and captured targets cannot receive stale routes;
-- pointer handler errors follow the documented renderer/scene boundary; and
+- pointer handler errors follow the documented renderer/tree boundary; and
 - queueing and motion coalescing tests prove that input adaptation does not
   silently alter route order or event ownership.

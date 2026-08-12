@@ -25,7 +25,7 @@ The resulting rule is:
 
 > Events are synchronous. Scheduling events is the producer's responsibility.
 
-The suggested primitive is a typed channel with subscriptions:
+The event-system primitive is a typed channel with subscriptions:
 
 ```ocaml
 module Event : sig
@@ -58,7 +58,10 @@ event descriptors or event-specific registration functions. A descriptor can
 carry an owner phantom type so that an event from one component cannot be
 registered on another component.
 
-The discussion applies the following component translations:
+The discussion applies the following component translations. Audio,
+edit-buffer, and renderer entries are future consumers of the event kernel;
+their inclusion defines the contract they will use and does not claim that
+those components are currently implemented.
 
 - `AudioStream<M>` keeps its metadata type parameter and performs deferred
   delivery in the audio runtime before synchronous channel emission.

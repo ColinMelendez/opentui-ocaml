@@ -25,8 +25,8 @@ own feature records and modules.
 | Reference source | OCaml correspondence | Responsibility |
 | --- | --- | --- |
 | `vendor/opentui/packages/core/src/lib/KeyHandler.ts` | Dedicated keyboard-dispatch module (not yet exposed) | Key, key-release, and paste dispatch; global/local ordering; prevention; propagation; handler-error policy. |
-| `vendor/opentui/packages/core/src/Renderable.ts` focus and key handlers | `opentui-core.Scene.Node` focus state and concrete renderables | The focused renderable owns local keyboard behavior and its internal registrations. |
-| `vendor/opentui/packages/core/src/renderer.ts` focus methods | `opentui-core` renderer/runtime focus ownership | There is one current focused renderable; focus transitions update the previous and next owners. |
+| `vendor/opentui/packages/core/src/Renderable.ts` focus and key handlers | `opentui-core.Renderable.t` focus state and concrete renderables | The focused renderable owns local keyboard behavior and its internal registrations. |
+| `vendor/opentui/packages/core/src/renderer.ts` focus methods | `opentui-core.Renderer.t` and `Render_context.t` focus ownership | There is one current focused renderable; focus transitions update the previous and next owners. |
 | `vendor/opentui/packages/core/src/lib/stdin-parser.ts` and `parse.keypress.ts` | `Stdin_parser` and `Key_decoder` | Framing and decoding produce typed input. They do not implement keyboard dispatch. |
 
 The current OCaml parser exposes typed key and paste events, but no public
@@ -48,7 +48,7 @@ order:
 3. for a keypress or paste, allow the focused renderable's default action only
    when the event is not prevented.
 
-There is no keyboard bubbling through the scene's parent chain. Focus selects
+There is no keyboard bubbling through the renderable tree's parent chain. Focus selects
 the local recipient; it does not make keyboard handlers on ancestors into
 additional phases. Keypress, key-release, and paste are separate event
 families even when they share payload or control-flag machinery.
@@ -91,6 +91,13 @@ registrations and makes it ineligible for later local dispatch. A local
 callback that can trigger destruction must not cause a later default action to
 run against a destroyed renderable.
 
+Detaching a renderable from its parent does not blur it or remove its internal
+keyboard and paste registrations. A focused detached renderable remains the
+local recipient until the renderer's focus lifecycle blurs or destroys it.
+
+Setting a focused renderable's visibility to false blurs it and removes its
+internal registrations. Restoring visibility does not restore focus.
+
 ### Payload ownership and scheduling
 
 The dispatcher receives typed, owned input from the parser/input boundary.
@@ -128,6 +135,8 @@ semantics are tested.
 - keypress, key-release, and paste remain distinct event families;
 - focus, blur, and destruction clean up local registrations and are safe under
   repeated calls;
+- detachment leaves focus-owned registrations active until blur or destruction;
+- hiding a focused renderable blurs it and removes its local registrations;
 - callbacks cannot cause a destroyed renderable's default action to run;
 - key and paste payload ownership is explicit and tested;
 - handler exception reporting and continuation match the reference boundary;

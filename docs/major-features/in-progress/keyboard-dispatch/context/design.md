@@ -41,14 +41,15 @@ choice of OCaml collection.
 ## Focused recipient
 
 The renderer maintains the current focused renderable. Focus and blur own the
-installation and cancellation of internal keyboard handlers. A scene parent
-is not a fallback keyboard recipient, so a focused child does not cause key
+installation and cancellation of internal keyboard handlers. A parent in the
+retained renderable tree is not a fallback keyboard recipient, so a focused child does not cause key
 events to bubble through its ancestors.
 
 The focus owner and dispatcher must share the same lifecycle boundary: a
-destroyed or detached node cannot receive a later local event, and a callback
-that destroys its node cannot leave a default action queued against stale
-state.
+destroyed node cannot receive a later local event, and a callback that destroys
+its node cannot leave a default action queued against stale state. Detachment
+removes a node from tree routing but does not blur a focused node or cancel its
+local keyboard registrations.
 
 ## Reference observations and open implementation work
 
@@ -58,8 +59,8 @@ local collections are snapshotted, `preventDefault` gates later local/default
 work, and `stopPropagation` terminates the remaining route. The reference
 handler boundary catches and reports callback failures.
 
-The current OCaml parser supplies key and paste events and the scene already
-has retained-node lifecycle concepts, but keyboard dispatch and focus
+The current OCaml parser supplies key and paste events and the retained
+renderable design defines node lifecycle concepts, but keyboard dispatch and focus
 integration are not yet an exposed core module. The implementation design
 must settle the typed payload module, registration return/cancellation shape,
 focus ownership, and handler-error reporting together; it must not make each

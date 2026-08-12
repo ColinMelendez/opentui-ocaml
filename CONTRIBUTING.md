@@ -84,11 +84,11 @@ the [source correspondence map](docs/upstream-map.md).
 
 | Reference feature | OCaml feature | Contract that must remain stable |
 | --- | --- | --- |
-| <code>core/src/Renderable.ts</code> | <code>opentui-core/src/scene.ml</code> and <code>src/renderables/</code> | Nodes have stable identity, parent/child order, dirty state, layout participation, and explicit, idempotent destruction. |
-| <code>core/src/renderer.ts</code> | <code>opentui-core/src/renderer.ml</code>, <code>src/scene.ml</code>, and <code>src/platform/</code> | Keep invalidation, frame-request scheduling, and presentation distinct. Preserve frame timing, coalescing, continuous/immediate scheduling, output backpressure, and render-status ordering; Eio may replace the scheduling mechanism. |
-| <code>core/src/types.ts</code> <code>RenderContext.requestRender</code> and renderer scheduling | <code>opentui-core/src/scene.ml</code> dirty state and explicit <code>flush</code>, plus the owning runtime scheduler | A mutation marks the retained tree dirty and requests a coalesced future frame. An explicit <code>flush</code>/<code>present</code> operation is a separate immediate boundary, not the semantic replacement for <code>requestRender()</code>. |
-| <code>core/src/yoga.ts</code> | <code>opentui-core/src/yoga.ml</code> and <code>opentui-raw</code> Yoga bindings | A Yoga node belongs to one owner tree. Layout is calculated before readback, and closed or detached nodes cannot be used. |
-| <code>core/src/buffer.ts</code> | <code>opentui-raw/buffer.ml</code> | Native cell storage stays native. The public OCaml layer does not invent a second cell grid with different copying or lifetime rules. |
+| <code>core/src/Renderable.ts</code> | <code>docs/major-features/in-progress/renderable-core/feature.md</code>; target <code>opentui-core/src/renderable.ml</code> and <code>src/renderables/</code> | Nodes have stable identity, parent/child order, dirty state, layout participation, and explicit, idempotent destruction. Public child operations are typed capabilities, not a universal <code>Renderable.add</code>. |
+| <code>core/src/renderer.ts</code> | <code>docs/major-features/in-progress/renderable-core/feature.md</code>; target <code>opentui-core/src/renderer.ml</code> and <code>src/platform/</code> | Keep invalidation, frame-request scheduling, and presentation distinct. Preserve frame timing, coalescing, continuous/immediate scheduling, output backpressure, and render-status ordering; Eio may replace the scheduling mechanism. |
+| <code>core/src/types.ts</code> <code>RenderContext.requestRender</code> and renderer scheduling | <code>opentui-core/src/render_context.ml</code> and renderer-owned coalesced scheduling | A mutation marks the retained tree dirty and requests a coalesced future frame. An explicit frame/presentation operation is a separate immediate boundary, not the semantic replacement for <code>requestRender()</code>. |
+| <code>core/src/yoga.ts</code> | <code>opentui-core/src/yoga.ml</code> and <code>opentui-raw</code> Yoga bindings | Each retained renderable owns a private Yoga node. Parent insert/remove do not free the child; destruction frees that one node. Layout is calculated before readback. |
+| <code>core/src/buffer.ts</code> | <code>opentui-core/src/buffer.ml</code> over <code>opentui-raw/buffer.ml</code> | Native cell storage stays native. The public OCaml layer does not invent a second cell grid with different copying or lifetime rules. Renderer current/next buffers are borrowed views. |
 | <code>core/src/NativeSpanFeed.ts</code> | <code>opentui-raw/span_feed.ml</code> | Borrowed native spans are never exposed without a lifetime proof. The OCaml boundary copies drained payloads and makes release, reservation, commit, and cancel explicit. |
 | <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/stdin_parser.ml</code> | The parser frames arbitrary input chunks and emits typed key, mouse, paste, and response events with owned byte payloads. |
 | <code>core/src/lib/parse.keypress.ts</code> | <code>opentui-core/src/lib/key_decoder.ml</code> | The helper recognizes complete key frames for <code>Stdin_parser</code>; unsupported or malformed frames remain responses. |
@@ -97,7 +97,7 @@ the [source correspondence map](docs/upstream-map.md).
 | Private <code>ByteQueue</code> in <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/byte_queue.ml</code> | The parser's pending-prefix storage keeps its bounded capacity, growth, compaction, and copy semantics. |
 | OCaml input handoff with no direct reference file | <code>opentui-core/src/lib/input_coordinator.ml</code> and <code>event_queue.ml</code> | These adapters receive typed events from <code>Stdin_parser</code>, retain the claimed event order, and never turn backpressure into loss. |
 | <code>core/src/lib/KeyHandler.ts</code> (<code>KeyHandler</code> and <code>InternalKeyHandler</code>) | <code>docs/major-features/in-progress/keyboard-dispatch/feature.md</code> (implementation deferred) | No keyboard-dispatch module is exposed. Its OCaml translation replaces <code>EventEmitter</code> mechanics while preserving event priority: global-before-local dispatch, prevention, propagation, and cleanup remain explicit. |
-| Reference renderable and renderer pointer dispatch | <code>docs/major-features/in-progress/pointer-dispatch/feature.md</code> and <code>opentui-core/src/scene.ml</code> | Scene bubbling and renderer pointer policy are separate from ordinary event channels; the feature record tracks the current subset and deferred reference lifecycle. |
+| Reference renderable and renderer pointer dispatch | <code>docs/major-features/in-progress/pointer-dispatch/feature.md</code> and the renderable-core hit-grid seam | Pointer bubbling and renderer pointer policy are separate from ordinary event channels; the feature record tracks the current subset and deferred reference lifecycle. |
 | <code>core/src/platform/*</code> | <code>opentui-core/src/platform</code> | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into <code>eio_runtime</code> and <code>eio_unix_runtime</code>; the map records this as an OCaml-specific boundary rather than inventing reference subdirectories. |
 | <code>core/src/testing</code>, <code>core/src/tests</code>, and <code>core/src/benchmark</code> | <code>opentui-core/test</code>, <code>reference</code>, and <code>bench</code> | Behavior checks, reference comparisons, and performance workloads remain package-local and discoverable beside the implementation. |
 | <code>packages/react</code> and <code>packages/solid</code> | No OCaml package; an Lwd bridge can provide this role | A reactive bridge must update the existing retained tree. It must not introduce a second required render tree or change the imperative core contract. |
@@ -151,14 +151,15 @@ Each stage has one job:
   is 64; pending resize and mouse-motion events may replace an event of the same
   coalescing class. Keys, paste, responses, button events, and scroll events are
   not coalesced and report <code>Full</code> instead of being dropped.
-- <code>Scene.dispatch_pointer</code> hit-tests using the latest layout and
-  bubbles from the target toward the root. <code>Stop</code> ends propagation;
-  <code>Continue</code> preserves the route.
-- <code>Renderer</code> and the controlled <code>Scene.flush</code> API
-  do not start fibers. The application chooses when to drain events and, for
-  this low-level API, when to present a frame. Do not describe that explicit
-  flush as the equivalent of reference <code>requestRender()</code>; a scheduler
-  above it must own invalidation, coalescing, timing, and retry semantics.
+- Pointer routing hit-tests using the latest layout and bubbles from the
+  target toward the root. <code>Stop</code> ends propagation; <code>Continue</code>
+  preserves the route. The current minimal route and the planned renderer
+  integration are in the pointer-dispatch feature record.
+- <code>Renderer</code> frame and presentation operations do not start fibers.
+  The application may choose when to drain events and when to present a frame.
+  Do not describe that explicit presentation as the equivalent of reference
+  <code>requestRender()</code>; a scheduler above it must own invalidation,
+  coalescing, timing, and retry semantics.
 
 When porting another event family, inspect the reference dispatch code and
 tests for the exact priority. Do not infer priority from the variant order or
@@ -283,13 +284,13 @@ if Eio replaces process ticks and JavaScript timers.
 The retained tree is a stateful owner, not a transient value graph. A property
 setter must update the existing node, maintain the same dirty/layout
 invalidation behavior, and preserve child order and identity. A mutation
-requests a future frame; it does not itself imply immediate presentation. The
-<code>Scene.flush</code> operation is the explicit presentation primitive for the
-controlled OCaml API. A frame follows the reference order: apply pending
-state, calculate layout when required, draw the retained tree, present the
-native frame, and report the render status.
+requests a future frame; it does not itself imply immediate presentation. An
+explicit renderer frame/presentation operation is a separate immediate
+boundary. A frame follows the reference order: apply pending state, calculate
+layout when required, draw the retained tree, present the native frame, and
+report the render status.
 
-If a native render fails, keep the scene dirty when the reference permits a
+If a native render fails, keep the tree dirty when the reference permits a
 retry. If a render is <code>Skipped</code>, preserve the distinction between
 an unchanged frame and <code>Failed</code>; callers may use those statuses to
 decide whether to schedule another frame.
@@ -300,10 +301,10 @@ Use the smallest OCaml mechanism that preserves the reference relationship.
 
 | Reference pattern | OCaml translation | Review for |
 | --- | --- | --- |
-| Base class and subclass | A retained <code>Scene.Node</code> owns identity, tree ownership, and lifecycle. Concrete renderable modules own typed state and participate in the repository's one explicit <code>Node.kind</code> dispatch shape. | Stable identity, parent ownership, child order, one invalidation path, and idempotent destruction. Do not choose a different object, first-class-module, GADT, or closure-dispatch scheme for each renderable. |
+| Base class and subclass | A retained <code>Renderable.t</code> owns identity, tree ownership, lifecycle, and private behavior hooks. Concrete renderable modules compose typed state and a preallocated behavior record. | Stable identity, parent ownership, child order, one invalidation path, replacement semantics at virtual-method boundaries, and idempotent destruction. Do not use a closed <code>Box \| Text</code> variant, <code>Obj</code>, or a per-frame dispatch table. |
 | Constructor options object | Labelled arguments; a typed record only when the option group is reused or has a meaningful invariant. | Defaults, required values, validation, and distinction between omitted and explicit values. |
 | Mutable public property | Typed accessor and setter preserving the reference validation, clamping, equality/no-op, invalidation, and error behavior. Use <code>result</code> when the corresponding failure is part of the public contract or an explicitly documented OCaml boundary. | Dirty/layout/render-list invalidation and whether equal values avoid unnecessary work. |
-| <code>EventEmitter</code> | Owner-local typed event channels composed into the scene, renderer, render context, or component. | Synchronous registration-order dispatch, snapshot semantics, reentrancy, duplicate subscriptions, one-shot removal, callback exceptions, cleanup, and producer-owned scheduling. Keyboard priority, pointer propagation, queueing, and backpressure remain separate dispatch systems. |
+| <code>EventEmitter</code> | Owner-local typed event channels composed into the renderer, render context, or component. | Synchronous registration-order dispatch, snapshot semantics, reentrancy, duplicate subscriptions, one-shot removal, callback exceptions, cleanup, and producer-owned scheduling. Keyboard priority, pointer propagation, queueing, and backpressure remain separate dispatch systems. |
 | <code>null</code> or <code>undefined</code> | <code>option</code> for absence; a result or explicit variant when absence is an error or state. | Do not collapse “not supplied,” “cleared,” and “invalid.” |
 | <code>Promise</code>, microtask, or timer | Eio fiber, switch, clock, or deadline at the platform edge. | Cancellation, exception propagation, resource ownership, and whether the reference is actually asynchronous. |
 | <code>Uint8Array</code>, <code>Buffer</code>, or native pointer | <code>bytes</code>, Bigarray/Cstruct, or an abstract raw owner chosen by the lifetime contract. | Copy/borrow semantics, mutation, empty values, bounds, and close invalidation. |
@@ -311,7 +312,7 @@ Use the smallest OCaml mechanism that preserves the reference relationship.
 | Global registry or numeric handle | An owner-scoped abstract type and, at the ABI boundary, generation-checked tokens. | Cross-owner use, stale values, close order, and whether the numeric representation leaks. |
 | Catch-all exception handling | Structured errors at input/config/resource boundaries; callback exceptions may propagate when the API says they do. | Unexpected failures must not be converted into success or silently discarded. |
 | <code>RenderContext</code> / renderer reference | Explicit render-context capabilities retained by nodes; Eio capabilities remain at runtime/platform boundaries. | Preserve the explicit context parameter and keep parent/tree ownership separate from runtime capabilities. |
-| <code>requestRender()</code> | Dirty-state invalidation plus a coalesced future-frame request; distinct from an explicit <code>flush</code>/<code>present</code> operation. | Preserve continuous versus immediate scheduling, throttling, in-flight coalescing, output backpressure, cancellation, and control-state behavior. |
+| <code>requestRender()</code> | Dirty-state invalidation plus a coalesced future-frame request; distinct from an explicit renderer frame/presentation operation. | Preserve continuous versus immediate scheduling, throttling, in-flight coalescing, output backpressure, cancellation, and control-state behavior. |
 
 Do not introduce a manager, registry, wrapper, or compatibility layer merely to
 make a dynamic pattern look familiar. First try a narrow module and explicit
