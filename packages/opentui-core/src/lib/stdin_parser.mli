@@ -45,7 +45,8 @@ val buffer_capacity : t -> int
 
 val push :
   t -> source:Byte_queue.buffer -> off:int -> len:int -> (unit, error) result
-(** [push] copies and parses an integer Bigarray range. *)
+(** [push] copies and parses an integer Bigarray range. A zero-length range
+    emits one empty {!event} without changing pending protocol state. *)
 
 val push_chars :
   t ->
@@ -53,10 +54,12 @@ val push_chars :
   off:int ->
   len:int ->
   (unit, error) result
-(** [push_chars] is the character Bigarray variant of {!push}. *)
+(** [push_chars] is the character Bigarray variant of {!push}. A zero-length
+    range has the same behavior as {!push}. *)
 
 val push_bytes : t -> source:bytes -> off:int -> len:int -> (unit, error) result
-(** [push_bytes] is the [bytes] variant of {!push}. *)
+(** [push_bytes] is the [bytes] variant of {!push}. A zero-length range has the
+    same behavior as {!push}. *)
 
 val read : t -> event option
 (** [read parser] removes the oldest emitted event, if any. *)

@@ -158,6 +158,8 @@ let set_ground parser =
 let emit_key parser ~start ~end_exclusive =
   Queue.add (Key (copy_range parser ~start ~end_exclusive)) parser.events
 
+let emit_empty_key parser = Queue.add (Key Bytes.empty) parser.events
+
 let emit_sequence parser protocol ~start ~end_exclusive =
   Queue.add
     (Sequence { protocol; bytes = copy_range parser ~start ~end_exclusive })
@@ -586,6 +588,9 @@ let pump_pending parser =
 let push_with parser ~source_size ~get ~append ~off ~len =
   if not (valid_range ~size:source_size ~off ~len) then
     queue_error Byte_queue.Invalid_range
+  else if Int.equal len 0 then (
+    emit_empty_key parser;
+    Ok ())
   else
     let position = ref off in
     let end_exclusive = off + len in

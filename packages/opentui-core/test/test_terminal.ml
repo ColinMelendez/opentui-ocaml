@@ -629,6 +629,24 @@ let () =
                 (Bytes.equal bytes (Bytes.of_string "\x1b[M !\""))
           | Some _ -> fail "expected a CSI sequence"
           | None -> fail "expected an X10 CSI sequence");
+      test "empty pushes emit an empty key event" (fun () ->
+          let parser = parser_create () in
+          push_string parser "";
+          expect_key parser "";
+          expect_no_event parser;
+          push_string parser "";
+          push_string parser "A";
+          expect_key parser "";
+          expect_key parser "A";
+          expect_no_event parser;
+          push_string parser "\x1b";
+          equal int 1 (Parser.pending_bytes parser);
+          push_string parser "";
+          expect_key parser "";
+          equal int 1 (Parser.pending_bytes parser);
+          Parser.flush_timeout parser;
+          expect_key parser "\x1b";
+          expect_no_event parser);
       test "timeout flushes a lone escape and an incomplete sequence" (fun () ->
           let parser = parser_create () in
           push_string parser "\x1b";

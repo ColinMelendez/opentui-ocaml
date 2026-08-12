@@ -216,6 +216,25 @@ let () =
           | Input.Key { key = Opentui_core.Lib.Key_decoder.Character _; _ } ->
               ()
           | _ -> fail "complete input emitted the wrong event");
+      test "an empty push emits an empty key event" (fun () ->
+          let coordinator = expect_ok (Coordinator.create ()) in
+          let events, emit = sink () in
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:100L ~emit
+                  ~source:Bytes.empty ~off:0 ~len:0));
+          expect_deadline None (Coordinator.deadline coordinator);
+          match Queue.take events with
+          | Input.Key
+              {
+                key = Opentui_core.Lib.Key_decoder.Character bytes;
+                modifiers;
+              } ->
+              equal string "" (Bytes.to_string bytes);
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.shift;
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.meta;
+              equal bool false modifiers.Opentui_core.Lib.Key_decoder.ctrl
+          | _ -> fail "empty input emitted the wrong event");
       test "reports a precise prefix and preserves every blocked input byte" (fun () ->
           let coordinator = expect_ok (Coordinator.create ()) in
           let payload = Bytes.make 5000 'a' in

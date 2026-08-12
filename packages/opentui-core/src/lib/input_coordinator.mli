@@ -62,7 +62,8 @@ val push :
 (** [push coordinator ~now_ms ~emit ...] copies and parses an integer
     Bigarray source range, offering each decoded event to [emit]. It returns
     [Full_after 0] without consuming new source bytes if an earlier event is
-    still blocked. *)
+    still blocked. A zero-length range emits one empty key event after any
+    earlier blocked event is delivered. *)
 
 val push_chars :
   t ->

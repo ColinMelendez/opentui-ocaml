@@ -1,5 +1,6 @@
 # name<TAB>flush-timeout (0/1)<TAB>hex chunks separated by semicolons
 ascii	0	61
+empty-push	0	;61
 ascii-batch	0	616263
 utf8-split	0	c3;a9
 csi-arrow-split	0	1b;5b;41

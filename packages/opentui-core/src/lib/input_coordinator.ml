@@ -82,6 +82,13 @@ let accept_push coordinator ~now_ms ~emit ~source_size ~off ~len push_operation 
     match drain coordinator ~emit with
     | Full ->
         Ok (Full_after 0)
+    | Accepted when Int.equal len 0 ->
+        (match push_operation ~off ~len:0 with
+        | Error error -> Error (Parser_error error)
+        | Ok () ->
+            (match drain coordinator ~emit with
+            | Accepted -> Ok Accepted_all
+            | Full -> Ok (Full_after 0)))
     | Accepted ->
         let position = ref off in
         let end_exclusive = off + len in
