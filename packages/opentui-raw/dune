@@ -18,6 +18,10 @@
    -Lpackages/opentui-raw/native
    -lopentui
    -Wl,-rpath,@loader_path/native
+   -Wl,-rpath,@loader_path/../native
+   -Wl,-rpath,@loader_path/../../opentui-raw/native
    -Wl,-rpath,@loader_path/../packages/opentui-raw/native
    -Wl,-rpath,$ORIGIN/native
+   -Wl,-rpath,$ORIGIN/../native
+   -Wl,-rpath,$ORIGIN/../../opentui-raw/native
    -Wl,-rpath,$ORIGIN/../packages/opentui-raw/native)))

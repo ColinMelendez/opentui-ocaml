@@ -16,7 +16,7 @@
    ../native/libopentui.so))
  (c_library_flags
   (:standard
-   -L%{project_root}/packages/opentui-raw/native
+   -Lpackages/opentui-raw/native
    -lopentui
    -Wl,-rpath,@loader_path/../native
    -Wl,-rpath,$ORIGIN/../native)))
