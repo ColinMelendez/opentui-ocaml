@@ -159,6 +159,11 @@ The [event-system feature record](major-features/in-progress/event-system/featur
 defines the typed channel, renderer-context, lifecycle, keyboard, pointer, and
 input-boundary relationships that the translation table summarizes.
 
+The specialized dispatch contracts are recorded separately in the
+[keyboard-dispatch feature record](major-features/in-progress/keyboard-dispatch/feature.md)
+and the
+[pointer-dispatch feature record](major-features/in-progress/pointer-dispatch/feature.md).
+
 ## Contribution workflow
 
 The detailed translation rules, semantic decision checklist, and feature-porting
