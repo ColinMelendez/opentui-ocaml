@@ -1,25 +1,25 @@
 # Future performance optimization ideas
 
-Status: deferred design note, updated 2026-08-10.
+Scope: design candidates for allocation and zero-copy optimization.
 
-This document is a parking lot for allocation and zero-copy ideas. It is not
-an implementation commitment or a new phase gate. The copy-first paths already
-checked in remain the correctness reference while `opentui-core`, Lwd, and the
-widget layer are designed and debugged.
+This document does not define an API or an implementation gate. A copy-first
+path copies data at ownership boundaries instead of borrowing storage across
+them. Those paths are the correctness reference, and an optimization must
+preserve their observable behavior before it becomes a replacement.
 
-That separation is intentional. A pool, lease, or native view can reduce
+The separation is required because a pool, lease, or native view can reduce
 allocation, but it also creates lifetime, exhaustion, cancellation, and
 cross-fiber failure modes. Higher-level bugs should be diagnosable without
 having to determine whether a bespoke memory-management scheme corrupted the
-state first.
+state before the higher-level failure occurred.
 
-## Current reference path
+## Copy-first reference path
 
-| Path | Current behavior | What it tells us |
+| Path | Reference behavior | What it tells us |
 | --- | --- | --- |
 | Terminal input | `opentui-core.Platform.Eio_runtime.Input_flow` reuses one `Cstruct.t` and one character `Bigarray` view. The coordinator offers decoded events synchronously to a caller-owned sink, bounds direct pushes to 4096-byte parser chunks, retains at most one blocked decoded event plus the parser's current chunk, and keeps an unread Eio suffix in the same reusable buffer. Emitted event payloads are owned. | The Eio read loop has no intermediate `Bytes` staging buffer or unbounded coordinator backlog. The remaining copies are deliberate ownership boundaries; an `Event_queue` sink supplies explicit backpressure and coalescing. |
 | Native output | `opentui-core.Renderer.Frame` writes resolved characters into caller-owned `bytes`. `Platform.Eio_runtime.Output_flow.write_subbytes` validates and writes only the returned range. | Output is bounded and safe, but the Eio sink path still has a copy-first `Bytes`-to-`Cstruct` conversion. |
-| Frame mutation | `set_cell` crosses the FFI one cell at a time, constructs a six-field tuple, and converts each color into a fresh four-field tuple. | The frame profile's OCaml allocation is currently more obviously exposed here than in the output sink. Direct byte transport alone will not solve it. |
+| Frame mutation | `set_cell` crosses the FFI one cell at a time, constructs a six-field tuple, and converts each color into a fresh four-field tuple. | The frame profile exposes more OCaml allocation here than in the output sink. Direct byte transport alone will not solve it. |
 | Native-owned storage | Optimized-buffer arrays and span-feed chunks remain native-owned and are not exposed as naked Bigarrays or Cstructs. | Resize, destruction, release, and renderer ownership remain explicit instead of being hidden behind a view that could outlive its owner. |
 
 The latest local profile is diagnostic rather than a performance gate. One run
@@ -29,7 +29,7 @@ minor words for 32,768 CSI-up input events, and zero OCaml minor words for
 `Gc` counters cover the OCaml heap only; Bigarray, Cstruct, native, and system
 allocator activity is not represented by those counters.
 
-## Rules for future work
+## Rules for optimization work
 
 1. Keep a simple copy-first implementation as the behavioral reference while
    an optimization is being evaluated. This is a test and diagnostic reference,
@@ -53,11 +53,11 @@ allocator activity is not represented by those counters.
 
 ## Candidate A: direct caller-owned output
 
-If a later profile identifies output handoff as material, this is the
+If a profile identifies output handoff as material, this is the
 lowest-lifetime-risk spike because the borrow can remain synchronous. It is not
-a current priority or a claim that the renderer-to-scratch copy disappears:
+a claim that the renderer-to-scratch copy disappears:
 the native renderer still copies resolved characters from its native storage
-into the caller-owned Bigarray. The intended win is to remove the later
+into the caller-owned Bigarray. The intended win is to remove the subsequent
 `Bytes`-to-`Cstruct` materialization and any avoidable descriptor/allocation at
 the Eio sink boundary.
 
@@ -65,13 +65,13 @@ the Eio sink boundary.
    caller-owned one-dimensional character `Bigarray`, returning the exact
    count written. Keep the native package independent of Eio and Cstruct.
 2. Add a narrow `Renderer.Frame` composition function for that buffer. It must
-   retain the current frame-token checks and all-or-nothing capacity behavior.
+   retain the existing frame-token checks and all-or-nothing capacity behavior.
 3. Add `Output_flow.write_cstruct` for a caller-owned Cstruct view. At the Eio
    boundary, construct a view over the same Bigarray rather than converting
    through `Bytes`.
 4. Compare this path with the existing bytes/subrange path for payload copies,
    view construction, minor/major words, and frame latency. Do not call the
-   path zero-copy from the native renderer unless a later design actually
+   path zero-copy from the native renderer unless a design actually
    removes that native-to-caller copy.
 
 Acceptance requires exact-prefix output, no trailing scratch bytes, structured
@@ -108,7 +108,7 @@ preferable to an unbounded pool or an implicit lifetime extension.
 
 ## Candidate C: batch frame mutations
 
-The current per-cell FFI tuple is a likely allocation hotspot. The higher-level
+The per-cell FFI tuple is a likely allocation hotspot. The higher-level
 fix should be a rendering contract, not a generic allocator. Candidates include
 reusable command storage, a bounded batch of cell mutations, native text/fill
 operations, and dirty-region submission.
@@ -135,9 +135,9 @@ but they have stronger lifetime hazards than caller-owned scratch storage.
 - A reservation needs explicit commit and cancel, including close behavior
   while a reservation is active.
 - A cell-buffer view must account for resize reallocating the native SoA arrays.
-  The first safe choices are a scoped borrow that blocks resize/destroy, stable
+  Safe choices include a scoped borrow that blocks resize/destroy, stable
   storage with deferred reclamation, or an intentional snapshot copy.
-- The current native feed backend stages a complete frame before `writeAtomic`;
+- The native feed backend stages a complete frame before `writeAtomic`;
   using reservations for renderer output would require a chunk-aware frame
   writer as well as an OCaml view API.
 
@@ -170,13 +170,13 @@ allocation or latency on representative and adversarial input.
 Faraday could be useful for larger composed terminal output, especially if the
 sink can consume several output segments with a vectorized write. It is less
 compelling for the short mode-transition sequences or the native renderer's
-caller-owned output buffer. The first output optimization remains the narrower
+caller-owned output buffer. The output optimization remains the narrower
 ownership and Bigarray/Cstruct seam in Candidate A; introducing Faraday would
-not by itself remove the renderer's native-to-caller copy. If Faraday is later
+not by itself remove the renderer's native-to-caller copy. If Faraday is
 adopted, keep it behind the output package and leave pure `Terminal_modes`
 transitions independent of the Eio writer.
 
-An evaluation of either library must compare against the current path for
+An evaluation of either library must compare against the copy-first path for
 minor and major words, retained bytes, parser and output latency, and native or
 sink call volume. It must additionally prove byte-for-byte output ordering,
 short-write handling, no input loss under backpressure, no unbounded temporary
@@ -186,7 +186,7 @@ ownership failures harder to diagnose.
 
 ## Suggested order when we return to this
 
-1. Stabilize and debug the imperative retained-core contracts using the current
+1. Stabilize and debug the imperative retained-core contracts using the
    copy-first paths.
 2. Compare the existing profile across supported compiler, host, and native
    artifact combinations.

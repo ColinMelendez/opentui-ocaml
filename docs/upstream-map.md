@@ -1,94 +1,98 @@
-# OpenTUI correspondence map
+# OpenTUI source correspondence map
 
-This is the navigation index between the pinned upstream source and this
-repository. The upstream revision is the submodule revision recorded by Git
-under `vendor/opentui`.
+This file maps the reference OpenTUI source in `vendor/opentui` to the OCaml
+source in this repository. In this document, “reference package” means a
+directory under `vendor/opentui/packages`, and “reference path” means a file or
+directory under one of those packages.
 
-When a contributor finds a path under `vendor/opentui/packages/*/src`, use the
-tables below before opening an issue or adding a new abstraction. A status of
-`deferred` or `not applicable` is an intentional answer; it does not imply
-that a same-named placeholder should be created.
+Use this map when a contributor finds a feature in the reference source. The
+OCaml location may be a direct path, an adapter package, or an explicitly
+unimplemented location. A missing OCaml file is intentional when the status is
+`deferred` or `not applicable`.
 
 ## Statuses
 
-- **implemented** — an OCaml implementation and behavior tests exist;
-- **partial** — the path has a deliberately smaller first slice;
-- **adapter** — the behavior is provided by an OCaml-specific boundary;
-- **deferred** — planned, but not part of the current implementation gate;
-- **not applicable** — tied to a JavaScript, browser, audio, or other runtime
-  outside this project's scope.
+- **implemented** — the corresponding OCaml behavior and tests exist;
+- **partial** — an identified subset of the reference behavior exists;
+- **adapter** — an OCaml-specific boundary supplies the behavior or ownership
+  model;
+- **deferred** — no OCaml implementation is part of the documented API;
+- **not applicable** — the reference feature depends on a runtime outside the
+  terminal-only OCaml target.
 
-## Upstream packages
+## Reference packages
 
-| Upstream package | OCaml location | Status and explanation |
+| Reference package or path | Repository-relative OCaml location | Status and explanation |
 | --- | --- | --- |
-| `packages/core` | `packages/opentui-core/src` | The primary source-path mirror. |
-| `packages/core` native ABI under `src/zig`, `buffer.ts`, and `NativeSpanFeed.ts` | `packages/opentui-raw` | adapter; the C/Zig ownership seam is intentionally separate from the public core tree. |
-| `packages/keymap` | `opentui-core/src/lib/keymap` when implemented | deferred; no public OCaml module yet. |
-| `packages/react` | `opentui-lwd` | deferred; Lwd replaces the React reconciler role. |
-| `packages/solid` | `opentui-lwd` | deferred; Lwd replaces the Solid reconciler role. |
-| `packages/examples` | `examples/` | partial; direct renderable examples are present. |
-| `packages/qrcode` | none | deferred until the core image/rendering contract exists. |
-| `packages/ssh` | none | not applicable to the current core target. |
-| `packages/three` | none | not applicable to the terminal-only target. |
-| `packages/web` | none | not applicable to the native terminal target. |
+| `packages/core` | `packages/opentui-core/src` | partial; the OCaml source follows the core source directories and implements the mapped subset. |
+| `packages/core/src/zig`, `buffer.ts`, `NativeSpanFeed.ts` | `packages/opentui-raw` | adapter; C/Zig calls, ABI validation, and foreign lifetimes are separate from the retained UI API. |
+| `packages/keymap` | `packages/opentui-core/src/lib/keymap` | deferred; no corresponding module is present. |
+| `packages/react` | no OCaml package | deferred; an Lwd package would provide the reconciler role without copying React's runtime. |
+| `packages/solid` | no OCaml package | deferred; an Lwd package would provide the reconciler role without copying Solid's runtime. |
+| `packages/examples` | `examples/` | partial; the direct Box/Text example covers retained renderable construction and output. |
+| `packages/qrcode` | no OCaml package | deferred; the image/rendering ownership contract is not defined. |
+| `packages/ssh` | no OCaml package | not applicable to the terminal UI library. |
+| `packages/three` | no OCaml package | not applicable to the terminal UI library. |
+| `packages/web` | no OCaml package | not applicable to the native terminal UI library. |
 
 ## `packages/core/src`
 
-| Upstream path | OCaml path | Status | Notes |
+| Reference path | Repository-relative OCaml path | Status | Notes |
 | --- | --- | --- | --- |
-| `Renderable.ts` | `opentui-core/src/scene.ml` and retained renderable modules | partial | Persistent identity and ownership exist; the TypeScript class hierarchy is replaced by composition. |
-| `renderer.ts` | `opentui-core/src/renderer.ml` | partial | Native frame lifecycle exists; the integrated Eio CLI renderer is the next reviewed increment. |
-| `yoga.ts` | `opentui-core/src/yoga.ml` | partial | Owner-scoped Yoga tree and fixed dimensions/padding are implemented. |
-| `buffer.ts` | `opentui-raw/buffer.ml` | adapter | Cell storage stays native; the raw package exposes checked operations rather than a copied OCaml grid. |
-| `NativeSpanFeed.ts` | `opentui-raw/span_feed.ml` | adapter | Current seam uses copied payloads and explicit release/cancel ownership. |
-| `renderables/Box.ts` | `opentui-core/src/renderables/box.ml` | partial | Fill, border, layout participation, and typed properties exist. |
-| `renderables/Text.ts` | `opentui-core/src/renderables/text.ml` | partial | Copied plain text exists; styled and nested text remain deferred. |
-| `renderables/TextNode.ts` | `opentui-core/src/renderables/text_node.ml` | deferred | No placeholder module is present. |
-| `renderables/TextBufferRenderable.ts` | `opentui-core/src/renderables/text_buffer.ml` | deferred | Depends on the text-buffer contract. |
-| `renderables/EditBufferRenderable.ts` | `opentui-core/src/renderables/edit_buffer.ml` | deferred | The OCaml state/event relationship must be designed before implementation. |
-| `renderables/FrameBuffer.ts` | `opentui-core/src/renderables/frame_buffer.ml` | deferred | Requires a stable public buffer/view contract. |
-| `renderables/Input.ts` | `opentui-core/src/renderables/input.ml` | deferred | Direct control family, no Lwd dependency implied. |
-| `renderables/Textarea.ts` | `opentui-core/src/renderables/textarea.ml` | deferred | Direct control family. |
-| `renderables/Select.ts` | `opentui-core/src/renderables/select.ml` | deferred | Direct control family. |
-| `renderables/ScrollBox.ts` | `opentui-core/src/renderables/scroll_box.ml` | deferred | Direct control family. |
-| `renderables/Slider.ts` | `opentui-core/src/renderables/slider.ml` | deferred | Direct control family. |
-| `renderables/TabSelect.ts` | `opentui-core/src/renderables/tab_select.ml` | deferred | Direct control family. |
-| `renderables/ScrollBar.ts` | `opentui-core/src/renderables/scroll_bar.ml` | deferred | Direct control family. |
-| `renderables/Code.ts`, `Diff.ts`, `Markdown.ts`, `TextTable.ts` | matching files under `opentui-core/src/renderables` | deferred | Content renderables are ported after foundational text behavior. |
-| `renderables/Image.ts`, `ASCIIFont.ts` | matching files under `opentui-core/src/renderables` | deferred | Requires a deliberate image/font boundary. |
-| `renderables/composition/*` | `opentui-core/src/renderables/composition` | deferred | Optional convenience layer; it must not create a second identity tree. |
-| `lib/stdin-parser.ts` | `opentui-core/src/lib/stdin_parser.ml` | implemented | Incremental framing with bounded, owned events. |
-| `lib/parse.keypress.ts` | `opentui-core/src/lib/key_decoder.ml` | partial | Common key semantics are implemented; unknown sequences remain opaque. |
-| `lib/parse.mouse.ts` | `opentui-core/src/lib/mouse_decoder.ml` | partial | SGR/X10 mouse semantics and button tracking are implemented. |
-| `lib/queue.ts` | `opentui-core/src/lib/byte_queue.ml` and `event_queue.ml` | adapter | Byte storage and bounded event handoff are separate explicit queues. |
-| `lib/paste.ts` | `opentui-core/src/lib/stdin_parser.ml` | partial | Bracketed paste framing is owned by the parser. |
-| `lib/clock.ts` | `opentui-core/src/platform/eio_runtime` | adapter | Eio monotonic time supplies runtime deadlines. |
-| `lib/terminal-*`, `ansi.ts` | `opentui-core/src/lib/terminal_modes.ml` and terminal modules | partial | Pure mode descriptions are separated from Eio writes. |
-| `platform/*` | `opentui-core/src/platform` | adapter | Eio flow and Unix terminal policy live here. |
-| `post/*` | matching files under `opentui-core/src/post` | deferred | No post-processing contract yet. |
-| `animation/*` | matching files under `opentui-core/src/animation` | deferred | No animation scheduler yet. |
-| `plugins/*` | matching files under `opentui-core/src/plugins` | deferred | No plugin registry contract yet. |
-| `audio*` | matching files under `opentui-core/src/audio*` | not applicable | Outside the current terminal UI target. |
-| `image.ts` | `opentui-core/src/image.ml` | deferred | Requires a native/image ownership decision. |
-| `text-buffer.ts`, `text-buffer-view.ts`, `edit-buffer.ts`, `editor-view.ts` | matching files under `opentui-core/src` | deferred | Editor and buffer semantics are intentionally not guessed. |
+| `Renderable.ts` | `packages/opentui-core/src/scene.ml` and `packages/opentui-core/src/renderables/` | partial | `Scene` owns the retained UI tree; the TypeScript class hierarchy is represented by composition. |
+| `renderer.ts` | `packages/opentui-core/src/renderer.ml` | partial | The native frame lifecycle exists; terminal application policy is composed by the caller. |
+| `yoga.ts` | `packages/opentui-core/src/yoga.ml` | partial | Owner-scoped Yoga layout tree with fixed dimensions and padding. |
+| `buffer.ts` | `packages/opentui-raw/buffer.ml` | adapter | Cell storage remains native; checked operations cross the ABI instead of exposing an OCaml grid. |
+| `NativeSpanFeed.ts` | `packages/opentui-raw/span_feed.ml` | adapter | Payloads are copied and release/cancel ownership is explicit. |
+| `renderables/Box.ts` | `packages/opentui-core/src/renderables/box.ml` | partial | Fill, border, layout participation, and typed properties. |
+| `renderables/Text.ts` | `packages/opentui-core/src/renderables/text.ml` | partial | Copied plain text; styled and nested text are not part of the documented API. |
+| `renderables/TextNode.ts` | `packages/opentui-core/src/renderables/text_node.ml` | deferred | No module is present. |
+| `renderables/TextBufferRenderable.ts` | `packages/opentui-core/src/renderables/text_buffer.ml` | deferred | Requires a defined text-buffer contract. |
+| `renderables/EditBufferRenderable.ts` | `packages/opentui-core/src/renderables/edit_buffer.ml` | deferred | Requires a defined OCaml state and event ownership model. |
+| `renderables/FrameBuffer.ts` | `packages/opentui-core/src/renderables/frame_buffer.ml` | deferred | Requires a stable public buffer/view contract. |
+| `renderables/Input.ts` | `packages/opentui-core/src/renderables/input.ml` | deferred | Direct control API is not present. |
+| `renderables/Textarea.ts` | `packages/opentui-core/src/renderables/textarea.ml` | deferred | Direct control API is not present. |
+| `renderables/Select.ts` | `packages/opentui-core/src/renderables/select.ml` | deferred | Direct control API is not present. |
+| `renderables/ScrollBox.ts` | `packages/opentui-core/src/renderables/scroll_box.ml` | deferred | Direct control API is not present. |
+| `renderables/Slider.ts` | `packages/opentui-core/src/renderables/slider.ml` | deferred | Direct control API is not present. |
+| `renderables/TabSelect.ts` | `packages/opentui-core/src/renderables/tab_select.ml` | deferred | Direct control API is not present. |
+| `renderables/ScrollBar.ts` | `packages/opentui-core/src/renderables/scroll_bar.ml` | deferred | Direct control API is not present. |
+| `renderables/Code.ts`, `Diff.ts`, `Markdown.ts`, `TextTable.ts` | matching paths under `packages/opentui-core/src/renderables` | deferred | Content renderables require a broader text contract. |
+| `renderables/Image.ts`, `ASCIIFont.ts` | matching paths under `packages/opentui-core/src/renderables` | deferred | Image and font ownership is not defined. |
+| `renderables/composition/*` | `packages/opentui-core/src/renderables/composition` | deferred | A convenience layer must use the retained node identity rather than create another tree. |
+| `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` | implemented | Incremental framing with bounded, owned events. |
+| `lib/parse.keypress.ts` | `packages/opentui-core/src/lib/key_decoder.ml` | partial | Common key semantics; unknown sequences remain opaque. |
+| `lib/parse.mouse.ts` | `packages/opentui-core/src/lib/mouse_decoder.ml` | partial | SGR/X10 mouse semantics and button tracking. |
+| `lib/queue.ts` | `packages/opentui-core/src/lib/byte_queue.ml` and `event_queue.ml` | adapter | Byte storage and bounded event handoff are separate explicit queues. |
+| `lib/paste.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` | partial | Bracketed paste framing belongs to the parser. |
+| `lib/clock.ts` | `packages/opentui-core/src/platform/eio_runtime` | adapter | Eio monotonic time supplies runtime deadlines. |
+| `lib/terminal-*`, `ansi.ts` | `packages/opentui-core/src/lib/terminal_modes.ml` and terminal modules | partial | Pure mode descriptions are separate from Eio writes. |
+| `platform/eio` | `packages/opentui-core/src/platform/eio_runtime` | adapter | The directory name avoids shadowing the external `Eio` module under Dune qualified subdirectories. |
+| `platform/unix` | `packages/opentui-core/src/platform/eio_unix_runtime` | adapter | The directory name avoids shadowing the external `Unix` module under Dune qualified subdirectories. |
+| `platform/*` | `packages/opentui-core/src/platform` | adapter | Eio flow and Unix terminal policy. The specific directory mappings above define the OCaml names. |
+| `post/*` | matching paths under `packages/opentui-core/src/post` | deferred | No post-processing contract is present. |
+| `animation/*` | matching paths under `packages/opentui-core/src/animation` | deferred | No animation scheduler is present. |
+| `plugins/*` | matching paths under `packages/opentui-core/src/plugins` | deferred | No plugin contract is present. |
+| `audio*` | matching paths under `packages/opentui-core/src/audio*` | not applicable | Outside the terminal UI target. |
+| `image.ts` | `packages/opentui-core/src/image.ml` | deferred | Requires a native image ownership decision. |
+| `text-buffer.ts`, `text-buffer-view.ts`, `edit-buffer.ts`, `editor-view.ts` | matching paths under `packages/opentui-core/src` | deferred | Editor and buffer semantics are not present. |
 | `testing/*` | `test/` and `reference/` | adapter | Windtrap, Cram, and reference runners provide OCaml test infrastructure. |
 | `benchmark/*` | `bench/` and `reference/` | adapter | OCaml benchmarks and comparative runners live outside the library. |
 
 ## Translation rules
 
-These rules apply whenever an upstream path has a JavaScript relationship that
-does not translate literally:
+These rules apply when a reference relationship does not have a literal OCaml
+equivalent:
 
 | TypeScript relationship | OCaml rule |
 | --- | --- |
-| Inheritance between renderables | Compose an abstract retained node with a typed renderable module. |
-| `EventEmitter` base behavior | Use typed event values and explicit cleanup owned by the scene/runtime scope. |
+| Inheritance between renderables | Compose a retained node with a typed renderable module. |
+| `EventEmitter` base behavior | Use typed event values and cleanup owned by the scene or runtime scope. |
 | Mutable option/property bags | Use labelled constructors, typed setters, and explicit clear operations. |
 | Ambient renderer lookup | Pass the renderer, scene, parent, or Eio capability explicitly. |
 | Promise/timer scheduling | Use Eio fibers and clocks at the platform boundary. |
-| React/Solid host reconciliation | Bind Lwd values to existing retained nodes; do not create a second mandatory tree. |
+| React/Solid host reconciliation | Bind Lwd values to existing retained nodes; do not create a second required tree. |
 
-Every non-literal translation needs a map entry, an invariant, and a test
-whose observable behavior can be compared with the reference where that is
-meaningful.
+Every non-literal translation needs a map entry, an ownership invariant, and a
+test whose observable behavior can be compared with the reference when that
+comparison is meaningful.

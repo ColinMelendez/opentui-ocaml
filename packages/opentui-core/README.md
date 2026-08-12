@@ -1,34 +1,56 @@
 # opentui-core
 
-This is the Eio-native public OpenTUI package. Its source tree mirrors the
-upstream `packages/core/src` tree. A `Scene` owns one native renderer and one
-Yoga tree. Its root and descendants have persistent opaque node values with
-stable integer identities; ordinary text and dimension updates mutate those
-nodes instead of rebuilding the tree.
+`opentui-core` is the user-facing OCaml library for terminal UI programs. It
+uses Eio for terminal resource lifetime and I/O, and it uses `opentui-raw` for
+checked calls to the Zig renderer. The source directories correspond to
+`vendor/opentui/packages/core/src`, the matching directory in the reference
+OpenTUI source tree.
 
-The initial vertical slice intentionally stays small:
+## Scene and renderables
 
-- fixed-size Box and Text renderables;
-- owner-scoped creation and recursive teardown;
-- layout calculation before each required frame;
-- dirty tracking with one controlled `flush` boundary;
-- caller-owned resolved-output bytes, with the sink left to the runtime layer;
-- synthetic pointer hit-testing and target-to-parent propagation; and
-- structured closed, destroyed, layout, and native errors.
+A scene is the owner of a retained UI tree. It owns a renderer and a Yoga
+layout tree, and it keeps each attached node alive until that node is
+destroyed. Yoga is the layout engine that calculates node positions and
+dimensions. A retained node has a stable identity, so changing text,
+dimensions, colors, or border properties updates the existing node instead of
+constructing a replacement.
 
-The typed `Scene.Box` and `Scene.Text` modules are the first direct
-OpenTUI-shaped renderable surface. They share the common `Scene.Node` identity
-and ownership model, so property updates do not recreate the retained nodes.
-The executable example in [`../../examples/README.md`](../../examples/README.md)
-shows the intended caller path and output contract.
+The public scene API provides:
 
-`Scene.flush` skips a clean scene unless the caller passes `force:true`. A
-rendered result reports the defined output prefix; the caller can pass that
-prefix to `Platform.Eio_runtime.Output_flow`. A failed frame remains dirty so a
-caller can diagnose or retry it through the same boundary.
+- `Scene.create` and `Scene.root` for creating a tree and obtaining its root;
+- `Scene.Box` for a filled or bordered rectangular container;
+- `Scene.Text` for copied plain text with colors and attributes;
+- `Scene.Node` for child ordering, dimensions, destruction, and pointer handlers;
+- `Scene.flush` for layout calculation and output into caller-owned `bytes`; and
+- `Scene.dispatch_pointer` for hit-testing and target-to-parent propagation.
 
-The low-level `Lib` and `Platform` modules are part of this same package. The
-package owns their Eio-native terminal runtime building blocks, but the first
-integrated CLI renderer/runtime is still a subsequent increment. Rich Yoga
-styles, custom native renderables, focus, keyboard routing, keyed child
-reconciliation, Lwd, and widgets are also subsequent increments.
+`Scene.flush` is the frame boundary. It skips an unchanged scene unless
+`force:true` is supplied. A rendered result reports the defined prefix of the
+caller-owned output buffer. `Platform.Eio_runtime.Output_flow` can write that
+prefix to an Eio output flow. A failed frame leaves the scene dirty so the
+caller can inspect the error or retry the operation.
+
+The example in [`../../examples/README.md`](../../examples/README.md) shows a
+Box containing Text, two property updates, and the resulting frame output.
+
+## Terminal modules
+
+`Lib` contains the terminal protocol, input decoding, mode descriptions, and
+bounded event handoff modules. `Platform.Eio_runtime` contains Eio flow,
+wakeup, output, and dispatch modules. `Platform.Eio_unix_runtime` contains
+Unix terminal-size, signal, and termios-session modules. These modules expose
+the building blocks needed to compose an application runtime; this package
+does not provide a single implicit application loop.
+
+Lwd is the OCaml incremental-computation library intended for reactive UI
+bindings. It is not a dependency of `opentui-core`. The documented
+`opentui-core` API does not include the following features:
+
+- styled or nested text beyond the plain `Text` renderable;
+- the remaining OpenTUI renderables and direct controls;
+- editor buffers, image/audio support, or post-processing;
+- an Lwd reactive binding package; or
+- widget-level focus and keyboard-routing policy.
+
+The source location and status of each omitted reference feature are listed in
+the [source correspondence map](../../docs/upstream-map.md).

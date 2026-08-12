@@ -1,66 +1,66 @@
-# Current plan
+# Implementation plan
 
-Status: structure established; review gate, 2026-08-11.
+This plan records the implementation order for the OCaml OpenTUI library. The
+reference source is `vendor/opentui`; package boundaries and terminology are
+defined in [`docs/architecture.md`](docs/architecture.md). The [source
+correspondence map](docs/upstream-map.md) identifies the OCaml location of
+each reference feature.
 
-The project follows the pinned OpenTUI source tree. Read
-[`docs/architecture.md`](docs/architecture.md) for the package and effect
-model, and [`docs/upstream-map.md`](docs/upstream-map.md) to locate an OCaml
-counterpart for an upstream path.
+## Implemented units
 
-## Completed
-
-- the Dune monorepo, Nix development environment, and pinned OpenTUI source;
-- the audited Zig/C ABI and native link seam in `opentui-raw`;
-- the raw renderer, Yoga, output-feed, capability, and event ownership slices;
-- the retained `Scene` identity, layout, flush, pointer, and teardown slice;
+- the Dune monorepo, Nix development environment, and fixed OpenTUI reference source;
+- the audited Zig/C ABI and native link boundary in `opentui-raw`;
+- the raw renderer, Yoga, output-feed, capability, and event ownership modules;
+- retained `Scene` identity, layout, flush, pointer, and teardown behavior;
 - direct `Box` and plain `Text` renderables with deterministic examples;
 - incremental terminal framing, key/mouse decoding, mode descriptions, and
   bounded event handoff;
 - Eio flow/output/wakeup/dispatch and Unix terminal-session building blocks;
-- movement of those implementations into the mirrored
-  `opentui-core/src/lib` and `opentui-core/src/platform` tree.
+- those implementations located in the corresponding
+  `opentui-core/src/lib` and `opentui-core/src/platform` directories.
 
-## Current gate: review the structure
+## Package structure decisions
 
-Before implementing more renderables, review:
+- `opentui-core` is the Eio-native public package for the retained UI tree,
+  renderables, terminal protocols, and terminal platform modules.
+- `opentui-raw` is the separate C/Zig ABI package. It owns foreign handles,
+  ABI validation, and native resource lifetimes.
+- Every implemented feature has a repository-relative entry in the source
+  correspondence map.
+- TypeScript inheritance, event emitters, ambient context, and reconciliation
+  are represented by the translation rules in the architecture document.
+- Historical design documents live under `docs/archive/` and do not define the
+  active package contract.
 
-1. whether `opentui-core` is the right single Eio-native public package;
-2. whether every current implementation is findable from its upstream path;
-3. whether the translation rules for inheritance, events, ownership, and
-   reconciliation are clear enough for contributors;
-4. whether the `opentui-raw` exception is understandable and remains narrow;
-5. whether the archived design documents should be retained, shortened, or
-   replaced with focused notes.
+## Implementation unit: integrated Eio terminal runtime
 
-## Next implementation gate, after review
-
-Add the smallest integrated Eio-native CLI renderer/runtime under the mirrored
-`opentui-core/src/renderer` and `src/platform` concepts. It should compose the
-existing scene, input, output, resize, and terminal-session modules rather
-than introduce parallel ownership or parsing abstractions.
+Compose the existing scene, input, output, resize, and terminal-session
+modules into an Eio-native terminal runtime under the corresponding
+`opentui-core/src/renderer` and `src/platform` concepts. The runtime must not
+introduce a second parser, scene, or renderer.
 
 Acceptance criteria:
 
 - one Eio switch owns terminal setup, input, output, and restoration;
-- a basic Box/Text app can enter the alternate screen, render, accept a key,
-  and restore terminal state on normal and exceptional exit;
+- a Box/Text app can enter the alternate screen, render, accept a key, and
+  restore terminal state on normal and exceptional exit;
 - resize events reach the scene without dropping lossless input;
 - the runtime has a deterministic non-PTY test seam and a host-gated PTY
   acceptance test;
-- the upstream correspondence map is updated for every new module;
-- no Lwd, widgets, editor, or convenience composition layer is required by
-  the first runtime.
+- the source correspondence map is updated for every new module;
+- the runtime has no dependency on Lwd, widgets, editor buffers, or a
+  convenience composition layer.
 
-## Later gates
+## Following implementation units
 
 - foundational styled/nested text and layout properties;
 - remaining direct renderables and controls in mirrored `src/renderables`
   paths;
 - optional `src/renderables/composition` convenience layer;
-- Lwd bindings over the retained tree;
+- Lwd bindings over the retained tree; and
 - measured allocation and comparative behavior/performance work for each
   feature family.
 
-Deferred zero-copy and bespoke memory-management ideas remain in
-[`future-performance.md`](future-performance.md). They are not prerequisites
-for this structural review or for the first integrated runtime.
+Zero-copy and bespoke memory-management candidates are documented in
+[`future-performance.md`](future-performance.md). They are separate from the
+correctness work in the structural review and terminal-runtime units.
