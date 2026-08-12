@@ -1,0 +1,400 @@
+# Contributing: Porting OpenTUI to OCaml
+
+This repository ports the terminal UI library in <code>vendor/opentui</code> to
+OCaml. The checked-out reference source is the source used for behavior, source
+placement, and design decisions; its pinned revision and native build
+requirements are recorded in [<code>vendor/README.md</code>](vendor/README.md).
+
+The port has two goals:
+
+1. A contributor who finds a feature in the reference repository should be
+   able to find the corresponding OCaml feature by following the same package
+   and source directory.
+2. The OCaml feature should make the same observable semantic choices as the
+   reference feature: ordering, ownership, limits, timing, error behavior,
+   and lifecycle. TypeScript syntax, JavaScript inheritance, and Node.js I/O
+   are translated where OCaml and Eio require different mechanisms.
+
+This document is the working guide for that translation. The
+[source correspondence map](docs/upstream-map.md) is the path index, and
+the [architecture document](docs/architecture.md) defines the package and
+effect boundaries. If a reference path is not in the map, add it before or
+with the implementation.
+
+## The porting rule
+
+Mirror the reference feature first. Translate only the mechanism that cannot
+be carried over literally.
+
+For every feature, preserve this relationship:
+
+    reference package/path  ->  OCaml package/path  ->  same observable contract
+
+The source path is part of the contributor interface. Do not move a feature to
+an attractive general-purpose module merely because the OCaml implementation
+would be convenient there. Keep the reference directory name and use the
+lowercase, underscore-separated OCaml filename when the language requires a
+different filename. Record any material exception in
+[<code>docs/upstream-map.md</code>](docs/upstream-map.md).
+
+The reference implementation is not a line-by-line OCaml template. It is the
+behavioral and architectural reference. A necessary translation may replace
+class inheritance with composition, an event emitter with typed callbacks, or
+JavaScript scheduling with Eio. Such a translation must retain the ownership,
+ordering, lifetime, and error behavior that callers can observe.
+
+Do not add placeholder modules for features marked <code>deferred</code> or
+<code>not applicable</code>. A deferred feature has a map entry and no
+speculative API until its contract and package owner are defined.
+
+## Where a feature belongs
+
+Use the following placement rules before creating a file.
+
+| Reference location | OCaml location | Placement rule |
+| --- | --- | --- |
+| <code>vendor/opentui/packages/core/src/&lt;path&gt;</code> | <code>packages/opentui-core/src/&lt;path&gt;</code> | Preserve the source subdirectory. Translate only the filename/module syntax or an explicitly mapped platform name. |
+| <code>vendor/opentui/packages/core/src/zig</code>, <code>buffer.ts</code>, or <code>NativeSpanFeed.ts</code> | <code>packages/opentui-raw</code> | Keep ABI calls, native pointers, handle validation, and foreign lifetimes below <code>opentui-core</code>. |
+| Reference core tests | <code>packages/opentui-core/test</code> | Keep tests with the package they validate. Use the reference path in the test name or source-map row when the Dune layout differs. |
+| Reference examples for the core API | <code>packages/opentui-core/examples</code> | Keep executable examples and their Cram transcripts with the API they demonstrate. |
+| Reference core benchmarks | <code>packages/opentui-core/bench</code> | Keep workloads, allocation checks, and tracing entry points with the package they measure. |
+| ABI and native-link tests | <code>packages/opentui-raw/test</code> | Test the foreign boundary where its handles and link rules are owned. |
+| Cross-package architecture, mapping, and performance policy | repository root <code>docs/</code> and <code>future-performance.md</code> | Keep documents that describe both packages or the whole port at repository level. |
+
+The package boundary is not a reason to lose source correspondence. It is the
+explicit exception for the native seam: a reader following the reference
+renderer into Zig should arrive at <code>opentui-raw</code>, while a reader
+following a core renderable, parser, or platform module should arrive at the
+analogous <code>opentui-core/src</code> path.
+
+## Major architectural translations
+
+The following table is the short architectural map. The full list of paths
+and statuses is in the [source correspondence map](docs/upstream-map.md).
+
+| Reference feature | OCaml feature | Contract that must remain stable |
+| --- | --- | --- |
+| <code>core/src/Renderable.ts</code> | <code>opentui-core/src/scene.ml</code> and <code>src/renderables/</code> | Nodes have stable identity, parent/child order, dirty state, layout participation, and explicit destruction. |
+| <code>core/src/renderer.ts</code> | <code>opentui-core/src/renderer.ml</code>, <code>src/scene.ml</code>, and <code>src/platform/</code> | A frame has one owner and one presentation boundary. Layout, drawing, output, and render status retain their ordering; Eio supplies the surrounding I/O and scheduling. |
+| <code>core/src/yoga.ts</code> | <code>opentui-core/src/yoga.ml</code> and <code>opentui-raw</code> Yoga bindings | A Yoga node belongs to one owner tree. Layout is calculated before readback, and closed or detached nodes cannot be used. |
+| <code>core/src/buffer.ts</code> | <code>opentui-raw/buffer.ml</code> | Native cell storage stays native. The public OCaml layer does not invent a second cell grid with different copying or lifetime rules. |
+| <code>core/src/NativeSpanFeed.ts</code> | <code>opentui-raw/span_feed.ml</code> | Borrowed native spans are never exposed without a lifetime proof. The OCaml boundary copies drained payloads and makes release, reservation, commit, and cancel explicit. |
+| <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/stdin_parser.ml</code> | Input is framed incrementally across arbitrary chunks. Paste bodies and opaque sequences remain byte-preserving and ordered. |
+| <code>core/src/lib/parse.keypress.ts</code> | <code>opentui-core/src/lib/key_decoder.ml</code> | Complete key frames are decoded into typed keys; unsupported or malformed input remains an opaque sequence. |
+| <code>core/src/lib/parse.mouse.ts</code> | <code>opentui-core/src/lib/mouse_decoder.ml</code> | SGR and X10 frames retain coordinates, modifiers, button state, and move/drag classification. |
+| <code>core/src/lib/queue.ts</code> | <code>opentui-core/src/lib/queue.ml</code> (deferred) | The reference <code>ProcessQueue</code> is an unbounded FIFO microtask work queue. It is not the parser byte queue or the OCaml event handoff. |
+| Private <code>ByteQueue</code> in <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/byte_queue.ml</code> | The parser's pending-prefix storage keeps its bounded capacity, growth, compaction, and copy semantics. |
+| OCaml input handoff with no direct reference file | <code>opentui-core/src/lib/input_coordinator.ml</code> and <code>event_queue.ml</code> | These adapters make the Eio sink boundary explicit. They must retain the reference event order and never turn backpressure into loss. <code>input_decoder.ml</code> is the separate framing-to-event composition layer. |
+| <code>core/src/lib/KeyHandler.ts</code> (<code>KeyHandler</code> and <code>InternalKeyHandler</code>) | <code>opentui-core/src/lib/key_handler.ml</code> (deferred) | No keyboard-dispatch module is exposed yet. When added, replace <code>EventEmitter</code> mechanics, not event priority: global-before-local dispatch, prevention, propagation, and cleanup remain explicit. |
+| <code>core/src/platform/*</code> | <code>opentui-core/src/platform</code> | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into <code>eio_runtime</code> and <code>eio_unix_runtime</code>; the map records this as an OCaml-specific boundary rather than inventing reference subdirectories. |
+| <code>core/src/testing</code>, <code>core/src/tests</code>, and <code>core/src/benchmark</code> | <code>opentui-core/test</code>, <code>reference</code>, and <code>bench</code> | Behavior checks, reference comparisons, and performance workloads remain package-local and discoverable beside the implementation. |
+| <code>packages/react</code> and <code>packages/solid</code> | No OCaml package; an Lwd bridge may provide this role later | A reactive bridge must update the existing retained tree. It must not introduce a second required render tree or change the imperative core contract. |
+
+The separation between parser framing and semantic decoding is an OCaml
+module boundary, not a license to change the protocol. The reference parser
+also emits key, mouse, paste, and response events in input order. The OCaml
+implementation may represent that as parser events followed by decoder events,
+provided the resulting events have the same bytes, order, and ownership.
+
+## Input and event flow
+
+The input path has a fixed responsibility order:
+
+    Eio source
+      -> Input_flow reusable read buffer
+      -> Input_coordinator (Stdin_parser -> Input_decoder)
+      -> caller-owned event sink or Event_queue
+         (coordinator retains blocked events; Input_flow retains unread suffixes)
+      -> application and scene dispatch
+
+The output path has a corresponding boundary:
+
+    scene mutations
+      -> dirty/layout state
+      -> Yoga calculation
+      -> frame drawing
+      -> native render status
+      -> caller-owned output bytes
+      -> Eio sink
+
+Each stage has one job:
+
+- <code>Stdin_parser</code> recognizes protocol boundaries, incomplete escape
+  prefixes, bracketed paste, and opaque responses. It does not decide which
+  renderable handles a key.
+- <code>Key_decoder</code> and <code>Mouse_decoder</code> interpret complete
+  frames. A decoder must not consume bytes that the parser has not framed.
+- <code>Input_coordinator</code> coordinates framing and decoding, owns the
+  blocked decoded event, and reports how many source bytes were accepted.
+  <code>Full</code> means retry later; it does not mean discard.
+- <code>Platform.Eio_runtime.Input_flow</code> retries unread input before
+  reading a new chunk. This is the backpressure point that prevents user input
+  from being lost while the consumer is full.
+- <code>Event_queue</code> is a caller-owned FIFO handoff. Its default capacity
+  is 64; pending resize and mouse-motion events may replace an event of the same
+  coalescing class. Keys, paste, opaque sequences, button events, and scroll
+  events are not coalesced and report <code>Full</code> instead of being
+  dropped.
+- <code>Scene.dispatch_pointer</code> hit-tests using the latest layout and
+  bubbles from the target toward the root. <code>Stop</code> ends propagation;
+  <code>Continue</code> preserves the route.
+- <code>Renderer</code> and <code>Scene.flush</code> do not start fibers. The
+  application chooses when to drain events and when to present a frame.
+
+When porting another event family, inspect the reference dispatch code and
+tests for the exact priority. Do not infer priority from the variant order or
+from the order in which callbacks were registered. Record answers to these
+questions in the feature's test and map entry:
+
+| Question | Required decision |
+| --- | --- |
+| Which event is delivered first? | Preserve reference FIFO and explicit priority. |
+| Which events may be coalesced? | Preserve the reference class and replacement position. Never coalesce text input, paste, button, scroll, or opaque protocol data without a reference-equivalent rule. |
+| What does <code>preventDefault</code> do? | Stop the same downstream default action as the reference, while preserving any earlier handlers that already ran. |
+| What does propagation stop? | Stop the same listener scopes and no others. |
+| What happens when a sink is full? | Apply backpressure and retain the blocked event. Do not read more input if doing so could overwrite or lose it. |
+| What is cleaned up, and when? | Tie registrations and state to the owning scene, runtime switch, or decoder; destroy/close must make later use fail in the documented way. |
+
+## Semantic decisions are part of the port
+
+Performance concerns do not justify silently changing a reference policy. When
+the reference answers one of the following questions, use that answer unless
+the OCaml runtime makes the mechanism impossible. If a different boundary is
+necessary, document the difference and preserve its observable safety
+property.
+
+### Queues
+
+First identify which reference queue is being ported. OpenTUI has more than
+one queue-like structure: <code>ProcessQueue</code> is a FIFO asynchronous work
+queue, while the stdin parser has bounded pending bytes and an emitted-event
+list. They do not have the same overflow policy.
+
+For a queue, record:
+
+- bounded or unbounded status;
+- initial capacity, maximum capacity, and growth rule;
+- FIFO or priority ordering;
+- whether replacement occurs in place or at the tail;
+- which event classes may be coalesced;
+- whether a full queue blocks, returns an error, or drops a value; and
+- who owns an item while it waits.
+
+The reference parser uses a 256-byte initial pending buffer, grows up to a
+64 KiB pending-prefix limit, and uses a 20 ms timeout for an incomplete escape
+prefix. The OCaml <code>Byte_queue</code> and <code>Stdin_parser</code> keep
+those parser values. <code>Input_coordinator</code> retains a blocked decoded
+event, while <code>Platform.Eio_runtime.Input_flow</code> retains the unread
+source suffix and retries it when a downstream sink reports <code>Full</code>.
+A bracketed paste is
+accumulated in chunks outside the pending-prefix queue and emitted as one
+owned payload, so the 64 KiB pending-prefix limit does not truncate a large
+paste. Paste contents are not event-coalescing material and must not be
+dropped to enforce a newly invented whole-paste limit.
+
+The bounded OCaml <code>Event_queue</code> is a handoff boundary, not permission
+to lose input. Its capacity and coalescing policy are part of its interface. If
+a new producer cannot make progress, it must return or await backpressure at
+the boundary that owns the queue. Do not “solve” growth by dropping the oldest
+event, truncating a paste, or treating a full queue as success.
+
+### Buffers and copies
+
+For every byte buffer, state all four properties:
+
+1. who allocates it;
+2. who may mutate it;
+3. when its contents become invalid; and
+4. whether a consumer receives a copy, a borrowed view, or a reusable staging
+   area.
+
+The input path uses a reusable 4096-byte Eio read buffer, copies
+accepted bytes into bounded parser storage, and emits owned <code>bytes</code>
+values. The raw span-feed boundary copies drained native payloads and uses
+explicit release tokens. These are correctness boundaries. Do not replace them
+with Bigarray or Cstruct views merely to remove a copy; a zero-copy change
+requires an ownership proof, an invalidation rule, and a measurement. Candidates
+belong in [<code>future-performance.md</code>](future-performance.md) until that
+contract is implemented.
+
+### Timing and scheduling
+
+Preserve whether work is synchronous, deferred to a microtask, scheduled at a
+frame boundary, or driven by a timer. In OCaml:
+
+- keep parser, decoder, Yoga, renderable mutation, and native frame operations
+  synchronous;
+- use Eio fibers and clocks for terminal I/O, deadlines, cancellation, and
+  resource cleanup;
+- give the caller an explicit flush/presentation boundary; and
+- do not create a hidden fiber or implicit application loop inside a pure
+  module.
+
+The 20 ms escape timeout is a protocol decision, not an arbitrary scheduler
+default. A replacement clock must be injectable so tests can exercise the
+same deadline without sleeping.
+
+### Rendering and layout
+
+The retained tree is a stateful owner, not a transient value graph. A property
+setter must update the existing node, maintain the same dirty/layout
+invalidation behavior, and preserve child order and identity. A frame follows
+the reference order: apply pending state, calculate layout when required,
+draw the retained tree, present the native frame, and report the render status.
+
+If a native render fails, keep the scene dirty when the reference permits a
+retry. If a render is <code>Skipped</code>, preserve the distinction between
+an unchanged frame and <code>Failed</code>; callers may use those statuses to
+decide whether to schedule another frame.
+
+## TypeScript and JavaScript patterns in OCaml
+
+Use the smallest OCaml mechanism that preserves the reference relationship.
+
+| Reference pattern | OCaml translation | Review for |
+| --- | --- | --- |
+| Base class and subclass | A common retained owner plus typed modules such as <code>Scene.Node</code>, <code>Scene.Box</code>, and <code>Scene.Text</code>. | Stable identity, parent ownership, child order, and one invalidation path. |
+| Constructor options object | Labelled arguments; a typed record only when the option group is reused or has a meaningful invariant. | Defaults, required values, validation, and distinction between omitted and explicit values. |
+| Mutable public property | Accessor plus validated setter returning a structured error where failure is recoverable. | Dirty/layout/render-list invalidation and whether equal values avoid unnecessary work. |
+| <code>EventEmitter</code> | A typed event variant and narrow callback registration/dispatch owned by the scene or runtime. | Listener priority, snapshot-vs-live iteration, propagation, prevention, and cleanup. |
+| <code>null</code> or <code>undefined</code> | <code>option</code> for absence; a result or explicit variant when absence is an error or state. | Do not collapse “not supplied,” “cleared,” and “invalid.” |
+| <code>Promise</code>, microtask, or timer | Eio fiber, switch, clock, or deadline at the platform edge. | Cancellation, exception propagation, resource ownership, and whether the reference is actually asynchronous. |
+| <code>Uint8Array</code>, <code>Buffer</code>, or native pointer | <code>bytes</code>, Bigarray/Cstruct, or an abstract raw owner chosen by the lifetime contract. | Copy/borrow semantics, mutation, empty values, bounds, and close invalidation. |
+| <code>Map</code> or <code>Set</code> | A typed map/set or an array/queue selected for the reference access and ordering pattern. | Insertion order, duplicate behavior, mutation during iteration, and hot-path allocation. |
+| Global registry or numeric handle | An owner-scoped abstract type and, at the ABI boundary, generation-checked tokens. | Cross-owner use, stale values, close order, and whether the numeric representation leaks. |
+| Catch-all exception handling | Structured errors at input/config/resource boundaries; callback exceptions may propagate when the API says they do. | Unexpected failures must not be converted into success or silently discarded. |
+| <code>requestRender()</code> and ambient renderer state | Explicit scene/renderer arguments and caller-owned <code>flush</code>/presentation. | No hidden global renderer, implicit frame scheduling, or second retained tree. |
+
+Do not introduce a manager, registry, wrapper, or compatibility layer merely to
+make a dynamic pattern look familiar. First try a narrow module and explicit
+composition. A new abstraction must own a real invariant and have a reference
+path or a documented OCaml boundary that explains why it exists.
+
+## A feature-porting playbook
+
+### 1. Locate the reference contract
+
+Start with the exact file or directory under <code>vendor/opentui/packages</code>.
+
+- Read the implementation and its nearest tests together.
+- Read the package README or development notes if they define lifecycle or
+  configuration.
+- Read the benchmark when the feature is on a frame, parser, or allocation
+  hot path.
+- Search the renderer and callers for dispatch order, cleanup, and error
+  handling; a local file rarely contains the whole contract.
+- Find or add the corresponding row in <code>docs/upstream-map.md</code>.
+
+Tests are behavioral evidence, not only regression protection. A reference
+test that checks a sequence split across two reads, a full queue, a destroyed
+node, or an insufficient output buffer is specifying a contract that the
+OCaml port must preserve.
+
+### 2. Write down the semantic decisions
+
+Before implementation, fill out this short record in the change description
+or the feature documentation:
+
+    Reference path:
+    OCaml path:
+    Reference inputs and outputs:
+    Reference ownership and lifetime:
+    Reference ordering, priority, and cleanup:
+    Reference limits, defaults, and timing:
+    OCaml representation:
+    Necessary language/runtime difference:
+    Invariant preserved by the difference:
+    Behavior tests or reference comparison:
+    Performance workload, if applicable:
+
+The “necessary difference” must name the observable invariant it preserves.
+“OCaml style” or “fewer allocations” is not sufficient by itself. If the
+answer is not known, leave the feature deferred rather than inventing a
+policy.
+
+### 3. Place the narrowest owning module
+
+Use the reference directory as the default location. Keep pure protocol or
+rendering logic independent of Eio. Put Eio resource acquisition, blocking
+reads/writes, clocks, cancellation, and terminal setup under
+<code>src/platform/eio_runtime</code> or
+<code>src/platform/eio_unix_runtime</code>.
+
+Put ABI calls and native lifetime code in <code>opentui-raw</code>. Do not make
+<code>opentui-core</code> know about C pointers, packed native handle bits, or
+callback calling conventions. Do not make <code>opentui-raw</code> know about
+scenes, widgets, or terminal policy.
+
+### 4. Implement ownership before convenience behavior
+
+Define the owner and close path before adding optional features:
+
+- what creates the value;
+- what may retain it;
+- what invalidates it;
+- what happens to children and pending callbacks on destruction;
+- which operations return an error after close; and
+- whether a callback runs synchronously or later.
+
+Then implement the smallest behaviorally complete slice. Keep a feature
+visible as <code>deferred</code> in the map rather than exposing a partial
+convenience API that suggests unsupported semantics.
+
+### 5. Test at the owning boundary
+
+Add the primary behavior test under the owning package:
+
+- parser and decoder tests exercise arbitrary input chunking, timeout flush,
+  malformed/unknown sequences, paste preservation, and event order;
+- queue tests exercise capacity, coalescing, full delivery, retry, and
+  ownership of blocked events;
+- scene/renderable tests exercise identity, child order, dirty state, layout,
+  destruction, hit-testing, and propagation;
+- raw tests exercise ABI layouts, stale handles, close order, copied spans,
+  and native-link behavior;
+- Eio tests exercise partial reads/writes, cancellation, cleanup, and
+  backpressure without requiring a real terminal unless the test is explicitly
+  host-gated.
+
+When the reference behavior is executable in both implementations, add or
+update a comparison under <code>packages/opentui-core/reference</code>. Keep the
+shared vectors and comparison command beside that package. A comparison may
+cover a smaller OCaml feature subset, but the difference must be stated rather
+than silently ignored.
+
+### 6. Update the map and handoff docs
+
+The source-map row should identify the implementation status and the reason
+for any adapter or deferred boundary. Update architecture documentation when
+the package owner, effect boundary, or translation rule changes. Update the
+package README when a user-facing module or package-local tool becomes
+available. Avoid development chronology such as “initial” or “next”; describe
+what exists and what it guarantees.
+
+## Review checklist
+
+Before asking for review, verify the following.
+
+- The reference file and the OCaml file have an explicit map entry.
+- Tests, examples, comparisons, and benchmarks are in the owning package.
+- The package dependency direction is still <code>opentui-core</code> to
+  <code>opentui-raw</code>, never the reverse.
+- No native pointer, packed handle, or foreign callback escaped the raw
+  boundary.
+- Queue boundedness, growth, event priority, and full behavior are stated.
+- Input and paste bytes cannot be lost through an allocation or backpressure
+  decision.
+- Buffer copies, borrowed views, mutation, and invalidation are stated.
+- Sync/async behavior and Eio resource ownership are stated.
+- Node identity, dirty state, layout invalidation, and destruction match the
+  reference feature.
+- Errors at runtime boundaries are structured and unexpected exceptions are
+  not hidden.
+- A deferred feature has no speculative compatibility API.
+- The source-map status and package documentation describe the resulting
+  behavior without relying on conversation history.
+
+Use the repository's documented Dune commands from inside the Nix development
+shell for validation. A docs-only change still needs link and Markdown review;
+a code change also needs the owning package's behavior checks and any
+applicable reference comparison or benchmark.

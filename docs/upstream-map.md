@@ -8,7 +8,8 @@ directory under one of those packages.
 Use this map when a contributor finds a feature in the reference source. The
 OCaml location may be a direct path, an adapter package, or an explicitly
 unimplemented location. A missing OCaml file is intentional when the status is
-`deferred` or `not applicable`.
+`deferred` or `not applicable`. The contributor workflow and semantic
+translation rules are in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Statuses
 
@@ -63,13 +64,15 @@ unimplemented location. A missing OCaml file is intentional when the status is
 | `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` | implemented | Incremental framing with bounded, owned events. |
 | `lib/parse.keypress.ts` | `packages/opentui-core/src/lib/key_decoder.ml` | partial | Common key semantics; unknown sequences remain opaque. |
 | `lib/parse.mouse.ts` | `packages/opentui-core/src/lib/mouse_decoder.ml` | partial | SGR/X10 mouse semantics and button tracking. |
-| `lib/queue.ts` | `packages/opentui-core/src/lib/byte_queue.ml` and `event_queue.ml` | adapter | Byte storage and bounded event handoff are separate explicit queues. |
-| `lib/paste.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` | partial | Bracketed paste framing belongs to the parser. |
+| `lib/queue.ts` | `packages/opentui-core/src/lib/queue.ml` | deferred | The reference `ProcessQueue` is an unbounded FIFO microtask work queue. No corresponding OCaml subsystem is exposed; it is not the parser byte queue or event handoff. |
+| private `ByteQueue` in `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/byte_queue.ml` | adapter | Bounded pending-prefix storage with the reference initial capacity, growth, compaction, and copy semantics. |
+| OCaml input handoff | `packages/opentui-core/src/lib/input_coordinator.ml` and `event_queue.ml` | adapter | These modules make the Eio sink boundary explicit; they are not a replacement for reference `ProcessQueue`. Full delivery retains lossless input. |
+| OCaml framed-event decoding | `packages/opentui-core/src/lib/input_decoder.ml` | adapter | This composition layer maps parser frames to typed key, mouse, paste, and opaque-sequence events before handoff; it does not own sink backpressure. |
+| `lib/KeyHandler.ts` (`KeyHandler`, `InternalKeyHandler`) | `packages/opentui-core/src/lib/key_handler.ml` | deferred | No public keyboard-dispatch module is present. Its future typed dispatch must preserve global-before-local priority, prevention, propagation, and cleanup. |
+| `lib/paste.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` | partial | The reference helper's paste metadata and decoding are only partly represented; bracketed-paste framing is implemented by `stdin-parser.ts`. |
 | `lib/clock.ts` | `packages/opentui-core/src/platform/eio_runtime` | adapter | Eio monotonic time supplies runtime deadlines. |
 | `lib/terminal-*`, `ansi.ts` | `packages/opentui-core/src/lib/terminal_modes.ml` and terminal modules | partial | Pure mode descriptions are separate from Eio writes. |
-| `platform/eio` | `packages/opentui-core/src/platform/eio_runtime` | adapter | The directory name avoids shadowing the external `Eio` module under Dune qualified subdirectories. |
-| `platform/unix` | `packages/opentui-core/src/platform/eio_unix_runtime` | adapter | The directory name avoids shadowing the external `Unix` module under Dune qualified subdirectories. |
-| `platform/*` | `packages/opentui-core/src/platform` | adapter | Eio flow and Unix terminal policy. The specific directory mappings above define the OCaml names. |
+| `platform/*` | `packages/opentui-core/src/platform` | adapter | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into `eio_runtime` and `eio_unix_runtime`; these are OCaml-specific subdirectories, not reference paths. |
 | `post/*` | matching paths under `packages/opentui-core/src/post` | deferred | No post-processing contract is present. |
 | `animation/*` | matching paths under `packages/opentui-core/src/animation` | deferred | No animation scheduler is present. |
 | `plugins/*` | matching paths under `packages/opentui-core/src/plugins` | deferred | No plugin contract is present. |

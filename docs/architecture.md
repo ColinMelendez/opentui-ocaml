@@ -4,7 +4,9 @@ This document defines the package boundaries and terminology of the OCaml
 OpenTUI library. OpenTUI is a terminal user-interface framework with a
 TypeScript reference implementation and a Zig renderer. The reference source
 is checked out at `vendor/opentui`; the source correspondence is indexed in
-the [source correspondence map](upstream-map.md).
+the [source correspondence map](upstream-map.md). The contributor workflow
+for translating a reference feature into OCaml is in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Terms
 
@@ -85,6 +87,10 @@ src/
 │   └── text.ml
 ├── lib/                     terminal protocol and input support
 │   ├── stdin_parser.ml
+│   ├── byte_queue.ml
+│   ├── input_coordinator.ml
+│   ├── input_decoder.ml
+│   ├── event_queue.ml
 │   ├── key_decoder.ml
 │   ├── mouse_decoder.ml
 │   ├── terminal_modes.ml
@@ -99,7 +105,9 @@ src/
 The names `eio_runtime` and `eio_unix_runtime` avoid a Dune namespace conflict:
 with qualified subdirectories, a directory named `eio` or `unix` would shadow
 the external OCaml modules `Eio` or `Unix`. Both directories remain under
-`src/platform`, and their reference paths are recorded in the source map.
+`src/platform`. The source map records the reference `platform/*` directory
+and explains this OCaml-specific split; `eio_runtime` and `eio_unix_runtime`
+are not directories in the reference source.
 
 ## Effect boundary
 
@@ -133,6 +141,10 @@ Each non-literal translation belongs in the corresponding source-map row and
 must state the ownership invariant and observable test behavior.
 
 ## Contribution workflow
+
+The detailed translation rules, semantic decision checklist, and feature-porting
+playbook are in [`CONTRIBUTING.md`](../CONTRIBUTING.md). The short workflow
+below identifies the repository records that every implementation must update.
 
 For a new feature:
 

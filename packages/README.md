@@ -62,3 +62,5 @@ terminal-runtime API.
 For a path-by-path lookup from the reference source to the OCaml source, use
 the [source correspondence map](../docs/upstream-map.md). For package ownership and
 the Eio effect boundary, use [`docs/architecture.md`](../docs/architecture.md).
+For the procedure for adding a corresponding feature, use the repository
+[`CONTRIBUTING.md`](../CONTRIBUTING.md).
