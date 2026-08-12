@@ -20,9 +20,10 @@ becoming part of the higher-level UI API.
 
 Read [`docs/architecture.md`](docs/architecture.md) for the package and
 effect model. Read the [source correspondence map](docs/upstream-map.md) to
-locate the OCaml counterpart of a path in `vendor/opentui`. The implementation
-sequence is in [`plan.md`](plan.md). The fixed reference source checkout and
-its build requirements are described in [`vendor/README.md`](vendor/README.md).
+locate the OCaml counterpart of a path in `vendor/opentui`. The current
+implementation boundary and planned integration work are in
+[`plan.md`](plan.md). The fixed reference source checkout and its build
+requirements are described in [`vendor/README.md`](vendor/README.md).
 Contributors porting a reference feature should start with
 [`CONTRIBUTING.md`](CONTRIBUTING.md), which defines source placement, semantic
 parity, ownership translation, and the review checklist.
