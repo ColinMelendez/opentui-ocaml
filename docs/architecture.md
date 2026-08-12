@@ -69,9 +69,8 @@ not features owned by one package. Historical notes remain under
 `docs/archive/` and are not part of the active package contract.
 
 The repository does not contain a widget package or an Lwd integration
-package. The source map lists the React and Solid reference packages, and its
-core-renderable rows list the control and composition paths that have no OCaml
-implementation. Each status is explicit.
+package. The source map lists the React and Solid reference packages and the
+control and composition paths that are deferred.
 
 ## `opentui-core/src`
 
@@ -117,10 +116,14 @@ the rendering and parsing operations synchronous: `Scene`, `Renderer`, Yoga,
 renderable setters, the byte parser, and the bounded event queue do not start
 fibers or perform terminal I/O.
 
-An application fiber calls the synchronous renderer and parser operations and
-decides when to flush a frame. This boundary keeps scheduling and terminal
-resource lifetime out of per-cell rendering operations while allowing Eio to
-own the surrounding application runtime.
+An application fiber calls the synchronous renderer and parser operations. The
+controlled API exposes `Scene.flush` as an explicit presentation boundary, so
+an application may decide when to present a frame. That operation
+is not the semantic replacement for reference `requestRender()`: a scheduler
+added above this boundary must keep dirty-state invalidation, coalesced frame
+requests, timing, and presentation distinct. This boundary keeps scheduling
+and terminal resource lifetime out of per-cell rendering operations while
+allowing Eio to own the surrounding application runtime.
 
 ## Translating TypeScript concepts
 
@@ -129,16 +132,20 @@ TypeScript class syntax or JavaScript runtime mechanisms.
 
 | Reference mechanism | OCaml representation |
 | --- | --- |
-| Base class and inheritance | An owned retained node composed with a typed renderable module. |
+| Base class and inheritance | An owned retained `Scene.Node` owns identity, tree ownership, and lifecycle. Concrete renderable modules own typed state and use the shared `Node.kind` dispatch shape. |
 | Constructor option bag | Labelled arguments and typed records for reusable groups of values. |
-| Public mutable property | A typed accessor and setter with validation and dirty-state updates. |
-| `EventEmitter` | Typed callbacks with cleanup owned by the scene or runtime scope. |
-| Ambient renderer/context | Explicit scene, parent, renderer, and Eio capabilities. |
-| `requestRender()` | An explicit caller-owned flush boundary. |
+| Public mutable property | A typed accessor and setter that preserve reference validation, clamping, equality/no-op, invalidation, and error behavior. |
+| `EventEmitter` | Owner-local typed event channels composed into the scene, renderer, render context, or component. Synchronous registration-order dispatch, snapshot semantics, reentrancy, duplicate subscriptions, one-shot removal, callback exceptions, cleanup, and producer-owned scheduling remain explicit. Keyboard priority, pointer propagation, queueing, and backpressure remain separate dispatch systems. |
+| Reference input handoff | `Input_coordinator` and `Event_queue` are explicit OCaml adapters. Backpressure and coalescing require tests for order, replacement position, multiplicity, ownership, and handoff behavior. |
+| `RenderContext` / renderer reference | Explicit render-context capabilities retained by nodes; Eio capabilities remain at runtime/platform boundaries. |
+| `requestRender()` | Dirty-state invalidation plus a coalesced future-frame request, distinct from an explicit `Scene.flush`/presentation operation. |
 | React/Solid reconciliation | An Lwd binding, if added, attaches to the retained nodes rather than creating a second required tree. |
 
-Each non-literal translation belongs in the corresponding source-map row and
-must state the ownership invariant and observable test behavior.
+Each non-literal translation must have a corresponding source-map path and
+architecture or feature documentation. The documentation must state the
+ownership invariant and observable test behavior. The source map remains
+path-oriented; detailed adapter and decomposition rationale belongs in the
+longer documentation.
 
 ## Contribution workflow
 
