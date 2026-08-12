@@ -15,7 +15,8 @@ OCaml GC words for:
 Run it from the Nix development environment:
 
 ```sh
-nix develop --command dune exec --profile release ./bench/profile.exe
+nix develop --command dune exec --profile release \
+  ./packages/opentui-core/bench/profile.exe
 ```
 
 To run the warmed synthetic application loop, which keeps one scene and its
@@ -23,7 +24,8 @@ retained UI tree, input adapter, event queue, output buffer, and Eio sink alive
 across warm-up and measurement, use:
 
 ```sh
-nix develop --command dune exec --profile release ./bench/profile.exe -- \
+nix develop --command dune exec --profile release \
+  ./packages/opentui-core/bench/profile.exe -- \
   --workload warmed
 ```
 
@@ -46,10 +48,11 @@ gate.
 
 ## Reference OpenTUI comparisons
 
-The reference OpenTUI source has analogous layout/tree-mutation scenarios in
-`packages/core/src/benchmark/layout-benchmark.ts` and direct/parser-inclusive
-mouse bubbling scenarios in `packages/core/src/benchmark/mouse-event-benchmark.ts`.
-Run the source benchmarks from the reference package directory:
+The checked-out reference source has analogous layout/tree-mutation scenarios
+in `vendor/opentui/packages/core/src/benchmark/layout-benchmark.ts` and
+direct/parser-inclusive mouse bubbling scenarios in
+`vendor/opentui/packages/core/src/benchmark/mouse-event-benchmark.ts`. Run the
+source benchmarks from the reference package directory:
 
 ```sh
 cd vendor/opentui/packages/core
@@ -108,7 +111,7 @@ the wrapper from the repository root to report wall, CPU, and GC time together
 with GC latency percentiles:
 
 ```sh
-sh bench/trace_runtime_events.sh gc-stats warmed
+sh packages/opentui-core/bench/trace_runtime_events.sh gc-stats warmed
 ```
 
 Omit `warmed` to trace the original isolated probes.
@@ -116,12 +119,13 @@ Omit `warmed` to trace the original isolated probes.
 To write a Chrome/Perfetto-compatible runtime event trace:
 
 ```sh
-sh bench/trace_runtime_events.sh trace /tmp/opentui-profile-warmed.json warmed
+sh packages/opentui-core/bench/trace_runtime_events.sh trace /tmp/opentui-profile-warmed.json warmed
 ```
 
 If the capture reports lost ring-buffer events, treat the trace as incomplete
 and repeat with a larger runtime-events ring, for example
-`OCAMLRUNPARAM=e=20 sh bench/trace_runtime_events.sh trace /tmp/opentui-profile.json`.
+`OCAMLRUNPARAM=e=20 sh packages/opentui-core/bench/trace_runtime_events.sh \
+trace /tmp/opentui-profile.json`.
 The JSON trace can be opened in [Perfetto](https://ui.perfetto.dev/); the
 underlying event model is described in the [OCaml runtime tracing
 manual](https://ocaml.org/manual/latest/runtime-tracing.html). The wrapper
@@ -133,7 +137,7 @@ because `eio-trace` 0.4 includes a GTK visualizer. After installing that tool
 in a tracing-capable environment, record an Eio/fiber trace with:
 
 ```sh
-sh bench/trace_eio.sh /tmp/opentui-profile-warmed.fxt warmed
+sh packages/opentui-core/bench/trace_eio.sh /tmp/opentui-profile-warmed.fxt warmed
 eio-trace show /tmp/opentui-profile-warmed.fxt
 eio-trace gc-stats /tmp/opentui-profile-warmed.fxt
 ```

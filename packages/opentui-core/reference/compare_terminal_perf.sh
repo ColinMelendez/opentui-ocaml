@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-manifest="$repo_dir/reference/perf_manifest.tsv"
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+reference_dir="$repo_dir/packages/opentui-core/reference"
+manifest="$reference_dir/perf_manifest.tsv"
 temp_root=$(printenv TMPDIR 2>/dev/null || true)
 if [ -z "$temp_root" ]; then
   temp_root=/tmp
@@ -10,11 +11,11 @@ fi
 temp_dir=$(mktemp -d "$temp_root/opentui-performance-compare.XXXXXX")
 trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
 
-bun "$repo_dir/reference/run_terminal_perf.ts" "$manifest" \
+bun "$reference_dir/run_terminal_perf.ts" "$manifest" \
   > "$temp_dir/bun.tsv"
 
 nix develop "$repo_dir#test" -c dune exec --root "$repo_dir" \
-  ./reference/benchmark_terminal.exe -- "$manifest" \
+  ./packages/opentui-core/reference/benchmark_terminal.exe -- "$manifest" \
   > "$temp_dir/ocaml.tsv"
 
 awk -F '\t' '$1 != "case" && $1 !~ /^#/ { print }' \

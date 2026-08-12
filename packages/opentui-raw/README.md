@@ -11,6 +11,11 @@ facade, so callers cannot mix resource domains or retain an unchecked pointer.
 The complete audited symbol list, layout assertions, and build/link contract
 are in [`native/ABI.md`](native/ABI.md).
 
+The package-owned ABI and native-link tests are in [`test/`](test/). The raw
+package owns those tests because they validate foreign handles, C stubs, and
+the Zig link seam directly; retained-tree and terminal-runtime tests are in
+[`../opentui-core/test/`](../opentui-core/test/).
+
 ## Renderer and event ownership
 
 The renderer API uses memory output with native threaded output disabled.

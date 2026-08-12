@@ -29,7 +29,7 @@ unimplemented location. A missing OCaml file is intentional when the status is
 | `packages/keymap` | `packages/opentui-core/src/lib/keymap` | deferred; no corresponding module is present. |
 | `packages/react` | no OCaml package | deferred; an Lwd package would provide the reconciler role without copying React's runtime. |
 | `packages/solid` | no OCaml package | deferred; an Lwd package would provide the reconciler role without copying Solid's runtime. |
-| `packages/examples` | `examples/` | partial; the direct Box/Text example covers retained renderable construction and output. |
+| `packages/examples` | `packages/opentui-core/examples` | partial; the direct Box/Text executable covers retained renderable construction and output. The executable is kept with the OCaml package whose API it demonstrates. |
 | `packages/qrcode` | no OCaml package | deferred; the image/rendering ownership contract is not defined. |
 | `packages/ssh` | no OCaml package | not applicable to the terminal UI library. |
 | `packages/three` | no OCaml package | not applicable to the terminal UI library. |
@@ -76,8 +76,14 @@ unimplemented location. A missing OCaml file is intentional when the status is
 | `audio*` | matching paths under `packages/opentui-core/src/audio*` | not applicable | Outside the terminal UI target. |
 | `image.ts` | `packages/opentui-core/src/image.ml` | deferred | Requires a native image ownership decision. |
 | `text-buffer.ts`, `text-buffer-view.ts`, `edit-buffer.ts`, `editor-view.ts` | matching paths under `packages/opentui-core/src` | deferred | Editor and buffer semantics are not present. |
-| `testing/*` | `test/` and `reference/` | adapter | Windtrap, Cram, and reference runners provide OCaml test infrastructure. |
-| `benchmark/*` | `bench/` and `reference/` | adapter | OCaml benchmarks and comparative runners live outside the library. |
+| `testing/*`, `tests/*` | `packages/opentui-core/test` | adapter | Windtrap and Cram provide package-local OCaml tests for the corresponding core behavior. |
+| `benchmark/*` | `packages/opentui-core/bench` | adapter | Thumper, profile workloads, and tracing wrappers provide package-local OCaml measurements. |
+| core parser comparison harness | `packages/opentui-core/reference` | adapter | The comparison runners and shared vectors are OCaml repository tooling associated with the core parser; they are not a second runtime layer. |
+
+The raw package's ABI and link tests live in `packages/opentui-raw/test` because
+they validate the separate C/Zig boundary. Repository-wide architecture,
+source-mapping, planning, and performance-policy documents remain under the
+repository root because they describe more than one package.
 
 ## Translation rules
 

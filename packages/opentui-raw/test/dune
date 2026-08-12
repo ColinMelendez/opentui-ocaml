@@ -1,0 +1,27 @@
+(test
+ (name test_raw)
+ (modules test_raw)
+ (libraries opentui-raw windtrap))
+
+(library
+ (name test_native_link_support)
+ (modules test_native_link_support)
+ (foreign_stubs
+  (language c)
+  (names test_native_link_stubs)
+  (flags (:standard -I%{project_root}/packages/opentui-raw/native))
+  (extra_deps
+   ../native/opentui-native.stamp
+   ../native/libopentui.dylib
+   ../native/libopentui.so))
+ (c_library_flags
+  (:standard
+   -L%{project_root}/packages/opentui-raw/native
+   -lopentui
+   -Wl,-rpath,@loader_path/../native
+   -Wl,-rpath,$ORIGIN/../native)))
+
+(test
+ (name test_native_link)
+ (modules test_native_link)
+ (libraries test_native_link_support opentui-raw windtrap))

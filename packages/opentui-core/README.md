@@ -4,7 +4,9 @@
 uses Eio for terminal resource lifetime and I/O, and it uses `opentui-raw` for
 checked calls to the Zig renderer. The source directories correspond to
 `vendor/opentui/packages/core/src`, the matching directory in the reference
-OpenTUI source tree.
+OpenTUI source tree. Package-specific tests, examples, reference comparisons,
+and benchmarks are kept beside this source tree under `test/`, `examples/`,
+`reference/`, and `bench/`.
 
 ## Scene and renderables
 
@@ -30,8 +32,8 @@ caller-owned output buffer. `Platform.Eio_runtime.Output_flow` can write that
 prefix to an Eio output flow. A failed frame leaves the scene dirty so the
 caller can inspect the error or retry the operation.
 
-The example in [`../../examples/README.md`](../../examples/README.md) shows a
-Box containing Text, two property updates, and the resulting frame output.
+The example in [`examples/README.md`](examples/README.md) shows a Box
+containing Text, two property updates, and the resulting frame output.
 
 ## Terminal modules
 

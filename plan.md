@@ -25,6 +25,9 @@ each reference feature.
   renderables, terminal protocols, and terminal platform modules.
 - `opentui-raw` is the separate C/Zig ABI package. It owns foreign handles,
   ABI validation, and native resource lifetimes.
+- Package-owned tests, examples, reference comparisons, and benchmarks live
+  under the package they exercise. Repository-wide architecture, mapping,
+  planning, and performance-policy documents remain at the repository root.
 - Every implemented feature has a repository-relative entry in the source
   correspondence map.
 - TypeScript inheritance, event emitters, ambient context, and reconciliation

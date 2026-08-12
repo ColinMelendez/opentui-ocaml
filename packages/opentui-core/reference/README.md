@@ -23,7 +23,7 @@ their wire sequence, while ordinary keys and paste bodies remain byte events.
 Run the comparison from the repository root:
 
 ```sh
-sh reference/compare_terminal_parser.sh
+sh packages/opentui-core/reference/compare_terminal_parser.sh
 ```
 
 The vectors are deterministic and cover split UTF-8, split CSI/SS3, response
@@ -32,10 +32,10 @@ and timeout flushing. A mismatch is a contract review item. Do not update
 either side without first determining whether the difference is an intentional
 layer boundary, a reference behavior change, or an OCaml bug.
 
-The reference revision is the Git link recorded for `vendor/opentui` by the
-parent repository. Performance measurements stay separate: identical
-workloads may be useful for context, but TypeScript/Bun and OCaml/native
-latencies are not a single cross-runtime gate.
+The reference revision is the Git link recorded in
+[`vendor/README.md`](../../../vendor/README.md). Performance measurements stay
+separate: identical workloads may be useful for context, but TypeScript/Bun
+and OCaml/native latencies are not a single cross-runtime gate.
 
 ## Comparative performance
 
@@ -51,7 +51,7 @@ runner needs a private pattern table.
 Run it from the repository root:
 
 ```sh
-sh reference/compare_terminal_perf.sh
+sh packages/opentui-core/reference/compare_terminal_perf.sh
 ```
 
 The protocol and shape fields are checked before timings are displayed, and

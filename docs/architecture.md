@@ -48,6 +48,24 @@ lifetimes have different invariants from retained UI ownership and terminal
 policy. The higher-level package can use checked renderer operations without
 publishing packed handles, raw pointers, or C callback details.
 
+## Package-local validation and tooling
+
+Code that exercises one package is stored in that package directory:
+
+| Package directory | Contents |
+| --- | --- |
+| `packages/opentui-core/test` | Tests for scenes, renderables, the renderer, terminal protocols, and Eio/Unix integrations. |
+| `packages/opentui-core/examples` | Executable examples of the public core API and their Cram transcripts. |
+| `packages/opentui-core/reference` | Optional comparisons between core behavior and the TypeScript reference source. |
+| `packages/opentui-core/bench` | Release-profile workloads, allocation baselines, and tracing wrappers for core behavior. |
+| `packages/opentui-raw/test` | Tests for the raw ABI, C stubs, foreign ownership, and the native link seam. |
+
+The repository-level `docs/` directory is intentionally different. Its active
+documents describe the relationship between both OCaml packages, the checked
+out reference source, and repository-wide implementation decisions. They are
+not features owned by one package. Historical notes remain under
+`docs/archive/` and are not part of the active package contract.
+
 The repository does not contain a widget package or an Lwd integration
 package. The source map lists the React and Solid reference packages, and its
 core-renderable rows list the control and composition paths that have no OCaml
@@ -122,8 +140,9 @@ For a new feature:
 2. Place a core implementation under the corresponding `opentui-core/src`
    directory, unless the feature is an ABI adapter owned by `opentui-raw`.
 3. Add or update its row in the [source correspondence map](upstream-map.md).
-4. Add a behavior test and, where the behavior is comparable, a reference
-   comparison.
+4. Add a behavior test under the owning package's `test/` directory and,
+   where the behavior is comparable, a reference comparison under the core
+   package's `reference/` directory.
 5. Record any change in ownership, effects, events, or class-to-module
    translation.
 

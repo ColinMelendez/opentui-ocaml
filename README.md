@@ -66,34 +66,41 @@ changes. It is tracked by Git.
 ## Testing
 
 From the repository root, `dune runtest` runs every test executable declared in
-[`test/dune`](test/dune), including the raw ABI, native-link, terminal, Eio,
-runtime, and retained-core checks. Run `dune build @check` when you want the
-complete compile and warning check without running tests.
+the package-local Dune files
+[`packages/opentui-core/test/dune`](packages/opentui-core/test/dune) and
+[`packages/opentui-raw/test/dune`](packages/opentui-raw/test/dune). These cover
+retained-core, terminal, Eio, runtime, raw ABI, and native-link behavior. Run
+`dune build @check` when you want the complete compile and warning check
+without running tests.
 
 To run one test executable directly, use its Dune name, for example:
 
 ```sh
-dune exec ./test/test_core.exe
-dune exec ./test/test_terminal.exe
+dune exec ./packages/opentui-core/test/test_core.exe
+dune exec ./packages/opentui-core/test/test_terminal.exe
 ```
 
 The PTY cases in `test_terminal_output` and `test_native_terminal_pty` are
 host-gated. They skip with an explicit reason when the host does not provide a
 usable `/dev/pts`; the other tests run normally. Optional behavior and
 comparative performance checks against the TypeScript reference in
-`vendor/opentui` are documented in [`reference/README.md`](reference/README.md).
+`vendor/opentui` are documented in
+[`packages/opentui-core/reference/README.md`](packages/opentui-core/reference/README.md).
 
 The direct Box/Text renderable example and its deterministic Cram transcript
-are documented in [`examples/README.md`](examples/README.md).
+are documented in
+[`packages/opentui-core/examples/README.md`](packages/opentui-core/examples/README.md).
 
 The imperative profile is available with:
 
 ```sh
-nix develop --command dune exec --profile release ./bench/profile.exe
+nix develop --command dune exec --profile release \
+  ./packages/opentui-core/bench/profile.exe
 ```
 
 Release-profile tracing entry points and their tool-specific limitations are
-documented in [`bench/README.md`](bench/README.md).
+documented in
+[`packages/opentui-core/bench/README.md`](packages/opentui-core/bench/README.md).
 
 The release-profile allocation regression suite is separate from ordinary
 tests:

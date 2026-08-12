@@ -25,6 +25,23 @@ opentui-core/src/
 └── native/                  OCaml errors for native composition
 ```
 
+The package-local validation and development material is beside the source:
+
+```text
+opentui-core/
+├── src/                      library implementation
+├── test/                     core behavior tests
+├── examples/                 public API examples and Cram transcripts
+├── reference/                optional comparisons with the reference source
+└── bench/                    profiles, allocation baselines, and tracing
+```
+
+The raw package keeps its ABI and native-link tests in
+[`opentui-raw/test`](opentui-raw/test). The active architecture and source-map
+documents remain in the repository-level [`docs/`](../docs/) directory because
+they explain the boundary between both packages; package-specific usage notes
+are kept in each package README and its local development directories.
+
 [`opentui-raw`](opentui-raw/) translates calls between OCaml and the C/Zig
 interface exported by the renderer in `vendor/opentui`. It owns typed foreign
 handles, native resource lifetimes, ABI validation, and the native build/link

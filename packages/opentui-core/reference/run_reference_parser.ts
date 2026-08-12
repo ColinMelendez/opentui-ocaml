@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 
-import { StdinParser, type StdinEvent } from "../vendor/opentui/packages/core/src/lib/stdin-parser.ts"
+import { StdinParser, type StdinEvent } from "../../../vendor/opentui/packages/core/src/lib/stdin-parser.ts"
 
 function fail(message: string): never {
   throw new Error(message)

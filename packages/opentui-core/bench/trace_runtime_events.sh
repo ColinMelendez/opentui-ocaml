@@ -1,12 +1,12 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 
 usage() {
   printf '%s\n' \
-    "usage: sh bench/trace_runtime_events.sh gc-stats [default|warmed]" \
-    "       sh bench/trace_runtime_events.sh trace OUTPUT.json [default|warmed]" >&2
+    "usage: sh packages/opentui-core/bench/trace_runtime_events.sh gc-stats [default|warmed]" \
+    "       sh packages/opentui-core/bench/trace_runtime_events.sh trace OUTPUT.json [default|warmed]" >&2
   exit 2
 }
 
@@ -17,7 +17,7 @@ fi
 mode=$1
 shift
 
-profile_exe="$repo_dir/_build/default/bench/profile.exe"
+profile_exe="$repo_dir/_build/default/packages/opentui-core/bench/profile.exe"
 events_dir=
 
 cleanup_events_dir() {
@@ -80,7 +80,7 @@ case "$mode" in
     esac
     cd "$repo_dir"
     nix develop "$repo_dir#test" -c dune build \
-      --profile release ./bench/profile.exe
+      --profile release ./packages/opentui-core/bench/profile.exe
     run_gc_stats
     ;;
   trace)
@@ -101,7 +101,7 @@ case "$mode" in
     mkdir -p "$trace_dir"
     cd "$repo_dir"
     nix develop "$repo_dir#test" -c dune build \
-      --profile release ./bench/profile.exe
+      --profile release ./packages/opentui-core/bench/profile.exe
     run_trace
     ;;
   *)

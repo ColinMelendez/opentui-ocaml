@@ -8,7 +8,7 @@ and closes the scene explicitly.
 Run it from the repository root with:
 
 ```sh
-nix develop -c dune exec ./examples/direct_renderables.exe
+nix develop -c dune exec ./packages/opentui-core/examples/direct_renderables.exe
 ```
 
 Its Cram transcript lives in
@@ -16,7 +16,7 @@ Its Cram transcript lives in
 black-box example check with:
 
 ```sh
-nix develop -c dune runtest examples
+nix develop -c dune runtest packages/opentui-core/examples
 ```
 
 The example does not enter terminal mode, own an event loop, use Lwd, or
