@@ -75,45 +75,49 @@ external event_sink_poll :
   Native_token.Event_sink.t -> int * (bytes * bytes) option =
   "opentui_raw_event_sink_poll"
 
-external yoga_create : unit -> int * Native_token.Yoga_tree.t =
-  "opentui_raw_yoga_create"
+external yoga_node_create : unit -> int * Native_token.Yoga_node.t =
+  "opentui_raw_yoga_node_create"
 
-external yoga_destroy : Native_token.Yoga_tree.t -> unit =
-  "opentui_raw_yoga_destroy"
+external yoga_node_free : Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_node_free"
 
-external yoga_root : Native_token.Yoga_tree.t -> int * Native_token.Yoga_node.t =
-  "opentui_raw_yoga_root"
+external yoga_node_free_recursive : Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_node_free_recursive"
 
-external yoga_add_child :
-  Native_token.Yoga_tree.t -> Native_token.Yoga_node.t -> int * Native_token.Yoga_node.t =
-  "opentui_raw_yoga_add_child"
+external yoga_node_insert_child :
+  Native_token.Yoga_node.t -> Native_token.Yoga_node.t -> int32 -> int =
+  "opentui_raw_yoga_node_insert_child"
 
-external yoga_remove_child :
-  Native_token.Yoga_tree.t ->
-  Native_token.Yoga_node.t ->
-  Native_token.Yoga_node.t -> int =
-  "opentui_raw_yoga_remove_child"
+external yoga_node_remove_child :
+  Native_token.Yoga_node.t -> Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_node_remove_child"
 
-external yoga_move_child :
-  Native_token.Yoga_tree.t ->
-  Native_token.Yoga_node.t ->
-  Native_token.Yoga_node.t ->
-  int32 -> int =
-  "opentui_raw_yoga_move_child"
+external yoga_node_move_child :
+  Native_token.Yoga_node.t -> Native_token.Yoga_node.t -> int32 -> int =
+  "opentui_raw_yoga_node_move_child"
 
-external yoga_node_set_width : Native_token.Yoga_node.t -> float -> int =
-  "opentui_raw_yoga_node_set_width"
+external yoga_node_child_count : Native_token.Yoga_node.t -> int * int32 =
+  "opentui_raw_yoga_node_child_count"
 
-external yoga_node_set_height : Native_token.Yoga_node.t -> float -> int =
-  "opentui_raw_yoga_node_set_height"
+external yoga_node_calculate :
+  Native_token.Yoga_node.t -> float -> float -> int32 -> int =
+  "opentui_raw_yoga_node_calculate"
 
-external yoga_node_set_padding :
+external yoga_node_style_set_value :
+  Native_token.Yoga_node.t -> int32 -> int32 -> int32 -> float -> int =
+  "opentui_raw_yoga_node_style_set_value"
+
+external yoga_node_style_set_enum :
+  Native_token.Yoga_node.t -> int32 -> int32 -> int =
+  "opentui_raw_yoga_node_style_set_enum"
+
+external yoga_node_style_set_float :
   Native_token.Yoga_node.t -> int32 -> float -> int =
-  "opentui_raw_yoga_node_set_padding"
+  "opentui_raw_yoga_node_style_set_float"
 
-external yoga_calculate :
-  Native_token.Yoga_tree.t -> float -> float -> int -> int =
-  "opentui_raw_yoga_calculate"
+external yoga_node_style_set_border :
+  Native_token.Yoga_node.t -> int32 -> float -> int =
+  "opentui_raw_yoga_node_style_set_border"
 
 external yoga_node_layout :
   Native_token.Yoga_node.t -> int * yoga_layout option =

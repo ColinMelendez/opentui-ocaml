@@ -152,104 +152,262 @@ let () =
           | Ok (Some _) -> fail "overflow remained sticky after reporting"
           | Error error -> fail (Opentui_raw.Error.message error));
           Opentui_raw.Event_sink.close sink);
-      test "Yoga owns a tree and exposes computed layout" (fun () ->
-          let tree = expect_ok (Opentui_raw.Yoga.create ()) in
-          let root = expect_ok (Opentui_raw.Yoga.root tree) in
-          let child =
-            expect_ok (Opentui_raw.Yoga.add_child tree ~parent:root)
+      test "Yoga nodes calculate, detach, and free independently" (fun () ->
+          let root = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let child = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.set_width_point child 10.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.set_height_point child 5.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.set_padding_point root
+                  ~edge:Opentui_raw.Yoga.Left ~value:1.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:root ~child
+                  ~index:0l));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.free child);
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout root ~width:100.0
+                  ~height:40.0 ~direction:Opentui_raw.Yoga.Ltr));
+          let root_layout =
+            expect_ok (Opentui_raw.Yoga.Node.layout root)
           in
-          ignore (expect_ok (Opentui_raw.Yoga.Node.set_width child 10.0));
-          ignore (expect_ok (Opentui_raw.Yoga.Node.set_height child 5.0));
-          ignore
-            (expect_ok
-               (Opentui_raw.Yoga.Node.set_padding root
-                  ~edge:Opentui_raw.Yoga.Node.Left ~value:1.0));
-          ignore
-            (expect_ok
-               (Opentui_raw.Yoga.Node.set_padding root
-                  ~edge:Opentui_raw.Yoga.Node.Top ~value:1.0));
-          ignore
-            (expect_ok
-               (Opentui_raw.Yoga.calculate tree ~width:100.0 ~height:40.0
-                  ~direction:Opentui_raw.Yoga.Ltr));
-          let root_layout = expect_ok (Opentui_raw.Yoga.Node.layout root) in
           expect_layout ~left:0.0 ~top:0.0 ~right:0.0 ~bottom:0.0 ~width:100.0
             ~height:40.0 root_layout;
-          let child_layout = expect_ok (Opentui_raw.Yoga.Node.layout child) in
-          expect_layout ~left:1.0 ~top:1.0 ~right:0.0 ~bottom:0.0 ~width:10.0
+          let child_layout =
+            expect_ok (Opentui_raw.Yoga.Node.layout child)
+          in
+          expect_layout ~left:1.0 ~top:0.0 ~right:0.0 ~bottom:0.0 ~width:10.0
             ~height:5.0 child_layout;
-          Opentui_raw.Yoga.close tree;
-          expect_error Opentui_raw.Error.Closed
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:root ~child));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.layout child));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free child));
+          expect_error Opentui_raw.Error.Stale_handle
             (Opentui_raw.Yoga.Node.layout child);
-          expect_error Opentui_raw.Error.Closed (Opentui_raw.Yoga.root tree));
-      test "Yoga moves an attached child without destroying its handle" (fun () ->
-          let tree = expect_ok (Opentui_raw.Yoga.create ()) in
-          let root = expect_ok (Opentui_raw.Yoga.root tree) in
-          let first =
-            expect_ok (Opentui_raw.Yoga.add_child tree ~parent:root)
-          in
-          let second =
-            expect_ok (Opentui_raw.Yoga.add_child tree ~parent:root)
-          in
-          ignore (expect_ok (Opentui_raw.Yoga.Node.set_height first 1.0));
-          ignore (expect_ok (Opentui_raw.Yoga.Node.set_height second 2.0));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free root)));
+      test "Yoga moves children without freeing their native nodes" (fun () ->
+          let root = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let first = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let second = expect_ok (Opentui_raw.Yoga.Node.create ()) in
           ignore
             (expect_ok
-               (Opentui_raw.Yoga.calculate tree ~width:10.0 ~height:10.0
-                  ~direction:Opentui_raw.Yoga.Ltr));
-          let first_before = expect_ok (Opentui_raw.Yoga.Node.layout first) in
-          let second_before = expect_ok (Opentui_raw.Yoga.Node.layout second) in
-          equal (float 0.0001) 0.0 first_before.Opentui_raw.Yoga.top;
-          equal (float 0.0001) 1.0 second_before.Opentui_raw.Yoga.top;
-          expect_error Opentui_raw.Error.Invalid_argument
-            (Opentui_raw.Yoga.move_child tree ~parent:root ~child:second
-               ~index:2l);
-          let first_after_invalid =
-            expect_ok (Opentui_raw.Yoga.Node.layout first)
-          in
-          let second_after_invalid =
-            expect_ok (Opentui_raw.Yoga.Node.layout second)
-          in
-          equal (float 0.0001) 0.0
-            first_after_invalid.Opentui_raw.Yoga.top;
-          equal (float 0.0001) 1.0
-            second_after_invalid.Opentui_raw.Yoga.top;
+               (Opentui_raw.Yoga.Node.set_height_point first 1.0));
           ignore
             (expect_ok
-               (Opentui_raw.Yoga.move_child tree ~parent:root ~child:second
+               (Opentui_raw.Yoga.Node.set_height_point second 2.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:root ~child:first
                   ~index:0l));
           ignore
             (expect_ok
-               (Opentui_raw.Yoga.calculate tree ~width:10.0 ~height:10.0
-                  ~direction:Opentui_raw.Yoga.Ltr));
-          let first_after = expect_ok (Opentui_raw.Yoga.Node.layout first) in
-          let second_after = expect_ok (Opentui_raw.Yoga.Node.layout second) in
-          equal (float 0.0001) 2.0 first_after.Opentui_raw.Yoga.top;
-          equal (float 0.0001) 0.0 second_after.Opentui_raw.Yoga.top;
-          Opentui_raw.Yoga.close tree;
-          expect_error Opentui_raw.Error.Closed
-            (Opentui_raw.Yoga.Node.layout first);
-          expect_error Opentui_raw.Error.Closed
-            (Opentui_raw.Yoga.Node.layout second));
-      test "Yoga rejects invalid dimensions and cross-tree parents" (fun () ->
-          let first = expect_ok (Opentui_raw.Yoga.create ()) in
-          let second = expect_ok (Opentui_raw.Yoga.create ()) in
-          let first_root = expect_ok (Opentui_raw.Yoga.root first) in
-          let second_root = expect_ok (Opentui_raw.Yoga.root second) in
+               (Opentui_raw.Yoga.Node.insert_child ~parent:root ~child:second
+                  ~index:1l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout root ~width:10.0
+                  ~height:10.0 ~direction:Opentui_raw.Yoga.Ltr));
+          equal (float 0.0001) 0.0
+            (expect_ok (Opentui_raw.Yoga.Node.layout first)).Opentui_raw.Yoga.top;
+          equal (float 0.0001) 1.0
+            (expect_ok (Opentui_raw.Yoga.Node.layout second)).Opentui_raw.Yoga.top;
           expect_error Opentui_raw.Error.Invalid_argument
-            (Opentui_raw.Yoga.add_child first ~parent:second_root);
+            (Opentui_raw.Yoga.Node.move_child ~parent:root ~child:second
+               ~index:2l);
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.move_child ~parent:root ~child:second
+                  ~index:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout root ~width:10.0
+                  ~height:10.0 ~direction:Opentui_raw.Yoga.Ltr));
+          equal (float 0.0001) 2.0
+            (expect_ok (Opentui_raw.Yoga.Node.layout first)).Opentui_raw.Yoga.top;
+          equal (float 0.0001) 0.0
+            (expect_ok (Opentui_raw.Yoga.Node.layout second)).Opentui_raw.Yoga.top;
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:root ~child:first));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:root ~child:second));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free first));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free second));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free root)));
+      test "Yoga rejects cycles and enforces explicit subtree ownership" (fun () ->
+          let parent = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let child = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent ~child ~index:0l));
           expect_error Opentui_raw.Error.Invalid_argument
-            (Opentui_raw.Yoga.Node.set_width first_root Float.nan);
+            (Opentui_raw.Yoga.Node.insert_child ~parent:child ~child:parent
+               ~index:0l);
           expect_error Opentui_raw.Error.Invalid_argument
-            (Opentui_raw.Yoga.Node.set_height first_root Float.infinity);
+            (Opentui_raw.Yoga.Node.free child);
           expect_error Opentui_raw.Error.Invalid_argument
-            (Opentui_raw.Yoga.Node.set_padding first_root
-               ~edge:Opentui_raw.Yoga.Node.Left ~value:Float.nan);
+            (Opentui_raw.Yoga.Node.free_recursive child);
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free_recursive parent));
+          expect_error Opentui_raw.Error.Stale_handle
+            (Opentui_raw.Yoga.Node.layout child);
+          let left = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let right = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let shared = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:left ~child:shared
+                  ~index:0l));
           expect_error Opentui_raw.Error.Invalid_argument
-            (Opentui_raw.Yoga.calculate first ~width:(-1.0) ~height:1.0
-               ~direction:Opentui_raw.Yoga.Inherit);
-          Opentui_raw.Yoga.close first;
-          Opentui_raw.Yoga.close second);
+            (Opentui_raw.Yoga.Node.remove_child ~parent:right ~child:shared);
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:left ~child:shared));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free shared));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free left));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free right));
+          let owner = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let detached_parent = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let detached_child = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:owner
+                  ~child:detached_parent ~index:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:detached_parent
+                  ~child:detached_child ~index:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:owner
+                  ~child:detached_parent));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.free detached_parent);
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.free_recursive detached_parent));
+          expect_error Opentui_raw.Error.Stale_handle
+            (Opentui_raw.Yoga.Node.layout detached_child);
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free owner)));
+      test "Yoga style groups change computed layout" (fun () ->
+          let root = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let first = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let second = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let set result = ignore (expect_ok result) in
+          set (Opentui_raw.Yoga.Node.set_width_point root 10.0);
+          set (Opentui_raw.Yoga.Node.set_height_point root 4.0);
+          set
+            (Opentui_raw.Yoga.Node.set_display root
+               Opentui_raw.Yoga.Display_flex);
+          set
+            (Opentui_raw.Yoga.Node.set_flex_direction root
+               Opentui_raw.Yoga.Flex_row);
+          set
+            (Opentui_raw.Yoga.Node.set_gap root
+               ~gutter:Opentui_raw.Yoga.Gutter_all
+               (Opentui_raw.Yoga.Point 1.0));
+          set
+            (Opentui_raw.Yoga.Node.set_border root
+               ~edge:Opentui_raw.Yoga.All ~value:(Some 1.0));
+          set (Opentui_raw.Yoga.Node.set_width_point first 2.0);
+          set (Opentui_raw.Yoga.Node.set_height_point first 1.0);
+          set (Opentui_raw.Yoga.Node.set_height_point second 1.0);
+          set (Opentui_raw.Yoga.Node.set_flex_grow second (Some 1.0));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:root ~child:first
+                  ~index:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:root ~child:second
+                  ~index:1l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout root ~width:10.0
+                  ~height:4.0 ~direction:Opentui_raw.Yoga.Ltr));
+          let first_layout = expect_ok (Opentui_raw.Yoga.Node.layout first) in
+          let second_layout = expect_ok (Opentui_raw.Yoga.Node.layout second) in
+          equal (float 0.0001) 1.0 first_layout.Opentui_raw.Yoga.left;
+          equal (float 0.0001) 2.0 first_layout.Opentui_raw.Yoga.width;
+          equal (float 0.0001) 4.0 second_layout.Opentui_raw.Yoga.left;
+          equal (float 0.0001) 5.0 second_layout.Opentui_raw.Yoga.width;
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:root ~child:first));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:root ~child:second));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free first));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free second));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free root)));
+      test "Yoga style calls reject invalid input and support reference groups"
+        (fun () ->
+          let node = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_width_point node Float.nan);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_height_point node Float.infinity);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_padding node
+               ~edge:Opentui_raw.Yoga.Left Opentui_raw.Yoga.Auto);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_min_width node Opentui_raw.Yoga.Auto);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_gap node
+               ~gutter:Opentui_raw.Yoga.Gutter_all Opentui_raw.Yoga.Auto);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.set_padding_point node
+               ~edge:Opentui_raw.Yoga.Left ~value:Float.infinity);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.calculate_layout node ~width:(-1.0)
+               ~height:1.0 ~direction:Opentui_raw.Yoga.Inherit);
+          let set result = ignore (expect_ok result) in
+          set
+            (Opentui_raw.Yoga.Node.set_display node
+               Opentui_raw.Yoga.Display_flex);
+          set
+            (Opentui_raw.Yoga.Node.set_flex_direction node
+               Opentui_raw.Yoga.Flex_row);
+          set (Opentui_raw.Yoga.Node.set_flex_grow node (Some 1.0));
+          set (Opentui_raw.Yoga.Node.set_flex_shrink node (Some 0.0));
+          set
+            (Opentui_raw.Yoga.Node.set_margin node
+               ~edge:Opentui_raw.Yoga.Horizontal
+               (Opentui_raw.Yoga.Point 2.0));
+          set
+            (Opentui_raw.Yoga.Node.set_padding node
+               ~edge:Opentui_raw.Yoga.All (Opentui_raw.Yoga.Point 1.0));
+          set
+            (Opentui_raw.Yoga.Node.set_position node
+               ~edge:Opentui_raw.Yoga.Left Opentui_raw.Yoga.Auto);
+          set
+            (Opentui_raw.Yoga.Node.set_gap node
+               ~gutter:Opentui_raw.Yoga.Gutter_all
+               (Opentui_raw.Yoga.Point 1.0));
+          set
+            (Opentui_raw.Yoga.Node.set_border node
+               ~edge:Opentui_raw.Yoga.All ~value:(Some 1.0));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free node)));
+      test "Yoga recursive free invalidates a detached subtree" (fun () ->
+          let root = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let child = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:root ~child
+                  ~index:0l));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free_recursive root));
+          expect_error Opentui_raw.Error.Stale_handle
+            (Opentui_raw.Yoga.Node.layout root);
+          expect_error Opentui_raw.Error.Stale_handle
+            (Opentui_raw.Yoga.Node.layout child));
       test "capability responses become typed copied snapshots" (fun () ->
           let renderer =
             expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l)

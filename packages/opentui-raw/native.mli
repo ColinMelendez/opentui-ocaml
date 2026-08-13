@@ -48,24 +48,26 @@ val event_sink_create : unit -> int * Native_token.Event_sink.t
 val event_sink_destroy : Native_token.Event_sink.t -> unit
 val event_sink_poll :
   Native_token.Event_sink.t -> int * (bytes * bytes) option
-val yoga_create : unit -> int * Native_token.Yoga_tree.t
-val yoga_destroy : Native_token.Yoga_tree.t -> unit
-val yoga_root : Native_token.Yoga_tree.t -> int * Native_token.Yoga_node.t
-val yoga_add_child :
-  Native_token.Yoga_tree.t -> Native_token.Yoga_node.t -> int * Native_token.Yoga_node.t
-val yoga_remove_child :
-  Native_token.Yoga_tree.t ->
-  Native_token.Yoga_node.t ->
-  Native_token.Yoga_node.t -> int
-val yoga_move_child :
-  Native_token.Yoga_tree.t ->
-  Native_token.Yoga_node.t ->
-  Native_token.Yoga_node.t ->
-  int32 -> int
-val yoga_node_set_width : Native_token.Yoga_node.t -> float -> int
-val yoga_node_set_height : Native_token.Yoga_node.t -> float -> int
-val yoga_node_set_padding : Native_token.Yoga_node.t -> int32 -> float -> int
-val yoga_calculate : Native_token.Yoga_tree.t -> float -> float -> int -> int
+val yoga_node_create : unit -> int * Native_token.Yoga_node.t
+val yoga_node_free : Native_token.Yoga_node.t -> int
+val yoga_node_free_recursive : Native_token.Yoga_node.t -> int
+val yoga_node_insert_child :
+  Native_token.Yoga_node.t -> Native_token.Yoga_node.t -> int32 -> int
+val yoga_node_remove_child :
+  Native_token.Yoga_node.t -> Native_token.Yoga_node.t -> int
+val yoga_node_move_child :
+  Native_token.Yoga_node.t -> Native_token.Yoga_node.t -> int32 -> int
+val yoga_node_child_count : Native_token.Yoga_node.t -> int * int32
+val yoga_node_calculate :
+  Native_token.Yoga_node.t -> float -> float -> int32 -> int
+val yoga_node_style_set_value :
+  Native_token.Yoga_node.t -> int32 -> int32 -> int32 -> float -> int
+val yoga_node_style_set_enum :
+  Native_token.Yoga_node.t -> int32 -> int32 -> int
+val yoga_node_style_set_float :
+  Native_token.Yoga_node.t -> int32 -> float -> int
+val yoga_node_style_set_border :
+  Native_token.Yoga_node.t -> int32 -> float -> int
 val yoga_node_layout :
   Native_token.Yoga_node.t -> int * yoga_layout option
 val renderer_capabilities :

@@ -187,7 +187,8 @@ void getAllocatorStats(opentui_external_allocator_stats *output);
 
 opentui_yoga_config_ref yogaConfigCreate(void);
 void yogaConfigFree(opentui_yoga_config_ref config);
-opentui_yoga_node_ref yogaNodeCreateWithConfig(opentui_yoga_config_const_ref config);
+opentui_yoga_node_ref yogaNodeCreateForOpenTUI(void);
+void yogaNodeFree(opentui_yoga_node_ref node);
 void yogaNodeFreeRecursive(opentui_yoga_node_ref node);
 void yogaNodeInsertChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child, uint32_t index);
 void yogaNodeRemoveChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child);
@@ -202,6 +203,9 @@ void yogaNodeStyleSetValue(
     uint32_t edge_or_gutter,
     uint32_t unit,
     float value);
+void yogaNodeStyleSetEnum(opentui_yoga_node_ref node, uint32_t kind, uint32_t value);
+void yogaNodeStyleSetFloat(opentui_yoga_node_ref node, uint32_t kind, float value);
+void yogaNodeStyleSetBorder(opentui_yoga_node_ref node, uint32_t edge, float border);
 
 void getTerminalCapabilities(
     opentui_native_handle renderer_handle,
@@ -312,7 +316,8 @@ typedef void (*opentui_get_render_stats_fn)(opentui_native_handle, opentui_exter
 typedef void (*opentui_get_allocator_stats_fn)(opentui_external_allocator_stats *);
 typedef opentui_yoga_config_ref (*opentui_yoga_config_create_fn)(void);
 typedef void (*opentui_yoga_config_free_fn)(opentui_yoga_config_ref);
-typedef opentui_yoga_node_ref (*opentui_yoga_node_create_with_config_fn)(opentui_yoga_config_const_ref);
+typedef opentui_yoga_node_ref (*opentui_yoga_node_create_for_opentui_fn)(void);
+typedef void (*opentui_yoga_node_free_fn)(opentui_yoga_node_ref);
 typedef void (*opentui_yoga_node_free_recursive_fn)(opentui_yoga_node_ref);
 typedef void (*opentui_yoga_node_insert_child_fn)(opentui_yoga_node_ref, opentui_yoga_node_ref, uint32_t);
 typedef void (*opentui_yoga_node_remove_child_fn)(opentui_yoga_node_ref, opentui_yoga_node_ref);
@@ -320,6 +325,9 @@ typedef uint32_t (*opentui_yoga_node_get_child_count_fn)(opentui_yoga_node_const
 typedef void (*opentui_yoga_node_calculate_layout_fn)(opentui_yoga_node_ref, float, float, uint32_t);
 typedef void (*opentui_yoga_node_get_computed_layout_fn)(opentui_yoga_node_const_ref, opentui_external_yoga_layout *);
 typedef void (*opentui_yoga_node_style_set_value_fn)(opentui_yoga_node_ref, uint32_t, uint32_t, uint32_t, float);
+typedef void (*opentui_yoga_node_style_set_enum_fn)(opentui_yoga_node_ref, uint32_t, uint32_t);
+typedef void (*opentui_yoga_node_style_set_float_fn)(opentui_yoga_node_ref, uint32_t, float);
+typedef void (*opentui_yoga_node_style_set_border_fn)(opentui_yoga_node_ref, uint32_t, float);
 typedef void (*opentui_get_terminal_capabilities_fn)(opentui_native_handle, opentui_external_capabilities *);
 typedef void (*opentui_process_capability_response_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 typedef opentui_span_feed_ref (*opentui_create_native_span_feed_fn)(const opentui_external_span_feed_options *);
@@ -359,7 +367,8 @@ _Static_assert(_Generic(&getRenderStats, opentui_get_render_stats_fn: 1, default
 _Static_assert(_Generic(&getAllocatorStats, opentui_get_allocator_stats_fn: 1, default: 0), "getAllocatorStats ABI drift");
 _Static_assert(_Generic(&yogaConfigCreate, opentui_yoga_config_create_fn: 1, default: 0), "yogaConfigCreate ABI drift");
 _Static_assert(_Generic(&yogaConfigFree, opentui_yoga_config_free_fn: 1, default: 0), "yogaConfigFree ABI drift");
-_Static_assert(_Generic(&yogaNodeCreateWithConfig, opentui_yoga_node_create_with_config_fn: 1, default: 0), "yogaNodeCreateWithConfig ABI drift");
+_Static_assert(_Generic(&yogaNodeCreateForOpenTUI, opentui_yoga_node_create_for_opentui_fn: 1, default: 0), "yogaNodeCreateForOpenTUI ABI drift");
+_Static_assert(_Generic(&yogaNodeFree, opentui_yoga_node_free_fn: 1, default: 0), "yogaNodeFree ABI drift");
 _Static_assert(_Generic(&yogaNodeFreeRecursive, opentui_yoga_node_free_recursive_fn: 1, default: 0), "yogaNodeFreeRecursive ABI drift");
 _Static_assert(_Generic(&yogaNodeInsertChild, opentui_yoga_node_insert_child_fn: 1, default: 0), "yogaNodeInsertChild ABI drift");
 _Static_assert(_Generic(&yogaNodeRemoveChild, opentui_yoga_node_remove_child_fn: 1, default: 0), "yogaNodeRemoveChild ABI drift");
@@ -367,6 +376,9 @@ _Static_assert(_Generic(&yogaNodeGetChildCount, opentui_yoga_node_get_child_coun
 _Static_assert(_Generic(&yogaNodeCalculateLayout, opentui_yoga_node_calculate_layout_fn: 1, default: 0), "yogaNodeCalculateLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeGetComputedLayout, opentui_yoga_node_get_computed_layout_fn: 1, default: 0), "yogaNodeGetComputedLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeStyleSetValue, opentui_yoga_node_style_set_value_fn: 1, default: 0), "yogaNodeStyleSetValue ABI drift");
+_Static_assert(_Generic(&yogaNodeStyleSetEnum, opentui_yoga_node_style_set_enum_fn: 1, default: 0), "yogaNodeStyleSetEnum ABI drift");
+_Static_assert(_Generic(&yogaNodeStyleSetFloat, opentui_yoga_node_style_set_float_fn: 1, default: 0), "yogaNodeStyleSetFloat ABI drift");
+_Static_assert(_Generic(&yogaNodeStyleSetBorder, opentui_yoga_node_style_set_border_fn: 1, default: 0), "yogaNodeStyleSetBorder ABI drift");
 _Static_assert(_Generic(&getTerminalCapabilities, opentui_get_terminal_capabilities_fn: 1, default: 0), "getTerminalCapabilities ABI drift");
 _Static_assert(_Generic(&processCapabilityResponse, opentui_process_capability_response_fn: 1, default: 0), "processCapabilityResponse ABI drift");
 _Static_assert(_Generic(&createNativeSpanFeed, opentui_create_native_span_feed_fn: 1, default: 0), "createNativeSpanFeed ABI drift");

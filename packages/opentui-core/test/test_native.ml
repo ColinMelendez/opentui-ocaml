@@ -1,7 +1,92 @@
 open Windtrap
 
 module Renderer = Opentui_core.Renderer
-module Layout = Opentui_core.Yoga
+module Yoga = Opentui_core.Yoga
+
+(* This helper gives the existing low-level rendering tests an owner for a
+   temporary independent-node tree. It is test-local; the public Yoga module
+   exposes nodes rather than a tree-owner compatibility layer. *)
+module Layout = struct
+  type direction = Yoga.direction = Inherit | Ltr | Rtl
+
+  type layout = Yoga.layout = {
+    left : float;
+    top : float;
+    right : float;
+    bottom : float;
+    width : float;
+    height : float;
+  }
+
+  type t = {
+    root : Yoga.Node.t;
+    mutable closed : bool;
+  }
+
+  module Node = struct
+    type t = Yoga.Node.t
+    type edge = Yoga.edge = Left | Top | Right | Bottom | Start | End | Horizontal | Vertical | All
+
+    let max_dimension = 3.4028234663852886e38
+
+    let valid_dimension value =
+      match classify_float value with
+      | FP_nan | FP_infinite -> false
+      | FP_zero | FP_subnormal | FP_normal ->
+          Float.compare value 0.0 >= 0
+          && Float.compare value max_dimension <= 0
+
+    let set_dimensions node ~width ~height =
+      if not (valid_dimension width && valid_dimension height) then
+        Error
+          (Opentui_core.Native.Error.Native Opentui_raw.Error.Invalid_argument)
+      else
+        match Yoga.Node.set_width_point node width with
+        | Error error -> Error error
+        | Ok () -> Yoga.Node.set_height_point node height
+
+    let set_padding node ~edge ~value =
+      Yoga.Node.set_padding_point node ~edge ~value
+
+    let layout = Yoga.Node.layout
+  end
+
+  let create () =
+    match Yoga.Node.create () with
+    | Error error -> Error error
+    | Ok root -> Ok { root; closed = false }
+
+  let root layout =
+    if layout.closed then Error Opentui_core.Native.Error.Closed
+    else Ok layout.root
+
+  let add_child ~parent =
+    match Yoga.Node.child_count parent with
+    | Error error -> Error error
+    | Ok count ->
+        (match Yoga.Node.create () with
+        | Error error -> Error error
+        | Ok child ->
+            (match Yoga.Node.insert_child ~parent ~child ~index:count with
+            | Ok () -> Ok child
+            | Error error ->
+                (match Yoga.Node.free child with
+                | Ok () -> Error error
+                | Error cleanup_error -> Error cleanup_error)))
+
+  let remove_child ~parent ~child = Yoga.Node.remove_child ~parent ~child
+  let move_child ~parent ~child ~index = Yoga.Node.move_child ~parent ~child ~index
+
+  let calculate layout ~width ~height ~direction =
+    Yoga.Node.calculate_layout layout.root ~width ~height ~direction
+
+  let close layout =
+    if not layout.closed then begin
+      layout.closed <- true;
+      ignore (Yoga.Node.free_recursive layout.root)
+    end
+end
+
 module Text_renderable = Opentui_core.Renderables.Text
 module Box_renderable = Opentui_core.Renderables.Box
 
@@ -23,6 +108,7 @@ let same_error left right =
         Opentui_raw.Error.Invalid_argument -> true
       | Opentui_raw.Error.Output_too_small,
         Opentui_raw.Error.Output_too_small -> true
+      | Opentui_raw.Error.Stale_handle, Opentui_raw.Error.Stale_handle -> true
       | _ -> false)
   | _ -> false
 
@@ -190,7 +276,8 @@ let () =
           equal (float 0.0001) 10.0 child_layout.Layout.width;
           equal (float 0.0001) 5.0 child_layout.Layout.height;
           Layout.close layout;
-          expect_error Opentui_core.Native.Error.Closed
+          expect_error
+            (Opentui_core.Native.Error.Native Opentui_raw.Error.Stale_handle)
             (Layout.Node.layout child);
           expect_error Opentui_core.Native.Error.Closed (Layout.root layout));
       test "layout rejects invalid dimensions before mutating Yoga" (fun () ->
@@ -257,7 +344,8 @@ let () =
           equal (float 0.0001) 0.0
             (expect_ok (Layout.Node.layout second)).Layout.top;
           Layout.close layout;
-          expect_error Opentui_core.Native.Error.Closed
+          expect_error
+            (Opentui_core.Native.Error.Native Opentui_raw.Error.Stale_handle)
             (Layout.Node.layout second));
       test "a text renderable draws through the layout and frame seams" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:4l ~height:1l) in
@@ -294,7 +382,8 @@ let () =
                ~background:Opentui_core.Color.black ~attributes:0l);
           let next_frame = expect_ok (Renderer.begin_frame renderer) in
           Layout.close layout;
-          expect_error Opentui_core.Native.Error.Closed
+          expect_error
+            (Opentui_core.Native.Error.Native Opentui_raw.Error.Stale_handle)
             (Text_renderable.draw renderable next_frame
                ~offset_x:0.0 ~offset_y:0.0
                ~foreground:Opentui_core.Color.white

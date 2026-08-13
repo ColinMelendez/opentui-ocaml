@@ -145,7 +145,7 @@ How it gets there shouldn't matter.
 I'd explicitly give yourself permission to have something like:
 
 Renderable.Private.create
-  ~layout_node:(Yoga.create_root ...)
+  ~layout_node:(Yoga.Node.create ...)
   ...
 
 or:

@@ -270,11 +270,10 @@ slice.
 
 ## Native and Yoga prerequisites
 
-The current `opentui-raw` Yoga API is a single tree owner whose `remove_child`
-recursively frees the detached subtree. The reference does not work that way:
-each renderable creates its own node with `Yoga.Node.createForOpenTUI()`,
-parent `insertChild`/`removeChild` do not free the child, and `destroy()`
-calls `yogaNode.free()` on that one node.
+The `opentui-raw` Yoga API exposes independently owned nodes. The reference
+uses the same ownership shape: each renderable creates its own node with
+`Yoga.Node.createForOpenTUI()`, parent `insertChild`/`removeChild` do not free
+the child, and `destroy()` calls `yogaNode.free()` on that one node.
 
 This feature therefore reshapes the raw Yoga seam before retained renderables
 can own layout nodes:

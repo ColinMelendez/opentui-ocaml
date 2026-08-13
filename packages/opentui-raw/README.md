@@ -5,9 +5,10 @@ ABI. `opentui-raw` is the OCaml package that calls that ABI. It is the
 dependency beneath [`opentui-core`](../opentui-core/), not a second UI library.
 
 The package owns the typed status boundary, the `Renderer.t`, `Buffer.t`,
-`Event_sink.t`, `Yoga_tree.t`, and `Yoga_node.t` lifetimes, and the native
-build/link rules. Packed handle bits and Yoga pointers remain private to the C
-facade, so callers cannot mix resource domains or retain an unchecked pointer.
+`Event_sink.t`, and independent `Yoga.Node.t` lifetimes, together with the
+native build/link rules. Packed handle bits and Yoga pointers remain private to
+the C facade, so callers cannot mix resource domains or retain an unchecked
+pointer.
 The complete audited symbol list, layout assertions, and build/link contract
 are in [`native/ABI.md`](native/ABI.md).
 
@@ -34,12 +35,13 @@ postcondition check succeeds. The reference `resizeRenderer` export has a
 observable current/next buffer mismatch as `Native_failure`, but hidden
 hit-grid or other internal allocation failures remain unobservable.
 
-Yoga is the layout engine used by the renderer. The Yoga binding owns a
-generation-checked tree/node registry and copies the exact six-field layout
-result. Its style subset includes validated point
-padding, which is enough for the Box border inset without publishing Yoga
-pointers. It validates direct-parent removal, recursively frees detached
-native subtrees, and invalidates their node tokens.
+Yoga is the layout engine used by the renderer. The Yoga binding owns
+generation-checked independent node tokens and copies the exact six-field
+layout result. Its style subset includes the reference value, enum, float, and
+border operations without publishing Yoga pointers. Inserting and removing a
+child does not free it; single-node free requires a detached leaf, while
+recursive free releases a detached subtree and invalidates every node token in
+that subtree.
 
 The capability binding copies terminal strings and decodes the renderer's enum
 codes into a typed snapshot. The `Span_feed` binding preserves the

@@ -1,8 +1,92 @@
 module Core_renderer = Renderer
 module Renderer = Core_renderer
-module Layout = Yoga
 module Text_renderable = Renderables.Text
 module Box_renderable = Renderables.Box
+
+(* Scene is retained only as the current low-level test surface until the
+   renderer/renderable port replaces it. Its layout owner is private and uses
+   the independent Yoga-node seam; the public Yoga module no longer exposes a
+   tree owner. *)
+module Layout = struct
+  type direction = Yoga.direction = Inherit | Ltr | Rtl
+
+  type layout = Yoga.layout = {
+    left : float;
+    top : float;
+    right : float;
+    bottom : float;
+    width : float;
+    height : float;
+  }
+
+  type t = {
+    root : Yoga.Node.t;
+    mutable closed : bool;
+  }
+
+  module Node = struct
+    type t = Yoga.Node.t
+    type edge = Yoga.edge = Left | Top | Right | Bottom | Start | End | Horizontal | Vertical | All
+
+    let max_dimension = 3.4028234663852886e38
+
+    let valid_dimension value =
+      match classify_float value with
+      | FP_nan | FP_infinite -> false
+      | FP_zero | FP_subnormal | FP_normal ->
+          Float.compare value 0.0 >= 0
+          && Float.compare value max_dimension <= 0
+
+    let set_dimensions node ~width ~height =
+      if not (valid_dimension width && valid_dimension height) then
+        Error (Native.Error.Native Opentui_raw.Error.Invalid_argument)
+      else
+        match Yoga.Node.set_width_point node width with
+        | Error error -> Error error
+        | Ok () -> Yoga.Node.set_height_point node height
+
+    let set_padding node ~edge ~value =
+      Yoga.Node.set_padding_point node ~edge ~value
+
+    let set_border node ~edge ~value =
+      Yoga.Node.set_border node ~edge ~value:(Some value)
+
+    let layout = Yoga.Node.layout
+  end
+
+  let create () =
+    match Yoga.Node.create () with
+    | Error error -> Error error
+    | Ok root -> Ok { root; closed = false }
+
+  let close layout =
+    if not layout.closed then begin
+      layout.closed <- true;
+      ignore (Yoga.Node.free_recursive layout.root)
+    end
+
+  let root layout = if layout.closed then Error Native.Error.Closed else Ok layout.root
+
+  let add_child ~parent =
+    match Yoga.Node.child_count parent with
+    | Error error -> Error error
+    | Ok count ->
+        (match Yoga.Node.create () with
+        | Error error -> Error error
+        | Ok child ->
+            (match Yoga.Node.insert_child ~parent ~child ~index:count with
+            | Ok () -> Ok child
+            | Error error ->
+                (match Yoga.Node.free child with
+                | Ok () -> Error error
+                | Error cleanup_error -> Error cleanup_error)))
+
+  let remove_child ~parent ~child = Yoga.Node.remove_child ~parent ~child
+  let move_child ~parent ~child ~index = Yoga.Node.move_child ~parent ~child ~index
+
+  let calculate layout ~width ~height ~direction =
+    Yoga.Node.calculate_layout layout.root ~width ~height ~direction
+end
 
 type border_style = Box_renderable.border_style =
   | No_border
@@ -151,10 +235,10 @@ let border_equal left right =
 let border_inset border =
   match border with No_border -> 0.0 | Single | Double | Rounded | Heavy -> 1.0
 
-let set_box_padding layout ~border =
+let set_box_border layout ~border =
   let value = border_inset border in
   let set edge =
-    match Layout.Node.set_padding layout ~edge ~value with
+    match Layout.Node.set_border layout ~edge ~value with
     | Ok () -> Ok ()
     | Error error -> Error (Error.Native error)
   in
@@ -256,7 +340,11 @@ let create_node parent ~width ~height ~make_kind =
                      Layout.remove_child ~parent:parent.layout
                        ~child:raw_layout
                    with
-                  | Ok () -> Error (Error.Native error)
+                  | Ok () ->
+                      (match Yoga.Node.free_recursive raw_layout with
+                      | Ok () -> Error (Error.Native error)
+                      | Error cleanup_error ->
+                          Error (Error.Native cleanup_error))
                   | Error cleanup_error -> Error (Error.Native cleanup_error))
               | Ok () ->
                   (match make_kind raw_layout with
@@ -265,7 +353,11 @@ let create_node parent ~width ~height ~make_kind =
                          Layout.remove_child ~parent:parent.layout
                            ~child:raw_layout
                        with
-                      | Ok () -> Error error
+                      | Ok () ->
+                          (match Yoga.Node.free_recursive raw_layout with
+                          | Ok () -> Error error
+                          | Error cleanup_error ->
+                              Error (Error.Native cleanup_error))
                       | Error cleanup_error ->
                           Error (Error.Native cleanup_error))
                   | Ok kind ->
@@ -452,7 +544,7 @@ module Node = struct
       ?(should_fill = false) () =
     create_node parent ~width ~height
       ~make_kind:(fun raw_layout ->
-        match set_box_padding raw_layout ~border with
+        match set_box_border raw_layout ~border with
         | Error error -> Error error
         | Ok () ->
             Ok
@@ -580,11 +672,14 @@ module Node = struct
              with
             | Error error -> Error (Error.Native error)
             | Ok () ->
-                parent.children <-
-                  remove_child_by_id node.identity parent.children;
-                mark_destroyed node;
-                mark_layout_dirty parent;
-                Ok ()))
+                (match Yoga.Node.free_recursive node.layout with
+                | Error error -> Error (Error.Native error)
+                | Ok () ->
+                    parent.children <-
+                      remove_child_by_id node.identity parent.children;
+                    mark_destroyed node;
+                    mark_layout_dirty parent;
+                    Ok ())))
 end
 
 module Box = struct
@@ -632,11 +727,11 @@ module Box = struct
         else
           let current_inset = border_inset current in
           let next_inset = border_inset border in
-          let padding =
+          let border_result =
             if Int.equal (Float.compare current_inset next_inset) 0 then Ok ()
-            else set_box_padding box.box_node.layout ~border
+            else set_box_border box.box_node.layout ~border
           in
-          (match padding with
+          (match border_result with
           | Error error -> Error error
           | Ok () ->
               Box_renderable.set_border renderable ~border;

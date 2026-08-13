@@ -55,6 +55,44 @@ comptime {
     expectOffset(yoga.ExternalYogaLayout, "width", 16, "ExternalYogaLayout.width");
     expectOffset(yoga.ExternalYogaLayout, "height", 20, "ExternalYogaLayout.height");
 
+    expectEnumValue(yoga.YogaEnumKind.direction, 0, "YogaEnumKind.direction");
+    expectEnumValue(yoga.YogaEnumKind.flex_direction, 1, "YogaEnumKind.flex_direction");
+    expectEnumValue(yoga.YogaEnumKind.justify_content, 2, "YogaEnumKind.justify_content");
+    expectEnumValue(yoga.YogaEnumKind.align_content, 3, "YogaEnumKind.align_content");
+    expectEnumValue(yoga.YogaEnumKind.align_items, 4, "YogaEnumKind.align_items");
+    expectEnumValue(yoga.YogaEnumKind.align_self, 5, "YogaEnumKind.align_self");
+    expectEnumValue(yoga.YogaEnumKind.position_type, 6, "YogaEnumKind.position_type");
+    expectEnumValue(yoga.YogaEnumKind.flex_wrap, 7, "YogaEnumKind.flex_wrap");
+    expectEnumValue(yoga.YogaEnumKind.overflow, 8, "YogaEnumKind.overflow");
+    expectEnumValue(yoga.YogaEnumKind.display, 9, "YogaEnumKind.display");
+    expectEnumValue(yoga.YogaEnumKind.box_sizing, 10, "YogaEnumKind.box_sizing");
+
+    expectEnumValue(yoga.YogaFloatKind.flex, 0, "YogaFloatKind.flex");
+    expectEnumValue(yoga.YogaFloatKind.flex_grow, 1, "YogaFloatKind.flex_grow");
+    expectEnumValue(yoga.YogaFloatKind.flex_shrink, 2, "YogaFloatKind.flex_shrink");
+    expectEnumValue(yoga.YogaFloatKind.aspect_ratio, 3, "YogaFloatKind.aspect_ratio");
+
+    expectEnumValue(yoga.YogaValueKind.width, 0, "YogaValueKind.width");
+    expectEnumValue(yoga.YogaValueKind.height, 1, "YogaValueKind.height");
+    expectEnumValue(yoga.YogaValueKind.min_width, 2, "YogaValueKind.min_width");
+    expectEnumValue(yoga.YogaValueKind.min_height, 3, "YogaValueKind.min_height");
+    expectEnumValue(yoga.YogaValueKind.max_width, 4, "YogaValueKind.max_width");
+    expectEnumValue(yoga.YogaValueKind.max_height, 5, "YogaValueKind.max_height");
+    expectEnumValue(yoga.YogaValueKind.flex_basis, 6, "YogaValueKind.flex_basis");
+    expectEnumValue(yoga.YogaValueKind.margin, 7, "YogaValueKind.margin");
+    expectEnumValue(yoga.YogaValueKind.padding, 8, "YogaValueKind.padding");
+    expectEnumValue(yoga.YogaValueKind.position, 9, "YogaValueKind.position");
+    expectEnumValue(yoga.YogaValueKind.gap, 10, "YogaValueKind.gap");
+
+    expectEnumValue(yoga.YogaUnit.undefined, 0, "YogaUnit.undefined");
+    expectEnumValue(yoga.YogaUnit.point, 1, "YogaUnit.point");
+    expectEnumValue(yoga.YogaUnit.percent, 2, "YogaUnit.percent");
+    expectEnumValue(yoga.YogaUnit.auto, 3, "YogaUnit.auto");
+
+    expectEnumValue(yoga.YogaDirection.inherit, 0, "YogaDirection.inherit");
+    expectEnumValue(yoga.YogaDirection.ltr, 1, "YogaDirection.ltr");
+    expectEnumValue(yoga.YogaDirection.rtl, 2, "YogaDirection.rtl");
+
     expectSize(span_feed.Options, 24, "SpanFeed.Options");
     expectOffset(span_feed.Options, "chunk_size", 0, "SpanFeed.Options.chunk_size");
     expectOffset(span_feed.Options, "initial_chunks", 4, "SpanFeed.Options.initial_chunks");
@@ -153,9 +191,14 @@ comptime {
         "yogaConfigFree",
     );
     expectType(
-        @TypeOf(yoga.yogaNodeCreateWithConfig),
-        fn (yoga.YGConfigConstRef) callconv(.c) yoga.YGNodeRef,
-        "yogaNodeCreateWithConfig",
+        @TypeOf(yoga.yogaNodeCreateForOpenTUI),
+        fn () callconv(.c) yoga.YGNodeRef,
+        "yogaNodeCreateForOpenTUI",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeFree),
+        fn (yoga.YGNodeRef) callconv(.c) void,
+        "yogaNodeFree",
     );
     expectType(
         @TypeOf(yoga.yogaNodeFreeRecursive),
@@ -191,6 +234,21 @@ comptime {
         @TypeOf(yoga.yogaNodeStyleSetValue),
         fn (yoga.YGNodeRef, u32, u32, u32, f32) callconv(.c) void,
         "yogaNodeStyleSetValue",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeStyleSetEnum),
+        fn (yoga.YGNodeRef, u32, u32) callconv(.c) void,
+        "yogaNodeStyleSetEnum",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeStyleSetFloat),
+        fn (yoga.YGNodeRef, u32, f32) callconv(.c) void,
+        "yogaNodeStyleSetFloat",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeStyleSetBorder),
+        fn (yoga.YGNodeRef, u32, f32) callconv(.c) void,
+        "yogaNodeStyleSetBorder",
     );
 
     expectSize(opentui.ExternalCapabilities, 64, "ExternalCapabilities");

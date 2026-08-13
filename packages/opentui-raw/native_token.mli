@@ -18,11 +18,6 @@ module Event_sink : sig
 (** An event-sink token. *)
 end
 
-module Yoga_tree : sig
-  type t
-(** A Yoga-tree token. *)
-end
-
 module Yoga_node : sig
   type t
 (** A Yoga-node token. *)

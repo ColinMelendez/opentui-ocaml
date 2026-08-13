@@ -27,11 +27,11 @@ typed raw renderer, buffer, event, Yoga, and capability boundary:
 | `bufferWriteResolvedChars` | `lib.zig:1219` | `u32, nullable caller output pointer, `u32` capacity, `bool` -> `u32` | Native writes into caller-owned bounded storage and returns the byte count; a capacity smaller than the resolved output returns `0`. |
 | `getRenderStats` | `lib.zig:788` | `u32, pointer to ExternalRenderStats -> void` | Caller supplies output storage; the Zig probe checks the nine-field C-compatible layout. |
 | `getAllocatorStats` | `lib.zig:617` | `pointer to ExternalAllocatorStats -> void` | Active allocation counters are sampled for a diagnostic baseline. `total_requested_bytes` is valid only when the build enables GPA safe stats. |
-| `yogaConfigCreate` / `yogaConfigFree` | `yoga.zig` | `void pointer -> void pointer`; `void pointer -> void` | The C facade owns one config per Yoga tree and frees it after recursive node destruction. The raw `YGConfigRef` never reaches OCaml. |
-| `yogaNodeCreateWithConfig` / `yogaNodeFreeRecursive` | `yoga.zig` | `const void pointer -> void pointer`; `void pointer -> void` | The C facade owns the root and all descendants. Closing a tree invalidates every associated abstract node token before freeing the native tree. |
-| `yogaNodeInsertChild` / `yogaNodeRemoveChild` / `yogaNodeGetChildCount` | `yoga.zig:359`, `yoga.zig:363`, `yoga.zig:367` | `void pointer, void pointer, u32 -> void`; `void pointer, void pointer -> void`; `const void pointer -> u32` | Children are created with the tree's config and inserted synchronously under a node from the same tree. Destructive removal validates the direct parent, recursively frees the detached native subtree, and invalidates its abstract node tokens. The raw `Yoga.move_child` seam uses the same-parent remove/insert pair without freeing the node or descendants, after validating the final zero-based index. Cross-tree parents are rejected by the facade. |
-| `yogaNodeCalculateLayout` / `yogaNodeGetComputedLayout` | `yoga.zig` | `void pointer, f32, f32, u32 -> void`; `const void pointer, pointer to six-f32 output -> void` | Dimensions and direction are checked at the C boundary. Layout is copied into an OCaml tuple; no Yoga output pointer escapes. |
-| `yogaNodeStyleSetValue` | `yoga.zig` | `void pointer, u32, u32, u32, f32 -> void` | The typed surface binds point-valued width, height, and padding. Padding uses the reference `YogaValueKind.padding = 8`, `YogaEdge` values left/top/right/bottom = `0/1/2/3`, and `YogaUnit.point = 1`; the C facade validates finite non-negative values before calling the export. Measure callbacks, packed style values, and other native renderable configuration are outside this contract. |
+| `yogaConfigCreate` / `yogaConfigFree` | `yoga.zig` | `void pointer -> void pointer`; `void pointer -> void` | These reference exports remain part of the ABI audit. `yogaNodeCreateForOpenTUI` acquires the shared OpenTUI configuration inside Zig, so the raw facade does not create or own a configuration object. |
+| `yogaNodeCreateForOpenTUI` / `yogaNodeFree` / `yogaNodeFreeRecursive` | `yoga.zig:332`, `yoga.zig:340`, `yoga.zig:345` | `void pointer`; `void pointer -> void`; `void pointer -> void` | Each node is created independently with the reference OpenTUI configuration. Single-node free requires a detached node with no children; recursive free requires a detached root and releases its descendants. The C facade invalidates the corresponding generation-checked tokens. |
+| `yogaNodeInsertChild` / `yogaNodeRemoveChild` / `yogaNodeGetChildCount` | `yoga.zig:359`, `yoga.zig:363`, `yoga.zig:375` | `void pointer, void pointer, u32 -> void`; `void pointer, void pointer -> void`; `const void pointer -> u32` | The raw facade validates that the child is detached, that the relationship does not create a cycle, and that removal names the direct parent. Insert and remove update only the native relationship; they do not free the child. The raw `Yoga.move_child` seam uses the same-parent remove/insert pair without freeing the node or descendants, after validating the final zero-based index. |
+| `yogaNodeCalculateLayout` / `yogaNodeGetComputedLayout` | `yoga.zig:383`, `yoga.zig:419` | `void pointer, f32, f32, u32 -> void`; `const void pointer, pointer to six-f32 output -> void` | Dimensions and direction are checked at the C boundary. Layout is copied into an OCaml tuple; no Yoga output pointer escapes. |
+| `yogaNodeStyleSetEnum` / `yogaNodeStyleSetFloat` / `yogaNodeStyleSetBorder` / `yogaNodeStyleSetValue` | `yoga.zig:439`, `yoga.zig:471`, `yoga.zig:489`, `yoga.zig:497` | Enum/float/border: `void pointer, u32, u32|f32 -> void`; value: `void pointer, u32, u32, u32, f32 -> void` | The typed surface binds the reference Yoga enum groups, float groups, border edges, and value groups. Value operations use the reference kind, edge/gutter, and unit codes; the C facade validates finite numeric inputs and code ranges before calling the exports. The Zig probe asserts the public kind, unit, and direction discriminants used by the OCaml mapping. Measure callbacks, packed style values, and other native renderable configuration are outside this contract. |
 | `getTerminalCapabilities` | `lib.zig:986` | `u32, pointer to 64-byte ExternalCapabilities -> void` on supported 64-bit hosts | Zig returns borrowed terminal-name/version pointers and `usize` lengths. The C shim checks the lengths and copies both strings before returning to OCaml. |
 | `processCapabilityResponse` | `lib.zig:1017` | `u32, nullable byte pointer, u32 -> void` | The response is caller-owned and consumed synchronously. An empty OCaml string crosses as a null pointer with length zero. |
 | `createNativeSpanFeed` / `attachNativeSpanFeed` / `destroyNativeSpanFeed` | `lib.zig:358`, `native-span-feed.zig` | pointer to `Options` -> nullable stream pointer; stream pointer -> `i32`/`void` | The raw facade owns the feed behind an abstract generation-checked token and destroys it only after a successful close. The reference source is copied into a generated build directory before the tracked export patch is applied. |
@@ -52,10 +52,11 @@ API.
 index, 12-bit generation, and 4-bit kind. Zero is invalid. The packed fields
 remain private to Zig. The C facade uses a separate generation-checked token
 registry for Yoga because Yoga pointers are not entries in the reference
-registry: `Yoga_tree.t` and `Yoga_node.t` are abstract OCaml domains, and every
-node token records its owning tree token. The registry rejects stale tokens,
-cross-tree parents, invalid dimensions, and invalid directions before calling
-Yoga.
+registry: `Yoga.Node.t` is an abstract OCaml domain backed by a packed,
+generation-checked node token. Each token records its direct parent token when
+attached. The registry rejects stale tokens, non-detached insertion, invalid
+parent relationships, invalid dimensions, and invalid directions before
+calling Yoga.
 
 `ExternalYogaLayout` is six consecutive `f32` values in the specified order
 `left`, `top`, `right`, `bottom`, `width`, `height`, for 24 bytes. The
@@ -122,19 +123,21 @@ selected by the reference build (`aarch64-macos`, `x86_64-macos`,
 ## Typed raw operations
 
 The typed raw operations in `opentui-raw` provide
-generation-checked, owner-scoped Yoga tree/node operations, a copied
-capability snapshot, and the audited NativeSpanFeed ownership protocol while
-preserving the original renderer/buffer/event ownership model. The OCaml API
-exposes `Yoga.create`, `Yoga.add_child`, `Yoga.calculate`, typed layout
-readback, `Span_feed.drain`, and explicit reservation commit/cancel; it does not
-expose `YGNodeRef`, `YGConfigRef`, packed style values, native span pointers,
-Bigarray/Cstruct views, or callbacks. Capability responses are processed
-synchronously and can be read as a typed `Capabilities.t` record.
+generation-checked independent Yoga-node operations, a copied capability
+snapshot, and the audited NativeSpanFeed ownership protocol while preserving
+the original renderer/buffer/event ownership model. The OCaml API exposes
+`Yoga.Node.create`, explicit child attach/detach/free operations, typed style
+operations, typed layout readback, `Span_feed.drain`, and explicit reservation
+commit/cancel; it does not expose `YGNodeRef`, `YGConfigRef`, packed style
+values, native span pointers, Bigarray/Cstruct views, or callbacks. Capability
+responses are processed synchronously and can be read as a typed
+`Capabilities.t` record.
 
-Black-box tests cover exact six-field layout readback, invalid dimensions,
-cross-tree parent rejection, owner invalidation after close, XTVERSION string
-copying, enum decoding, closed-renderer behavior, copied output spans,
-release-driven chunk reuse, and reservation busy/cancel/commit behavior.
+Black-box tests cover exact six-field layout readback, non-destructive detach,
+single-node and recursive free, invalid dimensions, invalid style values,
+XTVERSION string copying, enum decoding, closed-renderer behavior, copied
+output spans, release-driven chunk reuse, and reservation
+busy/cancel/commit behavior.
 
 ## Outside this ABI contract
 
