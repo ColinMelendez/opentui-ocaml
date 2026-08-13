@@ -22,6 +22,9 @@ val create : width:int32 -> height:int32 -> (t, Error.t) result
 (** [context renderer] returns the shared capability view used by renderables. *)
 val context : t -> Render_context.t
 
+(** The retained root owned by the renderer. *)
+val root : t -> Renderable.t
+
 (** Current renderer dimensions. *)
 val width : t -> (int32, Error.t) result
 val height : t -> (int32, Error.t) result
@@ -57,9 +60,11 @@ val on_frame :
     values and observe the new dimensions. *)
 val resize : t -> width:int32 -> height:int32 -> (unit, Error.t) result
 
-(** [render renderer ~force] executes one explicit native frame. It clears the
-    pending request after the native call and emits a frame notification only
-    for a rendered frame. *)
+(** [render renderer ~force] executes one explicit native frame. It consumes
+    the pending request before retained-tree collection so requests made during
+    the frame remain pending for a later frame. A failed retained-tree or
+    native presentation pass restores a pending request. A frame notification
+    is emitted only for a rendered frame. *)
 val render : t -> force:bool -> (render_status, Error.t) result
 
 (** [destroy renderer] releases native resources and closes its context. It is

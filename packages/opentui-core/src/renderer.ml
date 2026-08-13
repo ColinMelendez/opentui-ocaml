@@ -3,6 +3,7 @@ type render_status = Rendered | Skipped | Failed
 type t = {
   raw : Opentui_raw.Renderer.t;
   context : Render_context.t;
+  root : Renderable.t;
   current_buffer : Buffer.t;
   next_buffer : Buffer.t;
 }
@@ -35,17 +36,27 @@ let create ~width ~height =
               Opentui_raw.Renderer.close raw;
               Error (map_raw_error error)
           | Ok next_buffer ->
-              Ok
-                {
-                  raw;
-                  context =
-                    Render_context.Private.create
-                      ~owner:(Render_context.Private.new_owner ()) ~width ~height;
-                  current_buffer = Buffer_internal.of_raw current_buffer;
-                  next_buffer = Buffer_internal.of_raw next_buffer;
-                }))
+              let context =
+                Render_context.Private.create
+                  ~owner:(Render_context.Private.new_owner ()) ~width ~height
+              in
+              (match Renderable.Private.create_root context with
+              | Error error ->
+                  Render_context.Private.close context;
+                  Opentui_raw.Renderer.close raw;
+                  Error error
+              | Ok root ->
+                  Ok
+                    {
+                      raw;
+                      context;
+                      root;
+                      current_buffer = Buffer_internal.of_raw current_buffer;
+                      next_buffer = Buffer_internal.of_raw next_buffer;
+                    })))
 
 let context renderer = renderer.context
+let root renderer = renderer.root
 
 let width renderer = Render_context.width renderer.context
 let height renderer = Render_context.height renderer.context
@@ -81,32 +92,49 @@ let resize renderer ~width ~height =
     | Error error -> Error (map_raw_error error)
     | Ok () ->
         Render_context.Private.resize renderer.context ~width ~height;
+        (match
+           Renderable.Private.resize_root renderer.root ~width ~height
+         with
+        | Error error -> Error error
+        | Ok () ->
         ignore
           (Renderer_events.Private.emit_resize
              (Render_context.Private.events renderer.context)
              { Render_context.width; height });
         Render_context.Private.request_render renderer.context;
-        Ok ()
+        Ok ())
 
 let render renderer ~force =
   if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
-  else
-    let frame_id = Render_context.Private.advance_frame renderer.context in
-    let result = Opentui_raw.Renderer.render renderer.raw ~force in
+  else begin
     Render_context.Private.clear_render_request renderer.context;
-    match result with
-    | Error error -> Error (map_raw_error error)
-    | Ok Opentui_raw.Renderer.Rendered ->
-        ignore
-          (Renderer_events.Private.emit_frame
-             (Render_context.Private.events renderer.context)
-             { Render_context.frame_id });
-        Ok Rendered
-    | Ok Opentui_raw.Renderer.Skipped -> Ok Skipped
-    | Ok Opentui_raw.Renderer.Failed -> Ok Failed
+    let frame_id = Render_context.Private.advance_frame renderer.context in
+    (match
+       Renderable.Private.render_root renderer.root renderer.next_buffer
+         ~delta_time:0.0
+     with
+    | Error error ->
+        Render_context.Private.request_render renderer.context;
+        Error error
+    | Ok () ->
+        let result = Opentui_raw.Renderer.render renderer.raw ~force in
+        match result with
+        | Error error ->
+            Render_context.Private.request_render renderer.context;
+            Error (map_raw_error error)
+        | Ok Opentui_raw.Renderer.Rendered ->
+            ignore
+              (Renderer_events.Private.emit_frame
+                 (Render_context.Private.events renderer.context)
+                 { Render_context.frame_id });
+            Ok Rendered
+        | Ok Opentui_raw.Renderer.Skipped -> Ok Skipped
+        | Ok Opentui_raw.Renderer.Failed -> Ok Failed)
+  end
 
 let destroy renderer =
   if Render_context.Private.is_open renderer.context then begin
+    Renderable.destroy_recursively renderer.root;
     Render_context.Private.close renderer.context;
     Opentui_raw.Renderer.close renderer.raw
   end

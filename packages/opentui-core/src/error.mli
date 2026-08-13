@@ -6,6 +6,7 @@ type t =
   | Owner_mismatch
   | Not_child
   | Invalid_anchor
+  | Unsupported
   | Native of Native.Error.t
 
 (** [message error] is a diagnostic string for [error]. *)

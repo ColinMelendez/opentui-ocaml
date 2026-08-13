@@ -138,6 +138,18 @@ static value make_status_int32(int status, int32_t result_value) {
   CAMLreturn(result);
 }
 
+static value make_status_bool(int status, bool result_value) {
+  CAMLparam0();
+  CAMLlocal3(result, status_value, bool_value);
+
+  status_value = Val_int(status);
+  bool_value = Val_bool(result_value);
+  result = caml_alloc_tuple(2);
+  Store_field(result, 0, status_value);
+  Store_field(result, 1, bool_value);
+  CAMLreturn(result);
+}
+
 static value make_status_layout(
     int status,
     const opentui_external_yoga_layout *layout) {
@@ -430,6 +442,45 @@ CAMLprim value opentui_raw_yoga_node_calculate(
   }
 
   yogaNodeCalculateLayout(node->node, width, height, (uint32_t)direction);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_yoga_node_is_dirty(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_STALE_HANDLE, false));
+  }
+
+  CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_OK, yogaNodeIsDirty(node->node)));
+}
+
+CAMLprim value opentui_raw_yoga_node_has_new_layout(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_STALE_HANDLE, false));
+  }
+
+  CAMLreturn(make_status_bool(
+      OPENTUI_RAW_STATUS_OK,
+      yogaNodeGetHasNewLayout(node->node)));
+}
+
+CAMLprim value opentui_raw_yoga_node_mark_layout_seen(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  yogaNodeSetHasNewLayout(node->node, false);
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 

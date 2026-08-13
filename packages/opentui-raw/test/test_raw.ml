@@ -348,6 +348,20 @@ let () =
           ignore (expect_ok (Opentui_raw.Yoga.Node.free first));
           ignore (expect_ok (Opentui_raw.Yoga.Node.free second));
           ignore (expect_ok (Opentui_raw.Yoga.Node.free root)));
+      test "Yoga exposes native dirty and new-layout state" (fun () ->
+          let node = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout node ~width:4.0
+                  ~height:2.0 ~direction:Opentui_raw.Yoga.Ltr));
+          equal bool false (expect_ok (Opentui_raw.Yoga.Node.is_dirty node));
+          equal bool true
+            (expect_ok (Opentui_raw.Yoga.Node.has_new_layout node));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.mark_layout_seen node));
+          equal bool false
+            (expect_ok (Opentui_raw.Yoga.Node.has_new_layout node));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free node));
+      );
       test "Yoga style calls reject invalid input and support reference groups"
         (fun () ->
           let node = expect_ok (Opentui_raw.Yoga.Node.create ()) in

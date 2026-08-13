@@ -106,9 +106,11 @@ common `Renderable.t` representation. The root owns lifecycle-pass execution,
 Yoga calculation, render-list construction and reuse, command execution, and
 the live-count transition into renderer scheduling. The root participates in
 command-list construction, and the reference construction places its own
-render command first. Root execution skips that first command and executes
-the remainder of the list. The OCaml implementation preserves the resulting
-invariant that the root itself is not drawn or entered into the hit grid.
+render command first. Root execution skips the root render command and
+executes the surrounding commands and descendants. The OCaml implementation
+preserves the resulting invariant that the root itself is not drawn or
+entered into the hit grid, even when a surrounding opacity or clipping
+command precedes it.
 
 The root owns exactly one live Yoga node after construction. That node has
 the context width and height and column flex direction. The reference
@@ -245,6 +247,11 @@ services. The supported slice includes:
 - Eio-owned terminal input, output, clocks, cancellation, and resource scopes
   at the runtime boundary.
 
+The retained core represents opacity and clipping in its command list. This
+slice exposes no Buffer operations for those stack operations, so the
+retained executor returns `Error Unsupported` instead of silently dropping a
+command. The Buffer drawing surface is a separate port-sequence boundary.
+
 The following remain outside this slice. This feature provides the retained
 objects and seams they require; it does not implement their dispatch or
 services:
@@ -309,6 +316,7 @@ type t =
   | Owner_mismatch
   | Not_child
   | Invalid_anchor
+  | Unsupported
   | Native of Native.Error.t
 ```
 
@@ -323,6 +331,7 @@ This replaces the current scene-shaped error type. Scene-only cases such as
 | Cross-renderer attachment | `Error Owner_mismatch` |
 | `remove` of a value that is not a direct child | `Error Not_child` |
 | `insert_before` when the anchor is missing, not a child, or is the inserted value | `Error Invalid_anchor` |
+| A retained command requires a Buffer operation outside the current drawing surface | `Error Unsupported` |
 | Same-parent `add` of an already-attached child | `Ok` new index; this is a layout-order move |
 | Native Yoga or buffer failure | `Error (Native _)` |
 
@@ -629,7 +638,7 @@ The renderer performs a frame in the reference order:
    command list;
 5. execute the command list, including drawing, clipping, opacity, and hit-grid
    updates. Construction places the root render command first; execution
-   skips that first command and runs the remainder;
+   skips the root render command and runs the remainder;
 6. hand the completed next buffer to the native renderer and present it.
 
 The low-level buffer operation remains synchronous. The Eio runtime owns

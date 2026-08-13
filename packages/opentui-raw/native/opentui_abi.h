@@ -194,6 +194,9 @@ void yogaNodeInsertChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child
 void yogaNodeRemoveChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child);
 uint32_t yogaNodeGetChildCount(opentui_yoga_node_const_ref node);
 void yogaNodeCalculateLayout(opentui_yoga_node_ref node, float width, float height, uint32_t direction);
+bool yogaNodeIsDirty(opentui_yoga_node_const_ref node);
+bool yogaNodeGetHasNewLayout(opentui_yoga_node_const_ref node);
+void yogaNodeSetHasNewLayout(opentui_yoga_node_ref node, bool has_new_layout);
 void yogaNodeGetComputedLayout(
     opentui_yoga_node_const_ref node,
     opentui_external_yoga_layout *output);
@@ -323,6 +326,9 @@ typedef void (*opentui_yoga_node_insert_child_fn)(opentui_yoga_node_ref, opentui
 typedef void (*opentui_yoga_node_remove_child_fn)(opentui_yoga_node_ref, opentui_yoga_node_ref);
 typedef uint32_t (*opentui_yoga_node_get_child_count_fn)(opentui_yoga_node_const_ref);
 typedef void (*opentui_yoga_node_calculate_layout_fn)(opentui_yoga_node_ref, float, float, uint32_t);
+typedef bool (*opentui_yoga_node_is_dirty_fn)(opentui_yoga_node_const_ref);
+typedef bool (*opentui_yoga_node_get_has_new_layout_fn)(opentui_yoga_node_const_ref);
+typedef void (*opentui_yoga_node_set_has_new_layout_fn)(opentui_yoga_node_ref, bool);
 typedef void (*opentui_yoga_node_get_computed_layout_fn)(opentui_yoga_node_const_ref, opentui_external_yoga_layout *);
 typedef void (*opentui_yoga_node_style_set_value_fn)(opentui_yoga_node_ref, uint32_t, uint32_t, uint32_t, float);
 typedef void (*opentui_yoga_node_style_set_enum_fn)(opentui_yoga_node_ref, uint32_t, uint32_t);
@@ -374,6 +380,9 @@ _Static_assert(_Generic(&yogaNodeInsertChild, opentui_yoga_node_insert_child_fn:
 _Static_assert(_Generic(&yogaNodeRemoveChild, opentui_yoga_node_remove_child_fn: 1, default: 0), "yogaNodeRemoveChild ABI drift");
 _Static_assert(_Generic(&yogaNodeGetChildCount, opentui_yoga_node_get_child_count_fn: 1, default: 0), "yogaNodeGetChildCount ABI drift");
 _Static_assert(_Generic(&yogaNodeCalculateLayout, opentui_yoga_node_calculate_layout_fn: 1, default: 0), "yogaNodeCalculateLayout ABI drift");
+_Static_assert(_Generic(&yogaNodeIsDirty, opentui_yoga_node_is_dirty_fn: 1, default: 0), "yogaNodeIsDirty ABI drift");
+_Static_assert(_Generic(&yogaNodeGetHasNewLayout, opentui_yoga_node_get_has_new_layout_fn: 1, default: 0), "yogaNodeGetHasNewLayout ABI drift");
+_Static_assert(_Generic(&yogaNodeSetHasNewLayout, opentui_yoga_node_set_has_new_layout_fn: 1, default: 0), "yogaNodeSetHasNewLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeGetComputedLayout, opentui_yoga_node_get_computed_layout_fn: 1, default: 0), "yogaNodeGetComputedLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeStyleSetValue, opentui_yoga_node_style_set_value_fn: 1, default: 0), "yogaNodeStyleSetValue ABI drift");
 _Static_assert(_Generic(&yogaNodeStyleSetEnum, opentui_yoga_node_style_set_enum_fn: 1, default: 0), "yogaNodeStyleSetEnum ABI drift");

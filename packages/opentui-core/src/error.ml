@@ -4,6 +4,7 @@ type t =
   | Owner_mismatch
   | Not_child
   | Invalid_anchor
+  | Unsupported
   | Native of Native.Error.t
 
 let message error =
@@ -13,6 +14,7 @@ let message error =
   | Owner_mismatch -> "the renderable belongs to another renderer"
   | Not_child -> "the value is not a direct child"
   | Invalid_anchor -> "the insertion anchor is invalid"
+  | Unsupported -> "the retained-rendering operation is not available"
   | Native error -> Native.Error.message error
 
 let pp formatter error = Format.pp_print_string formatter (message error)

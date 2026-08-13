@@ -60,3 +60,8 @@
  (name test_renderer_context)
  (modules test_renderer_context)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_renderable)
+ (modules test_renderable)
+ (libraries opentui-core windtrap))

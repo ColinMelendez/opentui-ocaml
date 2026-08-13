@@ -107,6 +107,11 @@ module Node = struct
       (Opentui_raw.Yoga.Node.calculate_layout node ~width ~height
          ~direction:(raw_direction direction))
 
+  let is_dirty node = map_result (Opentui_raw.Yoga.Node.is_dirty node)
+  let has_new_layout node = map_result (Opentui_raw.Yoga.Node.has_new_layout node)
+  let mark_layout_seen node =
+    map_result (Opentui_raw.Yoga.Node.mark_layout_seen node)
+
   let raw_value = function
     | Undefined -> Opentui_raw.Yoga.Undefined
     | Point value -> Opentui_raw.Yoga.Point value

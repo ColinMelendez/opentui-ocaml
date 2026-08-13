@@ -103,6 +103,15 @@ external yoga_node_calculate :
   Native_token.Yoga_node.t -> float -> float -> int32 -> int =
   "opentui_raw_yoga_node_calculate"
 
+external yoga_node_is_dirty : Native_token.Yoga_node.t -> int * bool =
+  "opentui_raw_yoga_node_is_dirty"
+
+external yoga_node_has_new_layout : Native_token.Yoga_node.t -> int * bool =
+  "opentui_raw_yoga_node_has_new_layout"
+
+external yoga_node_mark_layout_seen : Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_node_mark_layout_seen"
+
 external yoga_node_style_set_value :
   Native_token.Yoga_node.t -> int32 -> int32 -> int32 -> float -> int =
   "opentui_raw_yoga_node_style_set_value"

@@ -118,6 +118,15 @@ module Node : sig
     t -> width:float -> height:float -> direction:direction ->
     (unit, Native.Error.t) result
 
+  val is_dirty : t -> (bool, Native.Error.t) result
+  (** [is_dirty node] reads Yoga's native layout-invalidation flag. *)
+
+  val has_new_layout : t -> (bool, Native.Error.t) result
+  (** [has_new_layout node] reports whether Yoga has produced unseen layout. *)
+
+  val mark_layout_seen : t -> (unit, Native.Error.t) result
+  (** [mark_layout_seen node] acknowledges the node's computed layout. *)
+
   val set_width : t -> value -> (unit, Native.Error.t) result
   val set_height : t -> value -> (unit, Native.Error.t) result
   val set_min_width : t -> value -> (unit, Native.Error.t) result

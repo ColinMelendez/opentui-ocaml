@@ -219,8 +219,22 @@ module Node = struct
     with_live node (fun () ->
         result_of_status
           (Native.yoga_node_calculate node.handle width height
-             (direction_code direction))
+          (direction_code direction))
           ())
+
+  let is_dirty node =
+    with_live node (fun () ->
+        let status, value = Native.yoga_node_is_dirty node.handle in
+        result_of_status status value)
+
+  let has_new_layout node =
+    with_live node (fun () ->
+        let status, value = Native.yoga_node_has_new_layout node.handle in
+        result_of_status status value)
+
+  let mark_layout_seen node =
+    with_live node (fun () ->
+        result_of_status (Native.yoga_node_mark_layout_seen node.handle) ())
 
   let set_value node ~kind ~edge_or_gutter value =
     with_live node (fun () ->

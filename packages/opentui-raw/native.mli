@@ -60,6 +60,9 @@ val yoga_node_move_child :
 val yoga_node_child_count : Native_token.Yoga_node.t -> int * int32
 val yoga_node_calculate :
   Native_token.Yoga_node.t -> float -> float -> int32 -> int
+val yoga_node_is_dirty : Native_token.Yoga_node.t -> int * bool
+val yoga_node_has_new_layout : Native_token.Yoga_node.t -> int * bool
+val yoga_node_mark_layout_seen : Native_token.Yoga_node.t -> int
 val yoga_node_style_set_value :
   Native_token.Yoga_node.t -> int32 -> int32 -> int32 -> float -> int
 val yoga_node_style_set_enum :
