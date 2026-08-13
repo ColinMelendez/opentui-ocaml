@@ -332,7 +332,8 @@ This replaces the current scene-shaped error type. Scene-only cases such as
 | `remove` of a value that is not a direct child | `Error Not_child` |
 | `insert_before` when the anchor is missing, not a child, or is the inserted value | `Error Invalid_anchor` |
 | A retained command requires a Buffer operation outside the current drawing surface | `Error Unsupported` |
-| Same-parent `add` of an already-attached child | `Ok` new index; this is a layout-order move |
+| Same-parent indexed `add` whose index names another child | `Ok` inserted index; this is a layout-order move |
+| Same-parent indexed `add` whose index names the inserted child | `Error Invalid_anchor`; the reference rejects a self-anchor |
 | Native Yoga or buffer failure | `Error (Native _)` |
 
 Cross-renderer attachment is a deliberate OCaml restriction. The reference
@@ -477,11 +478,13 @@ end
 ```
 
 `Layout_children.add` without `index` appends. With `index`, if that index
-names an existing layout child, the operation inserts before that child, as
-reference `add(obj, index)` does through `insertBefore`. If the index is out
-of range, the child is appended. `insert_before` remains the API that names a
-sibling; indexed `add` is not equivalent to every `insert_before` call, and
-the reverse is also false.
+names an existing layout child, the operation follows reference
+`add(obj, index)` through `insertBefore` and inserts before that child. An
+index that names the value being inserted is therefore `Error Invalid_anchor`,
+matching the reference self-anchor rejection. If the index is out of range,
+the child is appended. `insert_before` remains the API that names a sibling;
+indexed `add` is not equivalent to every `insert_before` call, and the reverse
+is also false.
 
 Concrete modules expose that capability with a uniform accessor pair:
 
@@ -676,11 +679,12 @@ receive caller-owned Yoga nodes or raw buffers.
 
 `Box.t` preserves the reference box behavior for background color, border
 selection and style, border color, fill policy, border insets, and box-specific
-layout properties. The port includes titles and bottom titles, focused-border
-color based on focused descendants, custom border characters, `gap`,
-`row_gap`, and `column_gap`, border-side auto-enablement, and scissor insets
-derived from the active border sides. Border drawing and content layout use the
-same geometry contract as the reference.
+layout properties. Its layout contract includes border sides and `gap`,
+`row_gap`, and `column_gap`; its drawing contract includes titles, focused
+border color, custom border characters, fills, and scissor insets derived from
+the active border sides. Buffer-backed drawing operations are separate from
+the retained layout capability; a drawing command that the Buffer surface
+does not expose returns `Error Unsupported`.
 
 `Box.as_renderable` is the value stored in the retained tree.
 `Box.children` is the public layout-child mutation capability.

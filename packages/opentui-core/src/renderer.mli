@@ -25,6 +25,9 @@ val context : t -> Render_context.t
 (** The retained root owned by the renderer. *)
 val root : t -> Renderable.t
 
+(** The root's physical layout-child capability. *)
+val children : t -> Layout_children.t
+
 (** Current renderer dimensions. *)
 val width : t -> (int32, Error.t) result
 val height : t -> (int32, Error.t) result

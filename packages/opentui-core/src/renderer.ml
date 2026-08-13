@@ -4,6 +4,7 @@ type t = {
   raw : Opentui_raw.Renderer.t;
   context : Render_context.t;
   root : Renderable.t;
+  children : Layout_children.t;
   current_buffer : Buffer.t;
   next_buffer : Buffer.t;
 }
@@ -51,12 +52,14 @@ let create ~width ~height =
                       raw;
                       context;
                       root;
+                      children = Layout_children.Private.of_renderable root;
                       current_buffer = Buffer_internal.of_raw current_buffer;
                       next_buffer = Buffer_internal.of_raw next_buffer;
                     })))
 
 let context renderer = renderer.context
 let root renderer = renderer.root
+let children renderer = renderer.children
 
 let width renderer = Render_context.width renderer.context
 let height renderer = Render_context.height renderer.context

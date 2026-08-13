@@ -65,3 +65,8 @@
  (name test_renderable)
  (modules test_renderable)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_box)
+ (modules test_box)
+ (libraries opentui-core windtrap))
