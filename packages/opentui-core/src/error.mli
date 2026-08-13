@@ -1,19 +1,15 @@
-(** Errors returned by retained scene operations. *)
+(** Errors returned by renderer, context, and retained-rendering operations. *)
+
 type t =
   | Closed
   | Destroyed
-  | Cannot_destroy_root
-  | Cannot_move_root
-  | Invalid_child_index
-  | Not_container
-  | Not_box
-  | Not_text
-  | Invalid_dimensions
-  | Invalid_layout
+  | Owner_mismatch
+  | Not_child
+  | Invalid_anchor
   | Native of Native.Error.t
 
 (** [message error] is a diagnostic string for [error]. *)
 val message : t -> string
 
-(** [pp ppf error] formats [error] for diagnostics. *)
+(** [pp formatter error] formats [error] for diagnostics. *)
 val pp : Format.formatter -> t -> unit

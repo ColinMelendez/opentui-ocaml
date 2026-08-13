@@ -8,13 +8,13 @@ type t = Buffer_internal.t
 (** A renderer-owned drawing surface. *)
 
 (** [width buffer] returns the current number of columns. *)
-val width : t -> (int32, Native.Error.t) result
+val width : t -> (int32, Error.t) result
 
 (** [height buffer] returns the current number of rows. *)
-val height : t -> (int32, Native.Error.t) result
+val height : t -> (int32, Error.t) result
 
 (** [clear buffer ~background] fills the surface with [background]. *)
-val clear : t -> background:Color.t -> (unit, Native.Error.t) result
+val clear : t -> background:Color.t -> (unit, Error.t) result
 
 (** [set_cell buffer ...] writes one cell synchronously. *)
 val set_cell :
@@ -25,7 +25,7 @@ val set_cell :
   foreground:Color.t ->
   background:Color.t ->
   attributes:int32 ->
-  (unit, Native.Error.t) result
+    (unit, Error.t) result
 
 (** [draw_text buffer ...] draws caller-owned text synchronously. *)
 val draw_text :
@@ -36,10 +36,10 @@ val draw_text :
   foreground:Color.t ->
   background:Color.t ->
   attributes:int32 ->
-  (unit, Native.Error.t) result
+    (unit, Error.t) result
 
 (** [write_resolved_chars buffer ~output ~add_line_breaks] writes the
     resolved native output into caller-owned [output]. The returned count is
     the defined prefix length; insufficient capacity is a structured error. *)
 val write_resolved_chars :
-  t -> output:bytes -> add_line_breaks:bool -> (int32, Native.Error.t) result
+  t -> output:bytes -> add_line_breaks:bool -> (int32, Error.t) result

@@ -1,12 +1,13 @@
 open Windtrap
 
-module Native_renderer = Opentui_core.Renderer
+module Renderer = Opentui_core.Renderer
+module Core_buffer = Opentui_core.Buffer
 module Output = Opentui_core.Platform.Eio_runtime.Output_flow
 
 let expect_renderer_ok result =
   match result with
   | Ok value -> value
-  | Error error -> fail (Opentui_core.Native.Error.message error)
+  | Error error -> fail (Opentui_core.Error.message error)
 
 let expect_output_ok result =
   match result with
@@ -22,27 +23,27 @@ let () =
           let sink = Eio.Flow.buffer_sink sink_buffer in
           let output = Output.create ~sink in
           let renderer =
-            expect_renderer_ok (Native_renderer.create ~width:2l ~height:1l)
+            expect_renderer_ok (Renderer.create ~width:2l ~height:1l)
           in
-          let frame = expect_renderer_ok (Native_renderer.begin_frame renderer) in
+          let buffer = expect_renderer_ok (Renderer.next_buffer renderer) in
           ignore
             (expect_renderer_ok
-               (Native_renderer.Frame.clear frame
+               (Core_buffer.clear buffer
                   ~background:Opentui_core.Color.black));
           ignore
             (expect_renderer_ok
-               (Native_renderer.Frame.set_cell frame ~x:0l ~y:0l ~character:65l
+               (Core_buffer.set_cell buffer ~x:0l ~y:0l ~character:65l
                   ~foreground:Opentui_core.Color.white
                   ~background:Opentui_core.Color.black ~attributes:0l));
           ignore
             (expect_renderer_ok
-               (Native_renderer.Frame.set_cell frame ~x:1l ~y:0l ~character:66l
+               (Core_buffer.set_cell buffer ~x:1l ~y:0l ~character:66l
                   ~foreground:Opentui_core.Color.white
                   ~background:Opentui_core.Color.black ~attributes:0l));
           let resolved = Bytes.create 4 in
           let written =
             expect_renderer_ok
-              (Native_renderer.Frame.write_resolved_chars frame ~output:resolved
+              (Core_buffer.write_resolved_chars buffer ~output:resolved
                  ~add_line_breaks:false)
           in
           equal int32 2l written;
@@ -51,11 +52,11 @@ let () =
             (Output.write_subbytes output ~bytes:resolved ~off:0
                ~len:(Int32.to_int written));
           (match
-             expect_renderer_ok (Native_renderer.present frame ~force:true)
+             expect_renderer_ok (Renderer.render renderer ~force:true)
            with
-          | Native_renderer.Rendered -> ()
-          | Native_renderer.Skipped -> fail "expected a rendered frame"
-          | Native_renderer.Failed -> fail "the native frame failed");
+          | Renderer.Rendered -> ()
+          | Renderer.Skipped -> fail "expected a rendered frame"
+          | Renderer.Failed -> fail "the native frame failed");
           equal string "\x1b[?25lAB" (Buffer.contents sink_buffer);
-          Native_renderer.close renderer)
+          Renderer.destroy renderer)
     ]

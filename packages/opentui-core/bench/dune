@@ -1,25 +1,6 @@
-(library
- (name opentui_bench_workload)
- (modules warmed_workload retained_workload)
- (libraries opentui-core eio eio.unix mtime.clock))
-
 (executable
  (name profile)
  (public_name opentui-bench.profile)
  (package opentui-bench)
  (modules profile)
- (libraries opentui_bench_workload opentui-core eio_main eio.unix
-  mtime.clock))
-
-(executable
- (name regression)
- (modules regression)
- (libraries opentui_bench_workload thumper))
-
-(rule
- (alias bench)
- (locks bench)
- (action
-  (progn
-   (run %{exe:regression.exe})
-   (diff? warmed.thumper warmed.thumper.corrected))))
+ (libraries opentui-core mtime.clock))

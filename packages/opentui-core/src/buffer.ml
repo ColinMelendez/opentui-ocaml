@@ -5,8 +5,8 @@ let raw buffer = Buffer_internal.raw buffer
 let map_error result =
   match result with
   | Ok value -> Ok value
-  | Error Opentui_raw.Error.Closed -> Error Native.Error.Closed
-  | Error error -> Error (Native.Error.Native error)
+  | Error Opentui_raw.Error.Closed -> Error Error.Closed
+  | Error error -> Error (Error.Native (Native.Error.Native error))
 
 let width buffer = map_error (Opentui_raw.Buffer.width (raw buffer))
 let height buffer = map_error (Opentui_raw.Buffer.height (raw buffer))

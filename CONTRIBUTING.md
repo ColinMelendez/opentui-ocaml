@@ -65,7 +65,7 @@ Use the following placement rules before creating a file.
 | <code>vendor/opentui/packages/core/src/&lt;path&gt;</code> | <code>packages/opentui-core/src/&lt;path&gt;</code> | Preserve the source subdirectory by default. A deliberate split across modules or an explicitly mapped platform boundary is allowed when its ownership and observable contract are documented. |
 | <code>vendor/opentui/packages/core/src/zig</code>, <code>buffer.ts</code>, or <code>NativeSpanFeed.ts</code> | <code>packages/opentui-raw</code> | Keep ABI calls, native pointers, handle validation, and foreign lifetimes below <code>opentui-core</code>. |
 | Reference core tests | <code>packages/opentui-core/test</code> | Keep tests with the package they validate. Use the reference path in the test name or source-map row when the Dune layout differs. |
-| Reference examples for the core API | <code>packages/opentui-core/examples</code> | Keep executable examples and their Cram transcripts with the API they demonstrate. |
+| Reference examples for the core API | <code>packages/opentui-core/examples</code> | Keep executable examples with the API they demonstrate. |
 | Reference core benchmarks | <code>packages/opentui-core/bench</code> | Keep workloads, allocation checks, and tracing entry points with the package they measure. |
 | ABI and native-link tests | <code>packages/opentui-raw/test</code> | Test the foreign boundary where its handles and link rules are owned. |
 | Cross-package architecture, mapping, and performance policy | repository root <code>docs/</code> and <code>future-performance.md</code> | Keep documents that describe both packages or the whole port at repository level. |
@@ -100,7 +100,7 @@ the [source correspondence map](docs/upstream-map.md).
 | Reference renderable and renderer pointer dispatch | <code>docs/major-features/in-progress/pointer-dispatch/feature.md</code> and the renderable-core hit-grid seam | Pointer bubbling and renderer pointer policy are separate from ordinary event channels; the feature record tracks the current subset and deferred reference lifecycle. |
 | <code>core/src/platform/*</code> | <code>opentui-core/src/platform</code> | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into <code>eio_runtime</code> and <code>eio_unix_runtime</code>; the map records this as an OCaml-specific boundary rather than inventing reference subdirectories. |
 | <code>core/src/testing</code>, <code>core/src/tests</code>, and <code>core/src/benchmark</code> | <code>opentui-core/test</code>, <code>reference</code>, and <code>bench</code> | Behavior checks, reference comparisons, and performance workloads remain package-local and discoverable beside the implementation. |
-| <code>packages/react</code> and <code>packages/solid</code> | No OCaml package; an Lwd bridge can provide this role | A reactive bridge must update the existing retained tree. It must not introduce a second required render tree or change the imperative core contract. |
+| <code>packages/react</code> and <code>packages/solid</code> | No OCaml package selected | Any future reactive bridge must update the existing retained tree. It must not introduce a second required render tree or change the imperative core contract. |
 
 The reference <code>StdinParser</code> is the typed-event boundary. The OCaml
 <code>Stdin_parser</code> has the same responsibility: it owns byte framing,
@@ -121,11 +121,11 @@ The input path has a fixed responsibility order:
       -> Stdin_parser (framing and typed event production)
       -> caller-owned event sink or Event_queue
          (coordinator retains blocked events; Input_flow retains unread suffixes)
-      -> application and scene dispatch
+      -> application and retained-renderer dispatch
 
 The output path has a corresponding boundary:
 
-    scene mutations
+    retained-renderer mutations
       -> dirty/layout state
       -> Yoga calculation
       -> frame drawing
@@ -173,7 +173,7 @@ questions in the feature's test and map entry:
 | What does <code>preventDefault</code> do? | Stop the same downstream default action as the reference, while preserving any earlier handlers that already ran. |
 | What does propagation stop? | Stop the same listener scopes and no others. |
 | What happens when a sink is full? | Apply backpressure and retain the blocked event. Do not read more input if doing so could overwrite or lose it. |
-| What is cleaned up, and when? | Tie registrations and state to the owning scene, runtime switch, or decoder; destroy/close must make later use fail in the documented way. |
+| What is cleaned up, and when? | Tie registrations and state to the owning renderer, runtime switch, or decoder; destroy/close must make later use fail in the documented way. |
 
 ## Semantic decisions are part of the port
 
@@ -373,7 +373,7 @@ reads/writes, clocks, cancellation, and terminal setup under
 Put ABI calls and native lifetime code in <code>opentui-raw</code>. Do not make
 <code>opentui-core</code> know about C pointers, packed native handle bits, or
 callback calling conventions. Do not make <code>opentui-raw</code> know about
-scenes, widgets, or terminal policy.
+retained-rendering ownership, widgets, or terminal policy.
 
 ### 4. Implement ownership before convenience behavior
 
@@ -398,7 +398,7 @@ Add the primary behavior test under the owning package:
   malformed/unknown sequences, paste preservation, and event order;
 - queue tests exercise capacity, coalescing, full delivery, retry, and
   ownership of blocked events;
-- scene/renderable tests exercise identity, child order, dirty state, layout,
+- retained-renderable tests exercise identity, child order, dirty state, layout,
   destruction, hit-testing, and propagation;
 - raw tests exercise ABI layouts, stale handles, close order, copied spans,
   and native-link behavior;

@@ -29,16 +29,6 @@
  (libraries opentui-core windtrap))
 
 (test
- (name test_native)
- (modules test_native)
- (libraries opentui-core windtrap))
-
-(test
- (name test_core)
- (modules test_core)
- (libraries opentui-core windtrap))
-
-(test
  (name test_native_terminal)
  (modules test_native_terminal)
  (libraries opentui-core eio_main eio.unix windtrap))
@@ -65,3 +55,8 @@
   eio_main
   eio.unix
   windtrap))
+
+(test
+ (name test_renderer_context)
+ (modules test_renderer_context)
+ (libraries opentui-core windtrap))

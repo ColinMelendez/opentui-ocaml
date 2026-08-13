@@ -1,8 +1,4 @@
 (executable
- (name direct_renderables)
- (modules direct_renderables)
+ (name renderer_buffers)
+ (modules renderer_buffers)
  (libraries opentui-core))
-
-(cram
- (applies_to :whole_subtree)
- (deps %{exe:direct_renderables.exe}))

@@ -14,14 +14,16 @@ source directories correspond to the directories in
 
 ```text
 opentui-core/src/
-├── renderer.ml              frame lifecycle and output
-├── yoga.ml                  layout ownership and readback
-├── renderables/             retained Box and Text implementations
+├── renderer.ml              renderer ownership and frame execution
+├── render_context.ml        renderer-owned capabilities
+├── buffer.ml                checked borrowed drawing views
+├── yoga.ml                  independent layout-node ownership and readback
+├── event_subscription.ml    owner-local notification cancellation
+├── renderer_events.ml       renderer resize and frame event vocabulary
 ├── lib/                     terminal protocol and input modules
 ├── platform/                Eio and Unix terminal integration
 │   ├── eio_runtime/
 │   └── eio_unix_runtime/
-├── scene.ml                 retained UI-tree owner
 └── native/                  OCaml errors for native composition
 ```
 
@@ -31,7 +33,7 @@ The package-local validation and development material is beside the source:
 opentui-core/
 ├── src/                      library implementation
 ├── test/                     core behavior tests
-├── examples/                 public API examples and Cram transcripts
+├── examples/                 executable public API examples
 ├── reference/                optional comparisons with the reference source
 └── bench/                    profiles, allocation baselines, and tracing
 ```
@@ -56,7 +58,7 @@ opentui-core  ──depends on──>  opentui-raw  ──calls──>  referenc
 ```
 
 `opentui-raw` does not depend on `opentui-core`. A contributor can therefore
-inspect the ABI boundary without also loading the scene, renderable, or
+inspect the ABI boundary without also loading the retained-rendering or
 terminal-runtime API.
 
 For a path-by-path lookup from the reference source to the OCaml source, use

@@ -1,6 +1,7 @@
 open Windtrap
 
 module Native = Opentui_core.Renderer
+module Native_buffer = Opentui_core.Buffer
 module Output = Opentui_core.Platform.Eio_runtime.Output_flow
 module Input_flow = Opentui_core.Platform.Eio_runtime.Input_flow
 module Size_source = Opentui_core.Platform.Eio_unix_runtime.Terminal_size_source
@@ -47,7 +48,7 @@ end
 let expect_native_ok result =
   match result with
   | Ok value -> value
-  | Error error -> fail (Opentui_core.Native.Error.message error)
+  | Error error -> fail (Opentui_core.Error.message error)
 
 let expect_output_ok result =
   match result with
@@ -95,32 +96,31 @@ let set_window_size pty ~columns ~rows =
     { Eio_unix.Pty.rows = rows; cols = columns; xpixel = 0; ypixel = 0 }
 
 let render_text renderer output ~text ~width =
-  match
-    Native.run_frame renderer ~force:true ~draw:(fun frame ->
-        ignore
-          (expect_native_ok
-             (Native.Frame.clear frame ~background:Opentui_core.Color.black));
-        ignore
-          (expect_native_ok
-             (Native.Frame.draw_text frame ~text ~x:0l ~y:0l
-                ~foreground:Opentui_core.Color.white
-                ~background:Opentui_core.Color.black ~attributes:0l));
-        let bytes = Bytes.create width in
-        let written =
-          expect_native_ok
-            (Native.Frame.write_resolved_chars frame ~output:bytes
-               ~add_line_breaks:false)
-        in
-        equal int32 (Int32.of_int width) written;
-        expect_output_ok
-          (Output.write_subbytes output ~bytes ~off:0
-             ~len:(Int32.to_int written));
-        Ok ())
+  let buffer = expect_native_ok (Native.next_buffer renderer) in
+  ignore
+    (expect_native_ok
+       (Native_buffer.clear buffer ~background:Opentui_core.Color.black));
+  ignore
+    (expect_native_ok
+       (Native_buffer.draw_text buffer ~text ~x:0l ~y:0l
+          ~foreground:Opentui_core.Color.white
+          ~background:Opentui_core.Color.black ~attributes:0l));
+  let bytes = Bytes.create width in
+  let written =
+    expect_native_ok
+      (Native_buffer.write_resolved_chars buffer ~output:bytes
+         ~add_line_breaks:false)
+  in
+  equal int32 (Int32.of_int width) written;
+  expect_output_ok
+    (Output.write_subbytes output ~bytes ~off:0
+       ~len:(Int32.to_int written));
+  match Native.render renderer ~force:true
   with
   | Ok Native.Rendered -> ()
   | Ok Native.Skipped -> fail "PTY frame was unexpectedly skipped"
   | Ok Native.Failed -> fail "PTY frame failed"
-  | Error error -> fail (Opentui_core.Native.Error.message error)
+  | Error error -> fail (Opentui_core.Error.message error)
 
 let () =
   run "opentui-core-pty"
@@ -250,7 +250,7 @@ let () =
                     restored_attributes.c_ixoff;
                   equal int original_attributes.c_vmin restored_attributes.c_vmin;
                   equal int original_attributes.c_vtime restored_attributes.c_vtime;
-                  Native.close renderer
+                  Native.destroy renderer
             with
             | Unix.Unix_error
                 ((Unix.ENOTTY | Unix.EOPNOTSUPP | Unix.ENOENT), _, _) ->

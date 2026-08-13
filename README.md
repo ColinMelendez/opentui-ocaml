@@ -82,7 +82,7 @@ without running tests.
 To run one test executable directly, use its Dune name, for example:
 
 ```sh
-dune exec ./packages/opentui-core/test/test_core.exe
+dune exec ./packages/opentui-core/test/test_renderer_context.exe
 dune exec ./packages/opentui-core/test/test_terminal.exe
 ```
 
@@ -93,11 +93,7 @@ comparative performance checks against the TypeScript reference in
 `vendor/opentui` are documented in
 [`packages/opentui-core/reference/README.md`](packages/opentui-core/reference/README.md).
 
-The direct Box/Text renderable example and its deterministic Cram transcript
-are documented in
-[`packages/opentui-core/examples/README.md`](packages/opentui-core/examples/README.md).
-
-The imperative profile is available with:
+The renderer and borrowed-buffer profile is available with:
 
 ```sh
 nix develop --command dune exec --profile release \
@@ -107,13 +103,6 @@ nix develop --command dune exec --profile release \
 Release-profile tracing entry points and their tool-specific limitations are
 documented in
 [`packages/opentui-core/bench/README.md`](packages/opentui-core/bench/README.md).
-
-The release-profile allocation regression suite is separate from ordinary
-tests:
-
-```sh
-nix develop .#test -c dune build @bench --profile release
-```
 
 ## Architecture
 

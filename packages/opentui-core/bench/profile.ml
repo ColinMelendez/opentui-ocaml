@@ -1,11 +1,5 @@
-module Native = Opentui_core
-module Renderer = Native.Renderer
-module Core = Opentui_core.Scene
-module Core_node = Core.Node
-module Input = Opentui_core.Platform.Eio_runtime.Input_flow
-module Coordinator = Opentui_core.Lib.Input_coordinator
-module Output = Opentui_core.Platform.Eio_runtime.Output_flow
-module Warmed = Opentui_bench_workload.Warmed_workload
+module Buffer = Opentui_core.Buffer
+module Renderer = Opentui_core.Renderer
 
 type sample = {
   elapsed_ns : int64;
@@ -22,12 +16,7 @@ let fail message =
 let expect_ok result =
   match result with
   | Ok value -> value
-  | Error _ -> fail "profile operation failed"
-
-let expect_unit result =
-  match result with
-  | Ok () -> ()
-  | Error _ -> fail "profile operation failed"
+  | Error error -> fail (Opentui_core.Error.message error)
 
 let words value = Int64.of_float value
 
@@ -52,381 +41,43 @@ let print_sample name ~iterations sample =
     name iterations sample.elapsed_ns sample.minor_words sample.major_words
     sample.minor_collections sample.major_collections
 
-let retained_iterations = 64
-let retained_width = 80
-let retained_height = 24
-
-let retained_row_text row =
-  String.init retained_width (fun column ->
-      Char.chr (Char.code 'A' + ((row + column) mod 26)))
-
-let profile_retained_text () =
-  let scene =
-    expect_ok
-      (Core.create ~width:(Int32.of_int retained_width)
-         ~height:(Int32.of_int retained_height))
-  in
-  let root = expect_ok (Core.root scene) in
-  let rows = Array.init retained_height retained_row_text in
-  let nodes =
-    Array.init retained_height (fun row ->
-        expect_ok
-          (Core_node.create_text ~parent:root
-             ~width:(Float.of_int retained_width) ~height:1.0
-             ~text:(Array.get rows row) ()))
-  in
-  let output = Bytes.create (retained_width * retained_height) in
-  let expected_bytes = Int32.of_int (Bytes.length output) in
-  let run_frame frame_number =
-    let row = frame_number mod retained_height in
-    expect_unit
-      (Core_node.set_text (Array.get nodes row)
-         ~text:(Array.get rows ((row + frame_number) mod retained_height)));
-    match Core.flush scene ~force:false ~output with
-    | Ok { Core.status = Core.Rendered; bytes_written } ->
-        if not (Int32.equal bytes_written expected_bytes) then
-          fail "profile retained scene produced an unexpected output length"
-    | Ok { status = Core.Skipped; _ } ->
-        fail "profile retained scene unexpectedly skipped a dirty frame"
-    | Ok { status = Core.Failed; _ } ->
-        fail "profile retained scene failed to render"
-    | Error _ -> fail "profile retained scene operation failed"
-  in
-  run_frame 0;
+let run ~iterations ~name =
+  let width = 80l in
+  let height = 24l in
+  let renderer = expect_ok (Renderer.create ~width ~height) in
+  let buffer = expect_ok (Renderer.next_buffer renderer) in
+  let output = Bytes.create (Int32.to_int width * Int32.to_int height) in
   let sample =
     measure (fun () ->
-        for frame_number = 0 to retained_iterations - 1 do
-          run_frame frame_number
-        done)
-  in
-  Core.close scene;
-  print_sample "retained_text" ~iterations:retained_iterations sample
-
-let layout_iterations = 128
-
-let profile_retained_layout () =
-  let scene =
-    expect_ok
-      (Core.create ~width:(Int32.of_int retained_width)
-         ~height:(Int32.of_int retained_height))
-  in
-  let root = expect_ok (Core.root scene) in
-  let nodes =
-    Array.init retained_height (fun row ->
-        expect_ok
-          (Core_node.create_text ~parent:root
-             ~width:(Float.of_int retained_width) ~height:1.0
-             ~text:(retained_row_text row) ()))
-  in
-  let output = Bytes.create (retained_width * retained_height) in
-  let expected_bytes = Int32.of_int (Bytes.length output) in
-  let run_update iteration =
-    let row = iteration mod retained_height in
-    let width =
-      if Int.equal (iteration mod 2) 0 then retained_width
-      else retained_width / 2
-    in
-    expect_unit
-      (Core_node.set_dimensions (Array.get nodes row)
-         ~width:(Float.of_int width) ~height:1.0);
-    match Core.flush scene ~force:false ~output with
-    | Ok { Core.status = Core.Rendered; bytes_written } ->
-        if not (Int32.equal bytes_written expected_bytes) then
-          fail "profile retained layout produced an unexpected output length"
-    | Ok { status = Core.Skipped; _ } ->
-        fail "profile retained layout unexpectedly skipped a dirty frame"
-    | Ok { status = Core.Failed; _ } ->
-        fail "profile retained layout failed to render"
-    | Error _ -> fail "profile retained layout operation failed"
-  in
-  run_update 1;
-  let sample =
-    measure (fun () ->
-        for iteration = 0 to layout_iterations - 1 do
-          run_update iteration
-        done)
-  in
-  Core.close scene;
-  print_sample "retained_layout" ~iterations:layout_iterations sample
-
-let reorder_iterations = 128
-let reorder_nodes = 24
-
-let profile_retained_reorder () =
-  let scene =
-    expect_ok
-      (Core.create ~width:(Int32.of_int retained_width)
-         ~height:(Int32.of_int retained_height))
-  in
-  let root = expect_ok (Core.root scene) in
-  let nodes =
-    Array.init reorder_nodes (fun row ->
-        expect_ok
-          (Core_node.create_text ~parent:root
-             ~width:(Float.of_int retained_width) ~height:1.0
-             ~text:(retained_row_text row) ()))
-  in
-  let output = Bytes.create (retained_width * retained_height) in
-  let expected_bytes = Int32.of_int (Bytes.length output) in
-  let order = Array.init reorder_nodes (fun index -> Array.get nodes index) in
-  let run_update iteration =
-    let source_index = iteration mod reorder_nodes in
-    let target_index = (source_index + 1) mod reorder_nodes in
-    let target = Array.get order source_index in
-    expect_unit (Core_node.move_to_index target ~index:target_index);
-    if Int.compare source_index target_index < 0 then
-      for index = source_index to target_index - 1 do
-        Array.set order index (Array.get order (index + 1))
-      done
-    else
-      for index = source_index downto target_index + 1 do
-        Array.set order index (Array.get order (index - 1))
-      done;
-    Array.set order target_index target;
-    match Core.flush scene ~force:false ~output with
-    | Ok { Core.status = Core.Rendered; bytes_written } ->
-        if not (Int32.equal bytes_written expected_bytes) then
-          fail "profile retained reorder produced an unexpected output length"
-    | Ok { status = Core.Skipped; _ } ->
-        fail "profile retained reorder unexpectedly skipped a dirty frame"
-    | Ok { status = Core.Failed; _ } ->
-        fail "profile retained reorder failed to render"
-    | Error _ -> fail "profile retained reorder operation failed"
-  in
-  run_update 1;
-  let sample =
-    measure (fun () ->
-        for iteration = 0 to reorder_iterations - 1 do
-          run_update iteration
-        done)
-  in
-  Core.close scene;
-  print_sample "retained_reorder" ~iterations:reorder_iterations sample
-
-let pointer_iterations = 128
-
-let profile_retained_pointer () =
-  let scene =
-    expect_ok
-      (Core.create ~width:(Int32.of_int retained_width)
-         ~height:(Int32.of_int retained_height))
-  in
-  let root = expect_ok (Core.root scene) in
-  let nodes =
-    Array.init retained_height (fun row ->
-        expect_ok
-          (Core_node.create_text ~parent:root
-             ~width:(Float.of_int retained_width) ~height:1.0
-             ~text:(retained_row_text row) ()))
-  in
-  let handler node event =
-    if Core_node.is_destroyed node then Core.Stop
-    else if Int.equal event.Core.button 0 then Core.Continue
-    else Core.Stop
-  in
-  Array.iter
-    (fun node -> expect_unit (Core_node.set_pointer_handler node handler))
-    nodes;
-  let output = Bytes.create (retained_width * retained_height) in
-  let expected_bytes = Int32.of_int (Bytes.length output) in
-  (match Core.flush scene ~force:false ~output with
-  | Ok { Core.status = Core.Rendered; bytes_written } ->
-      if not (Int32.equal bytes_written expected_bytes) then
-        fail "profile retained pointer setup produced an unexpected output length"
-  | Ok { status = Core.Skipped; _ } ->
-      fail "profile retained pointer setup unexpectedly skipped a dirty frame"
-  | Ok { status = Core.Failed; _ } ->
-      fail "profile retained pointer setup failed to render"
-  | Error _ -> fail "profile retained pointer setup operation failed");
-  let events =
-    Array.init retained_height (fun row ->
-        {
-          Core.kind = Core.Move;
-          button = 0;
-          x = (row * 3) mod retained_width;
-          y = row;
-        })
-  in
-  let dispatch iteration =
-    match
-      Core.dispatch_pointer scene
-        (Array.get events (iteration mod retained_height))
-    with
-    | Ok (Core.Handled _) -> ()
-    | Ok Core.Unhandled -> fail "profile retained pointer event was unhandled"
-    | Error _ -> fail "profile retained pointer operation failed"
-  in
-  dispatch 0;
-  let sample =
-    measure (fun () ->
-        for iteration = 0 to pointer_iterations - 1 do
-          dispatch iteration
-        done)
-  in
-  Core.close scene;
-  print_sample "retained_pointer" ~iterations:pointer_iterations sample
-
-let teardown_iterations = 64
-
-let profile_retained_teardown () =
-  let scene =
-    expect_ok
-      (Core.create ~width:(Int32.of_int retained_width)
-         ~height:(Int32.of_int retained_height))
-  in
-  let root = expect_ok (Core.root scene) in
-  let output = Bytes.create (retained_width * retained_height) in
-  let expected_bytes = Int32.of_int (Bytes.length output) in
-  let flush_after_change message =
-    match Core.flush scene ~force:false ~output with
-    | Ok { Core.status = Core.Rendered; bytes_written } ->
-        if not (Int32.equal bytes_written expected_bytes) then fail message
-    | Ok { status = Core.Skipped; _ } -> fail message
-    | Ok { status = Core.Failed; _ } -> fail message
-    | Error _ -> fail message
-  in
-  flush_after_change "profile retained teardown initial flush failed";
-  let run_update iteration =
-    let child =
-      expect_ok
-        (Core_node.create_text ~parent:root
-           ~width:(Float.of_int retained_width) ~height:1.0
-           ~text:(retained_row_text (iteration mod retained_height)) ())
-    in
-    flush_after_change "profile retained teardown create flush failed";
-    expect_unit (Core_node.destroy child);
-    flush_after_change "profile retained teardown destroy flush failed"
-  in
-  let sample =
-    measure (fun () ->
-        for iteration = 0 to teardown_iterations - 1 do
-          run_update iteration
-        done)
-  in
-  Core.close scene;
-  print_sample "retained_teardown" ~iterations:teardown_iterations sample
-
-let frame_iterations = 64
-let frame_width = 80
-let frame_height = 24
-
-let profile_frames () =
-  let renderer =
-    expect_ok
-      (Renderer.create ~width:(Int32.of_int frame_width)
-         ~height:(Int32.of_int frame_height))
-  in
-  let output = Bytes.create (frame_width * frame_height) in
-  let foreground = Native.Color.white in
-  let background = Native.Color.black in
-  let sample =
-    measure (fun () ->
-        for frame_number = 0 to frame_iterations - 1 do
-          let frame = expect_ok (Renderer.begin_frame renderer) in
-          for y = 0 to frame_height - 1 do
-            for x = 0 to frame_width - 1 do
-              let character = Int32.of_int (Char.code 'A' + ((x + y + frame_number) mod 26)) in
-              expect_unit
-                (Renderer.Frame.set_cell frame ~x:(Int32.of_int x)
-                   ~y:(Int32.of_int y) ~character ~foreground ~background
-                   ~attributes:0l)
-            done
-          done;
+        for iteration = 0 to iterations - 1 do
+          ignore
+            (expect_ok
+               (Buffer.clear buffer ~background:Opentui_core.Color.black));
+          ignore
+            (expect_ok
+               (Buffer.draw_text buffer ~text:"OpenTUI" ~x:0l
+                  ~y:(Int32.of_int (iteration mod Int32.to_int height))
+                  ~foreground:Opentui_core.Color.white
+                  ~background:Opentui_core.Color.black ~attributes:0l));
           let written =
             expect_ok
-              (Renderer.Frame.write_resolved_chars frame ~output
+              (Buffer.write_resolved_chars buffer ~output
                  ~add_line_breaks:false)
           in
           if not (Int32.equal written (Int32.of_int (Bytes.length output))) then
-            fail "profile frame produced an unexpected output length";
-          ignore (expect_ok (Renderer.present frame ~force:true))
+            fail "renderer buffer profile wrote an unexpected byte count";
+          ignore (expect_ok (Renderer.request_render renderer));
+          match expect_ok (Renderer.render renderer ~force:true) with
+          | Renderer.Rendered -> ()
+          | Renderer.Skipped -> fail "renderer buffer profile unexpectedly skipped"
+          | Renderer.Failed -> fail "renderer buffer profile failed"
         done)
   in
-  Renderer.close renderer;
-  print_sample "frames" ~iterations:frame_iterations sample
-
-let input_repetitions = 32768
-
-let input_payload () =
-  let result = Bytes.create (input_repetitions * 3) in
-  for index = 0 to input_repetitions - 1 do
-    let offset = index * 3 in
-    Bytes.set_uint8 result offset 0x1b;
-    Bytes.set_uint8 result (offset + 1) 0x5b;
-    Bytes.set_uint8 result (offset + 2) 0x41
-  done;
-  Bytes.to_string result
-
-let profile_input env =
-  let payload = input_payload () in
-  let input = expect_ok (Input.create ~buffer_size:4096 ()) in
-  let source = Eio.Flow.string_source payload in
-  let clock = Eio.Stdenv.mono_clock env in
-  let events = ref 0 in
-  let emit _event =
-    events := !events + 1;
-    Coordinator.Accepted
-  in
-  let sample =
-    measure (fun () ->
-        let finished = ref false in
-        while not !finished do
-          (match Input.read_once input ~clock ~source ~emit with
-          | Ok Input.End_of_input -> finished := true
-          | Ok (Input.Bytes_read _) -> ()
-          | Ok (Input.Backpressured _) -> fail "profile input unexpectedly blocked"
-          | Error _ -> fail "profile input read failed");
-        done)
-  in
-  if not (Int.equal !events input_repetitions) then
-    fail "profile input produced an unexpected event count";
-  print_sample "input" ~iterations:input_repetitions sample
-
-let output_iterations = 4096
-let output_offset = 16
-let output_length = 128
-let output_payload = Bytes.make (output_offset + output_length) 'x'
-
-let profile_output () =
-  let sink_buffer = Buffer.create (output_iterations * output_length) in
-  let sink = Eio.Flow.buffer_sink sink_buffer in
-  let output = Output.create ~sink in
-  let sample =
-    measure (fun () ->
-        for _ = 0 to output_iterations - 1 do
-          expect_unit
-            (Output.write_subbytes output ~bytes:output_payload
-               ~off:output_offset ~len:output_length)
-        done)
-  in
-  if not (Int.equal (Buffer.length sink_buffer) (output_iterations * output_length)) then
-    fail "profile output wrote an unexpected byte count";
-  print_sample "output" ~iterations:output_iterations sample
-
-let profile_warmed_load = Warmed.profile
-
-let warmed_from_environment () =
-  match Sys.getenv_opt "OPENTUI_PROFILE_WORKLOAD" with
-  | None -> false
-  | Some value when String.equal value "warmed" -> true
-  | Some _ -> fail "OPENTUI_PROFILE_WORKLOAD must be warmed"
+  print_sample name ~iterations sample;
+  Renderer.destroy renderer
 
 let () =
-  match Array.length Sys.argv with
-  | 1 ->
-      if warmed_from_environment () then Eio_main.run profile_warmed_load
-      else (
-        profile_retained_text ();
-        profile_retained_layout ();
-        profile_retained_reorder ();
-        profile_retained_pointer ();
-        profile_retained_teardown ();
-        profile_frames ();
-        Eio_main.run (fun env ->
-            profile_input env;
-            profile_output ()))
-  | 3 when
-      String.equal Sys.argv.(1) "--workload"
-      && String.equal Sys.argv.(2) "warmed" ->
-      Eio_main.run profile_warmed_load
+  match Array.to_list (Array.sub Sys.argv 1 (Array.length Sys.argv - 1)) with
+  | [] -> run ~iterations:64 ~name:"renderer_buffers"
+  | [ "--workload"; "warmed" ] -> run ~iterations:512 ~name:"renderer_buffers_warmed"
   | _ -> fail "usage: profile.exe [--workload warmed]"

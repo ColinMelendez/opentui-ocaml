@@ -18,7 +18,7 @@ state before the higher-level failure occurred.
 | Path | Reference behavior | What it tells us |
 | --- | --- | --- |
 | Terminal input | `opentui-core.Platform.Eio_runtime.Input_flow` reuses one `Cstruct.t` and one character `Bigarray` view. The coordinator offers decoded events synchronously to a caller-owned sink, bounds direct pushes to 4096-byte parser chunks, retains at most one blocked decoded event plus the parser's current chunk, and keeps an unread Eio suffix in the same reusable buffer. Emitted event payloads are owned. | The Eio read loop has no intermediate `Bytes` staging buffer or unbounded coordinator backlog. The remaining copies are deliberate ownership boundaries; an `Event_queue` sink supplies explicit backpressure and coalescing. |
-| Native output | `opentui-core.Renderer.Frame` writes resolved characters into caller-owned `bytes`. `Platform.Eio_runtime.Output_flow.write_subbytes` validates and writes only the returned range. | Output is bounded and safe, but the Eio sink path still has a copy-first `Bytes`-to-`Cstruct` conversion. |
+| Native output | `opentui-core.Buffer.t` writes resolved characters into caller-owned `bytes`. `Platform.Eio_runtime.Output_flow.write_subbytes` validates and writes only the returned range. | Output is bounded and safe, but the Eio sink path still has a copy-first `Bytes`-to-`Cstruct` conversion. |
 | Frame mutation | `set_cell` crosses the FFI one cell at a time, constructs a six-field tuple, and converts each color into a fresh four-field tuple. | The frame profile exposes more OCaml allocation here than in the output sink. Direct byte transport alone will not solve it. |
 | Native-owned storage | Optimized-buffer arrays and span-feed chunks remain native-owned and are not exposed as naked Bigarrays or Cstructs. | Resize, destruction, release, and renderer ownership remain explicit instead of being hidden behind a view that could outlive its owner. |
 
@@ -64,8 +64,9 @@ the Eio sink boundary.
 1. Add a native primitive that writes resolved characters directly into a
    caller-owned one-dimensional character `Bigarray`, returning the exact
    count written. Keep the native package independent of Eio and Cstruct.
-2. Add a narrow `Renderer.Frame` composition function for that buffer. It must
-   retain the existing frame-token checks and all-or-nothing capacity behavior.
+2. Add a narrow `Buffer.t` composition function for that buffer. It must
+   retain the existing borrowed-buffer checks and all-or-nothing capacity
+   behavior.
 3. Add `Output_flow.write_cstruct` for a caller-owned Cstruct view. At the Eio
    boundary, construct a view over the same Bigarray rather than converting
    through `Bytes`.
@@ -121,8 +122,8 @@ operation that the profile justifies.
 
 Acceptance requires stable native identity, equivalent frame output, explicit
 failure behavior for a partially accepted batch, and lower allocation/native
-call volume on representative scenes. This work belongs after the core's
-render/update ownership is understood; otherwise it can obscure a scene or
+call volume on representative retained renderers. This work belongs after the core's
+render/update ownership is understood; otherwise it can obscure a retained-tree or
 invalidation bug.
 
 ## Candidate D: native-owned views and span reservations
@@ -212,4 +213,3 @@ the optimization is not ready to become the default path.
 - no lock-free or multi-domain queue without a measured ownership requirement;
 - no per-cell native pointer view as a substitute for a render contract;
 - no claim that lower allocation alone provides hard real-time behavior; and
-- no Lwd or widget API decisions in this document.

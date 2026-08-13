@@ -62,6 +62,6 @@ a regression gate.
 
 The reference `bench:layout`, `bench:js`, and `bench:native` suites provide
 additional context, but their tree sizes, scheduler, renderer, and native
-optimization boundaries differ from this repository's retained scene. A
+optimization boundaries differ from this repository's retained renderer. A
 retained-core side-by-side benchmark requires an equivalent workload manifest
 that states those differences explicitly.

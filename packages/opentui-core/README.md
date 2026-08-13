@@ -1,62 +1,48 @@
 # opentui-core
 
-`opentui-core` is the user-facing OCaml library for terminal UI programs. It
-uses Eio for terminal resource lifetime and I/O, and it uses `opentui-raw` for
-checked calls to the Zig renderer. The source directories correspond to
-`vendor/opentui/packages/core/src`, the matching directory in the reference
-OpenTUI source tree. Package-specific tests, examples, reference comparisons,
-and benchmarks are kept beside this source tree under `test/`, `examples/`,
-`reference/`, and `bench/`.
+`opentui-core` is the user-facing Eio-native OCaml library for terminal UI
+programs. It uses `opentui-raw` for checked calls to the Zig renderer. Its
+source directories correspond to the matching directories in
+`vendor/opentui/packages/core/src`; package-local tests, reference tools, and
+performance tools remain under this package.
 
-## Scene and renderables
+## Renderer and buffers
 
-A scene is the owner of a retained UI tree. It owns a renderer and a Yoga
-layout tree, and it keeps each attached node alive until that node is
-destroyed. Yoga is the layout engine that calculates node positions and
-dimensions. A retained node has a stable identity, so changing text,
-dimensions, colors, or border properties updates the existing node instead of
-constructing a replacement.
+`Renderer.t` owns one native renderer, one `Render_context.t`, and the native
+renderer’s current and next buffers. `Render_context.t` is the capability view
+shared by the renderer and retained renderables. It observes live dimensions
+and frame identity, records coalesced render requests, and provides typed
+resize and frame notifications from the renderer’s one owner-local event
+source.
 
-The public scene API provides:
+`Buffer.t` is a checked drawing view over one renderer-owned native buffer. A
+buffer does not own its native storage and cannot be destroyed independently.
+Resize mutates the native buffers in place, so existing `Buffer.t` values
+observe the new dimensions. Destroying the renderer closes its context and
+invalidates all borrowed buffers.
 
-- `Scene.create` and `Scene.root` for creating a tree and obtaining its root;
-- `Scene.Box` for a filled or bordered rectangular container;
-- `Scene.Text` for copied plain text with colors and attributes;
-- `Scene.Node` for child ordering, dimensions, destruction, and pointer handlers;
-- `Scene.flush` for layout calculation and output into caller-owned `bytes`; and
-- `Scene.dispatch_pointer` for hit-testing and target-to-parent propagation.
+`Yoga.Node.t` represents an independently owned layout node. Attaching and
+detaching a node does not free it; its owner frees it explicitly. The Yoga
+module exposes the style operations required by the retained-rendering
+modules and returns structured native errors.
 
-`Scene.flush` is the frame boundary. It skips an unchanged scene unless
-`force:true` is supplied. A rendered result reports the defined prefix of the
-caller-owned output buffer. `Platform.Eio_runtime.Output_flow` can write that
-prefix to an Eio output flow. A failed frame leaves the scene dirty so the
-caller can inspect the error or retry the operation.
-
-The example in [`examples/README.md`](examples/README.md) shows a Box
-containing Text, two property updates, and the resulting frame output.
+The retained renderable tree, concrete Box and Text modules, and their
+text-buffer dependencies follow the source correspondence recorded in the
+[renderable-core feature record](../../docs/major-features/in-progress/renderable-core/feature.md).
+They use the renderer, context, buffer, and Yoga ownership boundaries defined
+here rather than introducing a second tree owner.
 
 ## Terminal modules
 
 `Lib.Stdin_parser` is the terminal input boundary. It frames input bytes and
 emits typed key, mouse, paste, and response events. `Lib.Key_decoder` and
-`Lib.Mouse_decoder` are the low-level parsing helpers used by
-`Lib.Stdin_parser`; they are not a required second input stage.
-`Lib.Input_coordinator` and `Lib.Event_queue` provide deadline, backpressure,
-and event-handoff policies. `Platform.Eio_runtime` contains Eio flow, wakeup,
-output, and dispatch modules. `Platform.Eio_unix_runtime` contains Unix
-terminal-size, signal, and termios-session modules. These modules expose the
-building blocks needed to compose an application runtime; this package does
-not provide a single implicit application loop.
-
-Lwd is the OCaml incremental-computation library intended for reactive UI
-bindings. It is not a dependency of `opentui-core`. The documented
-`opentui-core` API does not include the following features:
-
-- styled or nested text beyond the plain `Text` renderable;
-- the remaining OpenTUI renderables and direct controls;
-- editor buffers, image/audio support, or post-processing;
-- an Lwd reactive binding package; or
-- widget-level focus and keyboard-routing policy.
+`Lib.Mouse_decoder` are parsing helpers used by `Lib.Stdin_parser`; they are
+not a required second input stage. `Lib.Input_coordinator` and
+`Lib.Event_queue` provide deadline, backpressure, and event-handoff policies.
+`Platform.Eio_runtime` contains Eio flow, wakeup, output, and dispatch
+modules. `Platform.Eio_unix_runtime` contains Unix terminal-size, signal, and
+termios-session modules. These modules provide explicit building blocks for
+an application runtime; they do not hide resource ownership in a global loop.
 
 The source location and deferred reference areas are listed in the [source
 correspondence map](../../docs/upstream-map.md).

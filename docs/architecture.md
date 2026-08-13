@@ -57,7 +57,7 @@ Code that exercises one package is stored in that package directory:
 | Package directory | Contents |
 | --- | --- |
 | `packages/opentui-core/test` | Tests for the retained renderable tree, renderer, terminal protocols, and Eio/Unix integrations. |
-| `packages/opentui-core/examples` | Executable examples of the public core API and their Cram transcripts. |
+| `packages/opentui-core/examples` | Executable examples of the public core API. |
 | `packages/opentui-core/reference` | Optional comparisons between core behavior and the TypeScript reference source. |
 | `packages/opentui-core/bench` | Release-profile workloads, allocation baselines, and tracing wrappers for core behavior. |
 | `packages/opentui-raw/test` | Tests for the raw ABI, C stubs, foreign ownership, and the native link seam. |
@@ -79,19 +79,10 @@ directory or module with a different OCaml name is listed in the source map.
 src/
 ├── renderer.ml              CliRenderer ownership, frame lifecycle, and output
 ├── render_context.ml        capabilities supplied to renderables
-├── renderable.ml            common retained-node ownership and traversal
-├── layout_children.ml       typed layout-child capability
 ├── buffer.ml                renderable-facing buffer operations
 ├── yoga.ml                  private layout-node ownership and readback
-├── renderables/             retained visual nodes
-│   ├── box.ml
-│   ├── text.ml
-│   ├── text_children.ml
-│   ├── text_buffer_renderable.ml
-│   └── text_node.ml
-├── text_buffer.ml            styled text storage and measurement
-├── text_buffer_view.ml       wrapping, viewport, and visible-line state
-├── syntax_style.ml           text syntax-style state
+├── event_subscription.ml     owner-local notification cancellation
+├── renderer_events.ml        renderer resize and frame event vocabulary
 ├── lib/                     terminal protocol and input support
 │   ├── styled_text.ml
 │   ├── stdin_parser.ml
@@ -107,6 +98,10 @@ src/
 │   └── eio_unix_runtime/    termios, SIGWINCH, and terminal-size support
 └── native/                  OCaml errors for native composition
 ```
+
+Retained renderables and text-buffer modules are planned under the reference
+paths recorded in the renderable-core feature record. They are not part of the
+current source tree until their corresponding implementation steps begin.
 
 The names `eio_runtime` and `eio_unix_runtime` avoid a Dune namespace conflict:
 with qualified subdirectories, a directory named `eio` or `unix` would shadow
@@ -124,8 +119,8 @@ Yoga, renderable setters, the byte parser, and the bounded event queue do not
 start fibers or perform terminal I/O.
 
 An application fiber calls the synchronous renderer and parser operations. The
-renderer exposes an explicit frame and presentation boundary, so an application
-may decide when to present a frame. That operation is not the semantic
+renderer exposes explicit frame execution and presentation boundaries, so an
+application may decide when to present a frame. That operation is not the semantic
 replacement for reference `requestRender()`: a scheduler added above this
 boundary must keep dirty-state invalidation, coalesced frame requests, timing,
 and presentation distinct. This boundary keeps scheduling and terminal
