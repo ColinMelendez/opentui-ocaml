@@ -11,7 +11,7 @@ type render_status = Rendered | Skipped | Failed
 
 type frame = {
   owner : renderer;
-  buffer : Opentui_raw.Buffer.t;
+  buffer : Buffer.t;
   mutable active : bool;
 }
 
@@ -23,44 +23,30 @@ module Frame = struct
     else if not frame.active then Error Native.Error.Frame_not_open
     else Ok ()
 
-  let map_native result =
-    match result with
-    | Ok value -> Ok value
-    | Error error -> Error (Native.Error.Native error)
-
   let clear frame ~background =
     match ensure_open frame with
     | Error error -> Error error
-    | Ok () ->
-        map_native
-          (Opentui_raw.Buffer.clear frame.buffer
-             ~background:(Color.Private.to_raw background))
+    | Ok () -> Buffer.clear frame.buffer ~background
 
   let set_cell frame ~x ~y ~character ~foreground ~background ~attributes =
     match ensure_open frame with
     | Error error -> Error error
     | Ok () ->
-        map_native
-          (Opentui_raw.Buffer.set_cell frame.buffer ~x ~y ~character
-             ~foreground:(Color.Private.to_raw foreground)
-             ~background:(Color.Private.to_raw background) ~attributes)
+        Buffer.set_cell frame.buffer ~x ~y ~character ~foreground ~background
+          ~attributes
 
   let draw_text frame ~text ~x ~y ~foreground ~background ~attributes =
     match ensure_open frame with
     | Error error -> Error error
     | Ok () ->
-        map_native
-          (Opentui_raw.Buffer.draw_text frame.buffer ~text ~x ~y
-             ~foreground:(Color.Private.to_raw foreground)
-             ~background:(Color.Private.to_raw background) ~attributes)
+        Buffer.draw_text frame.buffer ~text ~x ~y ~foreground ~background
+          ~attributes
 
   let write_resolved_chars frame ~output ~add_line_breaks =
     match ensure_open frame with
     | Error error -> Error error
     | Ok () ->
-        map_native
-          (Opentui_raw.Buffer.write_resolved_chars frame.buffer ~output
-             ~add_line_breaks)
+        Buffer.write_resolved_chars frame.buffer ~output ~add_line_breaks
 end
 
 let create ~width ~height =
@@ -96,7 +82,12 @@ let begin_frame renderer =
     | Error error -> Error (Native.Error.Native error)
     | Ok buffer ->
         renderer.active_frame <- true;
-        Ok { owner = renderer; buffer; active = true }
+        Ok
+          {
+            owner = renderer;
+            buffer = Buffer_internal.of_raw buffer;
+            active = true;
+          }
 
 let present frame ~force =
   if frame.owner.closed then Error Native.Error.Closed
@@ -113,10 +104,7 @@ let present frame ~force =
 
 let discard frame =
   if frame.active then (
-    ignore
-      (Opentui_raw.Buffer.clear frame.buffer
-         ~background:
-           (Color.Private.to_raw frame.owner.clear_background));
+    ignore (Buffer.clear frame.buffer ~background:frame.owner.clear_background);
     frame.active <- false;
     frame.owner.active_frame <- false)
 
