@@ -136,6 +136,11 @@ module Private : sig
   val create_root : Render_context.t -> (t, Error.t) result
   val set_behavior : t -> behavior -> unit
 
+  val with_yoga_node :
+    t -> (Yoga.Node.t -> ('a, Error.t) result) -> ('a, Error.t) result
+
+  val mark_yoga_dirty : t -> (unit, Error.t) result
+
   val attach :
     parent:t -> child:t -> index:int -> (int, Error.t) result
   val insert_before :

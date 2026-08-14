@@ -295,11 +295,11 @@ can own layout nodes:
 
 Text layout also requires the reference native-measure path. `TextBufferRenderable`
 creates a native renderable, attaches the existing Yoga node, and sets a
-`TextBufferView` measure target. Those ABI operations are not in the current
-raw contract. They are added as a private `opentui-raw` seam used by
-`text_buffer_renderable.ml`; they are not a public core API. Without that
-measure target, Text cannot participate in Yoga layout with the reference
-geometry.
+`TextBufferView` measure target. The private `opentui-raw` contract supplies
+those operations to `text_buffer_renderable.ml`; they are not a public core
+API on normal core modules. The nested `Private` adapters are internal
+trust boundaries used by core implementations. Without that measure target,
+Text cannot participate in Yoga layout with the reference geometry.
 
 These Yoga and measure changes are part of this feature's port sequence. They
 update the raw ABI documentation in the same work.

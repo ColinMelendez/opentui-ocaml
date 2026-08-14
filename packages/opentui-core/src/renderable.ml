@@ -267,6 +267,20 @@ let set_behavior renderable behavior =
   bump_render_list_revision renderable;
   request_render_internal renderable
 
+let mark_yoga_dirty renderable =
+  match ensure_open renderable with
+  | Error error -> Error error
+  | Ok () ->
+      (match
+         with_node renderable (fun node ->
+             map_native_result (Yoga.Node.mark_dirty node))
+       with
+      | Error error -> Error error
+      | Ok () ->
+          invalidate_layout_cache renderable;
+          request_render_internal renderable;
+          Ok ())
+
 let rec update_live_count renderable delta =
   let old_count = renderable.live_count in
   renderable.live_count <- old_count + delta;
@@ -1251,6 +1265,8 @@ module Private = struct
                Error error)
 
   let set_behavior = set_behavior
+  let with_yoga_node = with_node
+  let mark_yoga_dirty = mark_yoga_dirty
   let attach = attach_internal
   let insert_before = insert_before_internal
   let detach = detach_internal

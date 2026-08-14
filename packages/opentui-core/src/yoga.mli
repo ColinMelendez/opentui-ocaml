@@ -121,6 +121,9 @@ module Node : sig
   val is_dirty : t -> (bool, Native.Error.t) result
   (** [is_dirty node] reads Yoga's native layout-invalidation flag. *)
 
+  val mark_dirty : t -> (unit, Native.Error.t) result
+  (** [mark_dirty node] requests remeasurement from the native measure owner. *)
+
   val has_new_layout : t -> (bool, Native.Error.t) result
   (** [has_new_layout node] reports whether Yoga has produced unseen layout. *)
 
@@ -165,4 +168,10 @@ module Node : sig
 
   val layout : t -> (layout, Native.Error.t) result
   (** [layout node] returns the most recently calculated layout. *)
+
+  module Private : sig
+    (** Internal access used by the native measurement adapter. *)
+    val attach_native_renderable :
+      t -> Opentui_raw.Native_renderable.t -> (unit, Native.Error.t) result
+  end
 end

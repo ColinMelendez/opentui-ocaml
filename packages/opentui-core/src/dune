@@ -3,5 +3,11 @@
 (library
  (name opentui_core)
  (public_name opentui-core)
-(private_modules buffer_internal event_kernel renderer_events)
+(private_modules
+ buffer_internal
+ event_kernel
+ renderer_events
+ native_measure
+ text_buffer_internal
+ text_buffer_view_internal)
  (libraries opentui-raw eio cstruct mtime eio.unix))

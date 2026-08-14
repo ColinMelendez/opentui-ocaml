@@ -108,6 +108,7 @@ module Node = struct
          ~direction:(raw_direction direction))
 
   let is_dirty node = map_result (Opentui_raw.Yoga.Node.is_dirty node)
+  let mark_dirty node = map_result (Opentui_raw.Yoga.Node.mark_dirty node)
   let has_new_layout node = map_result (Opentui_raw.Yoga.Node.has_new_layout node)
   let mark_layout_seen node =
     map_result (Opentui_raw.Yoga.Node.mark_layout_seen node)
@@ -291,4 +292,10 @@ module Node = struct
             width = layout.Opentui_raw.Yoga.width;
             height = layout.Opentui_raw.Yoga.height;
           }
+
+  module Private = struct
+    let attach_native_renderable node renderable =
+      map_result
+        (Opentui_raw.Native_renderable.attach_yoga_node renderable node)
+  end
 end
