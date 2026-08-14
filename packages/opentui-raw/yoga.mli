@@ -127,6 +127,10 @@ module Node : sig
   val is_dirty : t -> (bool, Error.t) result
   (** [is_dirty node] reads Yoga's native layout-invalidation flag. *)
 
+  val mark_dirty : t -> (unit, Error.t) result
+  (** [mark_dirty node] marks a native-measured node dirty for remeasurement.
+      The node must have an attached native measurement owner. *)
+
   val has_new_layout : t -> (bool, Error.t) result
   (** [has_new_layout node] reports whether Yoga has produced unseen layout. *)
 
@@ -170,4 +174,18 @@ module Node : sig
 
   val layout : t -> (layout, Error.t) result
   (** [layout node] returns the most recently calculated layout. *)
+
+  module Private : sig
+    (** Apply an operation to the live native token without exposing it as a
+        public layout value. *)
+    val with_open_handle :
+      t ->
+      (Native_token.Yoga_node.t -> ('a, Error.t) result) ->
+      ('a, Error.t) result
+
+    val claim_native_renderable : t -> (unit, Error.t) result
+    val release_native_renderable : t -> (unit, Error.t) result
+    val set_native_measure_attached :
+      t -> bool -> (unit, Error.t) result
+  end
 end

@@ -106,6 +106,9 @@ external yoga_node_calculate :
 external yoga_node_is_dirty : Native_token.Yoga_node.t -> int * bool =
   "opentui_raw_yoga_node_is_dirty"
 
+external yoga_node_mark_dirty : Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_node_mark_dirty"
+
 external yoga_node_has_new_layout : Native_token.Yoga_node.t -> int * bool =
   "opentui_raw_yoga_node_has_new_layout"
 
@@ -175,3 +178,94 @@ external span_feed_drain :
 
 external span_release : Native_token.Span.t -> int =
   "opentui_raw_span_release"
+
+external text_buffer_create : int32 -> int * Native_token.Text_buffer.t =
+  "opentui_raw_text_buffer_create"
+
+external text_buffer_destroy : Native_token.Text_buffer.t -> unit =
+  "opentui_raw_text_buffer_destroy"
+
+external text_buffer_clear : Native_token.Text_buffer.t -> int =
+  "opentui_raw_text_buffer_clear"
+
+external text_buffer_append :
+  Native_token.Text_buffer.t ->
+  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t -> int =
+  "opentui_raw_text_buffer_append"
+
+external text_buffer_register_mem_buffer :
+  Native_token.Text_buffer.t ->
+  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t ->
+  bool -> int * int32 =
+  "opentui_raw_text_buffer_register_mem_buffer"
+
+external text_buffer_replace_mem_buffer :
+  Native_token.Text_buffer.t -> int32 ->
+  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t ->
+  bool -> int =
+  "opentui_raw_text_buffer_replace_mem_buffer"
+
+external text_buffer_set_text_from_mem :
+  Native_token.Text_buffer.t -> int32 -> int32 -> int =
+  "opentui_raw_text_buffer_set_text_from_mem"
+
+external text_buffer_length : Native_token.Text_buffer.t -> int * int32 =
+  "opentui_raw_text_buffer_length"
+
+external text_buffer_byte_size : Native_token.Text_buffer.t -> int * int32 =
+  "opentui_raw_text_buffer_byte_size"
+
+external text_buffer_view_create :
+  Native_token.Text_buffer.t -> int * Native_token.Text_buffer_view.t =
+  "opentui_raw_text_buffer_view_create"
+
+external text_buffer_view_destroy : Native_token.Text_buffer_view.t -> unit =
+  "opentui_raw_text_buffer_view_destroy"
+
+external text_buffer_view_set_wrap_width :
+  Native_token.Text_buffer_view.t -> int32 -> int =
+  "opentui_raw_text_buffer_view_set_wrap_width"
+
+external text_buffer_view_set_wrap_mode :
+  Native_token.Text_buffer_view.t -> int32 -> int =
+  "opentui_raw_text_buffer_view_set_wrap_mode"
+
+external text_buffer_view_set_first_line_offset :
+  Native_token.Text_buffer_view.t -> int32 -> int =
+  "opentui_raw_text_buffer_view_set_first_line_offset"
+
+external text_buffer_view_measure_for_dimensions :
+  Native_token.Text_buffer_view.t -> int32 -> int32 -> int * int32 * int32 =
+  "opentui_raw_text_buffer_view_measure_for_dimensions"
+
+external native_renderable_create :
+  unit -> int * Native_token.Native_renderable.t =
+  "opentui_raw_native_renderable_create"
+
+external native_renderable_destroy :
+  Native_token.Native_renderable.t -> unit =
+  "opentui_raw_native_renderable_destroy"
+
+external native_renderable_attach_yoga_node :
+  Native_token.Native_renderable.t -> Native_token.Yoga_node.t -> int =
+  "opentui_raw_native_renderable_attach_yoga_node"
+
+external yoga_node_claim_native_renderable :
+  Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_node_claim_native_renderable"
+
+external yoga_node_release_native_renderable :
+  Native_token.Yoga_node.t -> int =
+  "opentui_raw_yoga_node_release_native_renderable"
+
+external yoga_node_set_native_measure_attached :
+  Native_token.Yoga_node.t -> bool -> int =
+  "opentui_raw_yoga_node_set_native_measure_attached"
+
+external native_renderable_set_measure_target :
+  Native_token.Native_renderable.t -> int32 -> Native_token.Text_buffer_view.t -> int =
+  "opentui_raw_native_renderable_set_measure_target"
+
+external native_renderable_clear_measure_target :
+  Native_token.Native_renderable.t -> int =
+  "opentui_raw_native_renderable_clear_measure_target"

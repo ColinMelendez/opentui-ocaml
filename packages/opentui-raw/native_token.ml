@@ -25,3 +25,15 @@ end
 module Reservation = struct
   type t = int32
 end
+
+module Text_buffer = struct
+  type t = int32
+end
+
+module Text_buffer_view = struct
+  type t = int32
+end
+
+module Native_renderable = struct
+  type t = int32
+end

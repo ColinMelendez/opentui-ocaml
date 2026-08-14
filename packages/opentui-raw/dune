@@ -1,11 +1,11 @@
 (library
  (name opentui_raw)
  (public_name opentui-raw)
- (modules buffer capabilities color error event event_sink native native_owner native_token renderer span_feed yoga)
+ (modules buffer capabilities color error event event_sink native native_owner native_token native_renderable renderer span_feed text_buffer text_buffer_view yoga)
  (private_modules native native_owner)
  (foreign_stubs
   (language c)
-  (names raw_stubs yoga_stubs capability_stubs span_feed_stubs)
+  (names raw_stubs yoga_stubs capability_stubs span_feed_stubs text_buffer_stubs)
   (flags (:standard -Ipackages/opentui-raw/native -Ipackages/opentui-raw))
   (extra_deps
    raw_status.h

@@ -30,9 +30,13 @@ typed raw renderer, buffer, event, Yoga, and capability boundary:
 | `yogaConfigCreate` / `yogaConfigFree` | `yoga.zig` | `void pointer -> void pointer`; `void pointer -> void` | These reference exports remain part of the ABI audit. `yogaNodeCreateForOpenTUI` acquires the shared OpenTUI configuration inside Zig, so the raw facade does not create or own a configuration object. |
 | `yogaNodeCreateForOpenTUI` / `yogaNodeFree` / `yogaNodeFreeRecursive` | `yoga.zig:332`, `yoga.zig:340`, `yoga.zig:345` | `void pointer`; `void pointer -> void`; `void pointer -> void` | Each node is created independently with the reference OpenTUI configuration. Single-node free requires a detached node with no children; recursive free requires a detached root and releases its descendants. The C facade invalidates the corresponding generation-checked tokens. |
 | `yogaNodeInsertChild` / `yogaNodeRemoveChild` / `yogaNodeGetChildCount` | `yoga.zig:359`, `yoga.zig:363`, `yoga.zig:375` | `void pointer, void pointer, u32 -> void`; `void pointer, void pointer -> void`; `const void pointer -> u32` | The raw facade validates that the child is detached, that the relationship does not create a cycle, and that removal names the direct parent. Insert and remove update only the native relationship; they do not free the child. The raw `Yoga.move_child` seam uses the same-parent remove/insert pair without freeing the node or descendants, after validating the final zero-based index. |
-| `yogaNodeIsDirty` / `yogaNodeGetHasNewLayout` / `yogaNodeSetHasNewLayout` | `yoga.zig:387-400` | `const void pointer -> bool`; `const void pointer -> bool`; `void pointer, bool -> void` | These read and update Yoga's native invalidation flags. The core retained tree uses them to distinguish native layout invalidation from cached layout readback and render-list revision. Explicit Yoga dirtying remains with the native measure seam because Yoga only permits it for nodes with measure functions. |
+| `yogaNodeIsDirty` / `yogaNodeMarkDirty` / `yogaNodeGetHasNewLayout` / `yogaNodeSetHasNewLayout` | `yoga.zig:387-400` | `const void pointer -> bool`; `void pointer -> void`; `const void pointer -> bool`; `void pointer, bool -> void` | These read and update Yoga's native invalidation flags. The raw facade permits explicit dirtying only while a native measure owner is attached, which satisfies the pinned Yoga precondition for `YGNodeMarkDirty`. |
 | `yogaNodeCalculateLayout` / `yogaNodeGetComputedLayout` | `yoga.zig:383`, `yoga.zig:419` | `void pointer, f32, f32, u32 -> void`; `const void pointer, pointer to six-f32 output -> void` | Dimensions and direction are checked at the C boundary. Layout is copied into an OCaml tuple; no Yoga output pointer escapes. |
-| `yogaNodeStyleSetEnum` / `yogaNodeStyleSetFloat` / `yogaNodeStyleSetBorder` / `yogaNodeStyleSetValue` | `yoga.zig:439`, `yoga.zig:471`, `yoga.zig:489`, `yoga.zig:497` | Enum/float/border: `void pointer, u32, u32|f32 -> void`; value: `void pointer, u32, u32, u32, f32 -> void` | The typed surface binds the reference Yoga enum groups, float groups, border edges, and value groups. Value operations use the reference kind, edge/gutter, and unit codes; the C facade validates finite numeric inputs and code ranges before calling the exports. The Zig probe asserts the public kind, unit, and direction discriminants used by the OCaml mapping. Measure callbacks, packed style values, and other native renderable configuration are outside this contract. |
+| `yogaNodeStyleSetEnum` / `yogaNodeStyleSetFloat` / `yogaNodeStyleSetBorder` / `yogaNodeStyleSetValue` | `yoga.zig:439`, `yoga.zig:471`, `yoga.zig:489`, `yoga.zig:497` | Enum/float/border: `void pointer, u32, u32|f32 -> void`; value: `void pointer, u32, u32, u32, f32 -> void` | The typed surface binds the reference Yoga enum groups, float groups, border edges, and value groups. Value operations use the reference kind, edge/gutter, and unit codes; the C facade validates finite numeric inputs and code ranges before calling the exports. The Zig probe asserts the public kind, unit, and direction discriminants used by the OCaml mapping. |
+| `createNativeRenderable` / `destroyNativeRenderable` / `nativeRenderableAttachYogaNode` / `nativeRenderableSetMeasureTarget` | `lib.zig:166-226`, `native-renderable.zig` | `void -> u32`; `u32 -> void`; `u32, Yoga node pointer -> bool`; `u32, u32, u32 -> bool` | A native renderable owns the synchronous Yoga measure callback. The OCaml owner borrows one independent Yoga node and one text-buffer view, retains both until the callback is cleared, and closes them in the order native renderable, view, buffer, and Yoga node. The raw facade rejects teardown that would invalidate an attached callback. |
+| `createTextBuffer` / `destroyTextBuffer` / `textBufferGetLength` / `textBufferGetByteSize` / `textBufferClear` / `textBufferAppend` | `lib.zig:1637-1736` | `u8 -> u32`; `u32 -> void`; `u32 -> u32`; `u32 -> u32`; `u32 -> void`; `u32, nullable byte pointer, u32 -> void` | Text-buffer append registers the supplied byte span as non-owned native memory. The OCaml wrapper copies input bytes into stable Bigarray storage and retains each backing value until native buffer destruction. Clear removes text but does not release the native memory registry, so the retained backing values remain live. The pinned registry has 255 slots per buffer; each non-empty append consumes one slot and reports `Native_failure` after exhaustion rather than accepting an unappended input. |
+| `textBufferRegisterMemBuffer` / `textBufferReplaceMemBuffer` / `textBufferSetTextFromMem` | `lib.zig:1708-1730` | `u32, nullable byte pointer, u32, bool -> u16`; `u32, u8, nullable byte pointer, u32, bool -> bool`; `u32, u8 -> void` | The OCaml `set_text` path follows the reference replace-then-register fallback and roots every non-owned Bigarray that the native registry may reference. The registry borrows those pointers; it does not free or own them. Because the pinned setter is a void function that catches native errors, the raw wrapper checks the resulting normalized byte size and reports `Native_failure` when the postcondition is not met. |
+| `createTextBufferView` / `destroyTextBufferView` / `textBufferViewSetWrapWidth` / `textBufferViewSetWrapMode` / `textBufferViewSetFirstLineOffset` / `textBufferViewMeasureForDimensions` | `lib.zig:1789-1957` | `u32 -> u32`; `u32 -> void`; `u32, u32 -> void`; `u32, u8 -> void`; `u32, u32 -> void`; `u32, u32, u32, pointer to 8-byte result -> bool` | A view borrows its text buffer. The raw wrapper tracks the parent and rejects buffer close while a view remains open. A native measure target holds a view-use claim, so view close is rejected until the native renderable clears its callback. |
 | `getTerminalCapabilities` | `lib.zig:986` | `u32, pointer to 64-byte ExternalCapabilities -> void` on supported 64-bit hosts | Zig returns borrowed terminal-name/version pointers and `usize` lengths. The C shim checks the lengths and copies both strings before returning to OCaml. |
 | `processCapabilityResponse` | `lib.zig:1017` | `u32, nullable byte pointer, u32 -> void` | The response is caller-owned and consumed synchronously. An empty OCaml string crosses as a null pointer with length zero. |
 | `createNativeSpanFeed` / `attachNativeSpanFeed` / `destroyNativeSpanFeed` | `lib.zig:358`, `native-span-feed.zig` | pointer to `Options` -> nullable stream pointer; stream pointer -> `i32`/`void` | The raw facade owns the feed behind an abstract generation-checked token and destroys it only after a successful close. The reference source is copied into a generated build directory before the tracked export patch is applied. |
@@ -124,27 +128,30 @@ selected by the reference build (`aarch64-macos`, `x86_64-macos`,
 ## Typed raw operations
 
 The typed raw operations in `opentui-raw` provide
-generation-checked independent Yoga-node operations, a copied capability
-snapshot, and the audited NativeSpanFeed ownership protocol while preserving
-the original renderer/buffer/event ownership model. The OCaml API exposes
-`Yoga.Node.create`, explicit child attach/detach/free operations, typed style
-operations, typed layout readback, `Span_feed.drain`, and explicit reservation
-commit/cancel; it does not expose `YGNodeRef`, `YGConfigRef`, packed style
-values, native span pointers, Bigarray/Cstruct views, or callbacks. Capability
-responses are processed synchronously and can be read as a typed
-`Capabilities.t` record.
+generation-checked independent Yoga-node operations, native text measurement,
+a copied capability snapshot, and the audited NativeSpanFeed ownership
+protocol while preserving the reference renderer/buffer/event ownership model.
+The OCaml API exposes `Yoga.Node.create`, explicit child attach/detach/free
+operations, typed style operations, typed layout readback,
+`Text_buffer`/`Text_buffer_view`, `Native_renderable`, `Span_feed.drain`, and
+explicit reservation commit/cancel. It does not expose `YGNodeRef`,
+`YGConfigRef`, packed style values, native span pointers, raw native pointers,
+or callbacks. Capability responses are processed synchronously and can be
+read as a typed `Capabilities.t` record.
 
 Black-box tests cover exact six-field layout readback, non-destructive detach,
 single-node and recursive free, invalid dimensions, invalid style values,
+native text measurement through Yoga, stable text storage across compaction,
+repeated text replacement, explicit native dirtying, protected native-measure
+teardown, and Yoga leaf enforcement,
 XTVERSION string copying, enum decoding, closed-renderer behavior, copied
 output spans, release-driven chunk reuse, and reservation
 busy/cancel/commit behavior.
 
 ## Outside this ABI contract
 
-Yoga custom measurement and native renderable integration, the complete stdin
-parser, native-owned zero-copy `NativeSpanFeed` views, raw cell pointers,
-native renderables, audio, image, editor, and all high-level packages are
-outside this boundary. The feed's copied payload and reservation ownership
-protocol is implemented here. Mapping native chunks into Bigarray/Cstruct views
-requires a separate lifetime and benchmark contract.
+The complete stdin parser, native-owned zero-copy `NativeSpanFeed` views, raw
+cell pointers, audio, image, editor, and all high-level packages are outside
+this boundary. The feed's copied payload and reservation ownership protocol is
+implemented here. Mapping native chunks into Bigarray/Cstruct views requires a
+separate lifetime and benchmark contract.

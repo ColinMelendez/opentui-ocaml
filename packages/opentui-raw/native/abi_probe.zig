@@ -226,6 +226,16 @@ comptime {
         "yogaNodeCalculateLayout",
     );
     expectType(
+        @TypeOf(yoga.yogaNodeIsDirty),
+        fn (yoga.YGNodeConstRef) callconv(.c) bool,
+        "yogaNodeIsDirty",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeMarkDirty),
+        fn (yoga.YGNodeRef) callconv(.c) void,
+        "yogaNodeMarkDirty",
+    );
+    expectType(
         @TypeOf(yoga.yogaNodeGetComputedLayout),
         fn (yoga.YGNodeConstRef, *yoga.ExternalYogaLayout) callconv(.c) void,
         "yogaNodeGetComputedLayout",
@@ -249,6 +259,105 @@ comptime {
         @TypeOf(yoga.yogaNodeStyleSetBorder),
         fn (yoga.YGNodeRef, u32, f32) callconv(.c) void,
         "yogaNodeStyleSetBorder",
+    );
+
+    expectSize(opentui.ExternalMeasureResult, 8, "ExternalMeasureResult");
+    expectOffset(opentui.ExternalMeasureResult, "line_count", 0, "ExternalMeasureResult.line_count");
+    expectOffset(opentui.ExternalMeasureResult, "width_cols_max", 4, "ExternalMeasureResult.width_cols_max");
+    expectType(
+        @TypeOf(opentui.createNativeRenderable),
+        fn () callconv(.c) opentui.NativeHandle,
+        "createNativeRenderable",
+    );
+    expectType(
+        @TypeOf(opentui.destroyNativeRenderable),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "destroyNativeRenderable",
+    );
+    expectType(
+        @TypeOf(opentui.nativeRenderableAttachYogaNode),
+        fn (opentui.NativeHandle, yoga.YGNodeRef) callconv(.c) bool,
+        "nativeRenderableAttachYogaNode",
+    );
+    expectType(
+        @TypeOf(opentui.nativeRenderableSetMeasureTarget),
+        fn (opentui.NativeHandle, u32, opentui.NativeHandle) callconv(.c) bool,
+        "nativeRenderableSetMeasureTarget",
+    );
+    expectType(
+        @TypeOf(opentui.createTextBuffer),
+        fn (u8) callconv(.c) opentui.NativeHandle,
+        "createTextBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.destroyTextBuffer),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "destroyTextBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferGetLength),
+        fn (opentui.NativeHandle) callconv(.c) u32,
+        "textBufferGetLength",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferGetByteSize),
+        fn (opentui.NativeHandle) callconv(.c) u32,
+        "textBufferGetByteSize",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferClear),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "textBufferClear",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferAppend),
+        fn (opentui.NativeHandle, ?[*]const u8, u32) callconv(.c) void,
+        "textBufferAppend",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferRegisterMemBuffer),
+        fn (opentui.NativeHandle, ?[*]const u8, u32, bool) callconv(.c) u16,
+        "textBufferRegisterMemBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferReplaceMemBuffer),
+        fn (opentui.NativeHandle, u8, ?[*]const u8, u32, bool) callconv(.c) bool,
+        "textBufferReplaceMemBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferSetTextFromMem),
+        fn (opentui.NativeHandle, u8) callconv(.c) void,
+        "textBufferSetTextFromMem",
+    );
+    expectType(
+        @TypeOf(opentui.createTextBufferView),
+        fn (opentui.NativeHandle) callconv(.c) opentui.NativeHandle,
+        "createTextBufferView",
+    );
+    expectType(
+        @TypeOf(opentui.destroyTextBufferView),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "destroyTextBufferView",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferViewSetWrapWidth),
+        fn (opentui.NativeHandle, u32) callconv(.c) void,
+        "textBufferViewSetWrapWidth",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferViewSetWrapMode),
+        fn (opentui.NativeHandle, u8) callconv(.c) void,
+        "textBufferViewSetWrapMode",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferViewSetFirstLineOffset),
+        fn (opentui.NativeHandle, u32) callconv(.c) void,
+        "textBufferViewSetFirstLineOffset",
+    );
+    expectType(
+        @TypeOf(opentui.textBufferViewMeasureForDimensions),
+        fn (opentui.NativeHandle, u32, u32, *opentui.ExternalMeasureResult) callconv(.c) bool,
+        "textBufferViewMeasureForDimensions",
     );
 
     expectSize(opentui.ExternalCapabilities, 64, "ExternalCapabilities");

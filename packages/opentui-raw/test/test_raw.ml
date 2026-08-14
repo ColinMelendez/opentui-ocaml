@@ -358,6 +358,8 @@ let () =
           equal bool true
             (expect_ok (Opentui_raw.Yoga.Node.has_new_layout node));
           ignore (expect_ok (Opentui_raw.Yoga.Node.mark_layout_seen node));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.mark_dirty node);
           equal bool false
             (expect_ok (Opentui_raw.Yoga.Node.has_new_layout node));
           ignore (expect_ok (Opentui_raw.Yoga.Node.free node));
@@ -422,6 +424,175 @@ let () =
             (Opentui_raw.Yoga.Node.layout root);
           expect_error Opentui_raw.Error.Stale_handle
             (Opentui_raw.Yoga.Node.layout child));
+      test "text-buffer measurement stays native through Yoga" (fun () ->
+          let buffer =
+            expect_ok
+              (Opentui_raw.Text_buffer.create Opentui_raw.Text_buffer.Unicode)
+          in
+          let view = expect_ok (Opentui_raw.Text_buffer_view.create buffer) in
+          let node = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let native_renderable =
+            expect_ok (Opentui_raw.Native_renderable.create ())
+          in
+          ignore
+            (expect_ok
+               (Opentui_raw.Text_buffer.set_text buffer
+                  (Bytes.of_string "ABCDEFGHIJ")));
+          Gc.compact ();
+          ignore
+            (expect_ok
+               (Opentui_raw.Text_buffer_view.set_wrap_mode view
+                  Opentui_raw.Text_buffer_view.Char));
+          let measured =
+            expect_ok
+              (Opentui_raw.Text_buffer_view.measure_for_dimensions view
+                 ~width:5l ~height:10l)
+          in
+          equal int32 2l measured.line_count;
+          equal int32 5l measured.width_cols_max;
+          ignore
+            (expect_ok
+               (Opentui_raw.Native_renderable.attach_yoga_node
+                  native_renderable node));
+          ignore
+               (expect_ok
+               (Opentui_raw.Native_renderable.set_measure_target
+                  native_renderable
+                  (Opentui_raw.Native_renderable.Text_buffer_view view)));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.free node);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Text_buffer_view.close view);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Text_buffer.close buffer);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Native_renderable.attach_yoga_node
+               native_renderable node);
+          let measured_child = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.insert_child ~parent:node
+               ~child:measured_child ~index:0l);
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free measured_child));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout node ~width:5.0
+                  ~height:Float.nan ~direction:Opentui_raw.Yoga.Ltr));
+          let layout = expect_ok (Opentui_raw.Yoga.Node.layout node) in
+          equal (float 0.0001) 5.0 layout.width;
+          equal (float 0.0001) 2.0 layout.height;
+          ignore
+            (expect_ok
+               (Opentui_raw.Native_renderable.clear_measure_target
+                  native_renderable));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Yoga.Node.mark_dirty node);
+          ignore
+            (expect_ok
+               (Opentui_raw.Native_renderable.set_measure_target
+                  native_renderable
+                  (Opentui_raw.Native_renderable.Text_buffer_view view)));
+          ignore
+            (expect_ok
+               (Opentui_raw.Text_buffer.set_text buffer
+                  (Bytes.of_string "ABCDE")));
+          Gc.compact ();
+          ignore (expect_ok (Opentui_raw.Yoga.Node.mark_dirty node));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout node ~width:5.0
+                  ~height:Float.nan ~direction:Opentui_raw.Yoga.Ltr));
+          let updated_layout = expect_ok (Opentui_raw.Yoga.Node.layout node) in
+          equal (float 0.0001) 1.0 updated_layout.height;
+          for _ = 1 to 300 do
+            ignore
+              (expect_ok
+                 (Opentui_raw.Text_buffer.set_text buffer
+                    (Bytes.of_string "X")))
+          done;
+          equal int32 1l (expect_ok (Opentui_raw.Text_buffer.length buffer));
+          ignore
+            (expect_ok
+               (Opentui_raw.Text_buffer.set_text buffer
+                  (Bytes.of_string "A\r\nB")));
+          equal int32 3l (expect_ok (Opentui_raw.Text_buffer.byte_size buffer));
+          ignore
+            (expect_ok
+               (Opentui_raw.Text_buffer.append buffer
+                  (Bytes.of_string "A\r\nB")));
+          expect_ok (Opentui_raw.Native_renderable.close native_renderable);
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Native_renderable.set_measure_target
+               native_renderable
+               (Opentui_raw.Native_renderable.Text_buffer_view view));
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.calculate_layout node ~width:5.0
+                  ~height:Float.nan ~direction:Opentui_raw.Yoga.Ltr));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free node));
+          expect_ok (Opentui_raw.Text_buffer_view.close view);
+          expect_ok (Opentui_raw.Text_buffer.close buffer);
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Text_buffer_view.measure_for_dimensions view
+               ~width:5l ~height:10l);
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Text_buffer.append buffer (Bytes.create 0));
+          let closed_view_renderable =
+            expect_ok (Opentui_raw.Native_renderable.create ())
+          in
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Native_renderable.set_measure_target
+               closed_view_renderable
+               (Opentui_raw.Native_renderable.Text_buffer_view view));
+          expect_ok (Opentui_raw.Native_renderable.close closed_view_renderable));
+      test "text-buffer view validates dimensions and parent lifetime" (fun () ->
+          let buffer =
+            expect_ok
+              (Opentui_raw.Text_buffer.create Opentui_raw.Text_buffer.Wcwidth)
+          in
+          let view = expect_ok (Opentui_raw.Text_buffer_view.create buffer) in
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Text_buffer_view.set_wrap_width view (Some (-1l)));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Text_buffer_view.measure_for_dimensions view
+               ~width:(-1l) ~height:1l);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Text_buffer.close buffer);
+          ignore
+            (expect_ok
+               (Opentui_raw.Text_buffer_view.set_first_line_offset view 0l));
+          expect_ok (Opentui_raw.Text_buffer_view.close view);
+          expect_ok (Opentui_raw.Text_buffer.close buffer));
+      test "native measurement only attaches to Yoga leaves" (fun () ->
+          let buffer =
+            expect_ok
+              (Opentui_raw.Text_buffer.create Opentui_raw.Text_buffer.Unicode)
+          in
+          let view = expect_ok (Opentui_raw.Text_buffer_view.create buffer) in
+          let node = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let child = expect_ok (Opentui_raw.Yoga.Node.create ()) in
+          let native_renderable =
+            expect_ok (Opentui_raw.Native_renderable.create ())
+          in
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.insert_child ~parent:node ~child
+                  ~index:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Native_renderable.set_measure_target
+                  native_renderable
+                  (Opentui_raw.Native_renderable.Text_buffer_view view)));
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Native_renderable.attach_yoga_node
+               native_renderable node);
+          expect_ok (Opentui_raw.Native_renderable.close native_renderable);
+          ignore
+            (expect_ok
+               (Opentui_raw.Yoga.Node.remove_child ~parent:node ~child));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free child));
+          ignore (expect_ok (Opentui_raw.Yoga.Node.free node));
+          expect_ok (Opentui_raw.Text_buffer_view.close view);
+          expect_ok (Opentui_raw.Text_buffer.close buffer));
       test "capability responses become typed copied snapshots" (fun () ->
           let renderer =
             expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l)

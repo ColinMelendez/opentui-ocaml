@@ -62,6 +62,11 @@ typedef struct opentui_external_yoga_layout {
   float height;
 } opentui_external_yoga_layout;
 
+typedef struct opentui_external_measure_result {
+  uint32_t line_count;
+  uint32_t width_cols_max;
+} opentui_external_measure_result;
+
 typedef struct opentui_external_capabilities {
   bool kitty_keyboard;
   bool kitty_graphics;
@@ -195,6 +200,7 @@ void yogaNodeRemoveChild(opentui_yoga_node_ref node, opentui_yoga_node_ref child
 uint32_t yogaNodeGetChildCount(opentui_yoga_node_const_ref node);
 void yogaNodeCalculateLayout(opentui_yoga_node_ref node, float width, float height, uint32_t direction);
 bool yogaNodeIsDirty(opentui_yoga_node_const_ref node);
+void yogaNodeMarkDirty(opentui_yoga_node_ref node);
 bool yogaNodeGetHasNewLayout(opentui_yoga_node_const_ref node);
 void yogaNodeSetHasNewLayout(opentui_yoga_node_ref node, bool has_new_layout);
 void yogaNodeGetComputedLayout(
@@ -209,6 +215,57 @@ void yogaNodeStyleSetValue(
 void yogaNodeStyleSetEnum(opentui_yoga_node_ref node, uint32_t kind, uint32_t value);
 void yogaNodeStyleSetFloat(opentui_yoga_node_ref node, uint32_t kind, float value);
 void yogaNodeStyleSetBorder(opentui_yoga_node_ref node, uint32_t edge, float border);
+
+opentui_native_handle createNativeRenderable(void);
+void destroyNativeRenderable(opentui_native_handle native_renderable_handle);
+bool nativeRenderableAttachYogaNode(
+    opentui_native_handle native_renderable_handle,
+    opentui_yoga_node_ref node);
+bool nativeRenderableSetMeasureTarget(
+    opentui_native_handle native_renderable_handle,
+    uint32_t kind,
+    opentui_native_handle target_handle);
+
+opentui_native_handle createTextBuffer(uint8_t width_method);
+void destroyTextBuffer(opentui_native_handle text_buffer_handle);
+uint32_t textBufferGetLength(opentui_native_handle text_buffer_handle);
+uint32_t textBufferGetByteSize(opentui_native_handle text_buffer_handle);
+void textBufferClear(opentui_native_handle text_buffer_handle);
+void textBufferAppend(
+    opentui_native_handle text_buffer_handle,
+    const uint8_t *data_ptr,
+    uint32_t data_len);
+uint16_t textBufferRegisterMemBuffer(
+    opentui_native_handle text_buffer_handle,
+    const uint8_t *data_ptr,
+    uint32_t data_len,
+    bool owned);
+bool textBufferReplaceMemBuffer(
+    opentui_native_handle text_buffer_handle,
+    uint8_t mem_id,
+    const uint8_t *data_ptr,
+    uint32_t data_len,
+    bool owned);
+void textBufferSetTextFromMem(
+    opentui_native_handle text_buffer_handle,
+    uint8_t mem_id);
+opentui_native_handle createTextBufferView(
+    opentui_native_handle text_buffer_handle);
+void destroyTextBufferView(opentui_native_handle text_buffer_view_handle);
+void textBufferViewSetWrapWidth(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t width);
+void textBufferViewSetWrapMode(
+    opentui_native_handle text_buffer_view_handle,
+    uint8_t mode);
+void textBufferViewSetFirstLineOffset(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t offset);
+bool textBufferViewMeasureForDimensions(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t width,
+    uint32_t height,
+    opentui_external_measure_result *output);
 
 void getTerminalCapabilities(
     opentui_native_handle renderer_handle,
@@ -255,6 +312,8 @@ _Static_assert(sizeof(opentui_external_build_options) == 2, "build options ABI d
 _Static_assert(sizeof(opentui_external_allocator_stats) == 40, "allocator stats ABI drift");
 _Static_assert(sizeof(opentui_external_render_stats) == 56, "render stats ABI drift");
 _Static_assert(sizeof(opentui_external_yoga_layout) == 24, "Yoga layout ABI drift");
+_Static_assert(sizeof(opentui_external_measure_result) == 8, "measure result ABI drift");
+_Static_assert(offsetof(opentui_external_measure_result, width_cols_max) == 4, "measure result offset drift");
 _Static_assert(offsetof(opentui_external_yoga_layout, top) == 4, "Yoga layout offset drift");
 _Static_assert(offsetof(opentui_external_yoga_layout, right) == 8, "Yoga layout offset drift");
 _Static_assert(offsetof(opentui_external_yoga_layout, bottom) == 12, "Yoga layout offset drift");
@@ -327,6 +386,7 @@ typedef void (*opentui_yoga_node_remove_child_fn)(opentui_yoga_node_ref, opentui
 typedef uint32_t (*opentui_yoga_node_get_child_count_fn)(opentui_yoga_node_const_ref);
 typedef void (*opentui_yoga_node_calculate_layout_fn)(opentui_yoga_node_ref, float, float, uint32_t);
 typedef bool (*opentui_yoga_node_is_dirty_fn)(opentui_yoga_node_const_ref);
+typedef void (*opentui_yoga_node_mark_dirty_fn)(opentui_yoga_node_ref);
 typedef bool (*opentui_yoga_node_get_has_new_layout_fn)(opentui_yoga_node_const_ref);
 typedef void (*opentui_yoga_node_set_has_new_layout_fn)(opentui_yoga_node_ref, bool);
 typedef void (*opentui_yoga_node_get_computed_layout_fn)(opentui_yoga_node_const_ref, opentui_external_yoga_layout *);
@@ -334,6 +394,25 @@ typedef void (*opentui_yoga_node_style_set_value_fn)(opentui_yoga_node_ref, uint
 typedef void (*opentui_yoga_node_style_set_enum_fn)(opentui_yoga_node_ref, uint32_t, uint32_t);
 typedef void (*opentui_yoga_node_style_set_float_fn)(opentui_yoga_node_ref, uint32_t, float);
 typedef void (*opentui_yoga_node_style_set_border_fn)(opentui_yoga_node_ref, uint32_t, float);
+typedef opentui_native_handle (*opentui_create_native_renderable_fn)(void);
+typedef void (*opentui_destroy_native_renderable_fn)(opentui_native_handle);
+typedef bool (*opentui_native_renderable_attach_yoga_node_fn)(opentui_native_handle, opentui_yoga_node_ref);
+typedef bool (*opentui_native_renderable_set_measure_target_fn)(opentui_native_handle, uint32_t, opentui_native_handle);
+typedef opentui_native_handle (*opentui_create_text_buffer_fn)(uint8_t);
+typedef void (*opentui_destroy_text_buffer_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_text_buffer_get_length_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_text_buffer_get_byte_size_fn)(opentui_native_handle);
+typedef void (*opentui_text_buffer_clear_fn)(opentui_native_handle);
+typedef void (*opentui_text_buffer_append_fn)(opentui_native_handle, const uint8_t *, uint32_t);
+typedef uint16_t (*opentui_text_buffer_register_mem_buffer_fn)(opentui_native_handle, const uint8_t *, uint32_t, bool);
+typedef bool (*opentui_text_buffer_replace_mem_buffer_fn)(opentui_native_handle, uint8_t, const uint8_t *, uint32_t, bool);
+typedef void (*opentui_text_buffer_set_text_from_mem_fn)(opentui_native_handle, uint8_t);
+typedef opentui_native_handle (*opentui_create_text_buffer_view_fn)(opentui_native_handle);
+typedef void (*opentui_destroy_text_buffer_view_fn)(opentui_native_handle);
+typedef void (*opentui_text_buffer_view_set_wrap_width_fn)(opentui_native_handle, uint32_t);
+typedef void (*opentui_text_buffer_view_set_wrap_mode_fn)(opentui_native_handle, uint8_t);
+typedef void (*opentui_text_buffer_view_set_first_line_offset_fn)(opentui_native_handle, uint32_t);
+typedef bool (*opentui_text_buffer_view_measure_for_dimensions_fn)(opentui_native_handle, uint32_t, uint32_t, opentui_external_measure_result *);
 typedef void (*opentui_get_terminal_capabilities_fn)(opentui_native_handle, opentui_external_capabilities *);
 typedef void (*opentui_process_capability_response_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 typedef opentui_span_feed_ref (*opentui_create_native_span_feed_fn)(const opentui_external_span_feed_options *);
@@ -381,6 +460,7 @@ _Static_assert(_Generic(&yogaNodeRemoveChild, opentui_yoga_node_remove_child_fn:
 _Static_assert(_Generic(&yogaNodeGetChildCount, opentui_yoga_node_get_child_count_fn: 1, default: 0), "yogaNodeGetChildCount ABI drift");
 _Static_assert(_Generic(&yogaNodeCalculateLayout, opentui_yoga_node_calculate_layout_fn: 1, default: 0), "yogaNodeCalculateLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeIsDirty, opentui_yoga_node_is_dirty_fn: 1, default: 0), "yogaNodeIsDirty ABI drift");
+_Static_assert(_Generic(&yogaNodeMarkDirty, opentui_yoga_node_mark_dirty_fn: 1, default: 0), "yogaNodeMarkDirty ABI drift");
 _Static_assert(_Generic(&yogaNodeGetHasNewLayout, opentui_yoga_node_get_has_new_layout_fn: 1, default: 0), "yogaNodeGetHasNewLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeSetHasNewLayout, opentui_yoga_node_set_has_new_layout_fn: 1, default: 0), "yogaNodeSetHasNewLayout ABI drift");
 _Static_assert(_Generic(&yogaNodeGetComputedLayout, opentui_yoga_node_get_computed_layout_fn: 1, default: 0), "yogaNodeGetComputedLayout ABI drift");
@@ -388,6 +468,25 @@ _Static_assert(_Generic(&yogaNodeStyleSetValue, opentui_yoga_node_style_set_valu
 _Static_assert(_Generic(&yogaNodeStyleSetEnum, opentui_yoga_node_style_set_enum_fn: 1, default: 0), "yogaNodeStyleSetEnum ABI drift");
 _Static_assert(_Generic(&yogaNodeStyleSetFloat, opentui_yoga_node_style_set_float_fn: 1, default: 0), "yogaNodeStyleSetFloat ABI drift");
 _Static_assert(_Generic(&yogaNodeStyleSetBorder, opentui_yoga_node_style_set_border_fn: 1, default: 0), "yogaNodeStyleSetBorder ABI drift");
+_Static_assert(_Generic(&createNativeRenderable, opentui_create_native_renderable_fn: 1, default: 0), "createNativeRenderable ABI drift");
+_Static_assert(_Generic(&destroyNativeRenderable, opentui_destroy_native_renderable_fn: 1, default: 0), "destroyNativeRenderable ABI drift");
+_Static_assert(_Generic(&nativeRenderableAttachYogaNode, opentui_native_renderable_attach_yoga_node_fn: 1, default: 0), "nativeRenderableAttachYogaNode ABI drift");
+_Static_assert(_Generic(&nativeRenderableSetMeasureTarget, opentui_native_renderable_set_measure_target_fn: 1, default: 0), "nativeRenderableSetMeasureTarget ABI drift");
+_Static_assert(_Generic(&createTextBuffer, opentui_create_text_buffer_fn: 1, default: 0), "createTextBuffer ABI drift");
+_Static_assert(_Generic(&destroyTextBuffer, opentui_destroy_text_buffer_fn: 1, default: 0), "destroyTextBuffer ABI drift");
+_Static_assert(_Generic(&textBufferGetLength, opentui_text_buffer_get_length_fn: 1, default: 0), "textBufferGetLength ABI drift");
+_Static_assert(_Generic(&textBufferGetByteSize, opentui_text_buffer_get_byte_size_fn: 1, default: 0), "textBufferGetByteSize ABI drift");
+_Static_assert(_Generic(&textBufferClear, opentui_text_buffer_clear_fn: 1, default: 0), "textBufferClear ABI drift");
+_Static_assert(_Generic(&textBufferAppend, opentui_text_buffer_append_fn: 1, default: 0), "textBufferAppend ABI drift");
+_Static_assert(_Generic(&textBufferRegisterMemBuffer, opentui_text_buffer_register_mem_buffer_fn: 1, default: 0), "textBufferRegisterMemBuffer ABI drift");
+_Static_assert(_Generic(&textBufferReplaceMemBuffer, opentui_text_buffer_replace_mem_buffer_fn: 1, default: 0), "textBufferReplaceMemBuffer ABI drift");
+_Static_assert(_Generic(&textBufferSetTextFromMem, opentui_text_buffer_set_text_from_mem_fn: 1, default: 0), "textBufferSetTextFromMem ABI drift");
+_Static_assert(_Generic(&createTextBufferView, opentui_create_text_buffer_view_fn: 1, default: 0), "createTextBufferView ABI drift");
+_Static_assert(_Generic(&destroyTextBufferView, opentui_destroy_text_buffer_view_fn: 1, default: 0), "destroyTextBufferView ABI drift");
+_Static_assert(_Generic(&textBufferViewSetWrapWidth, opentui_text_buffer_view_set_wrap_width_fn: 1, default: 0), "textBufferViewSetWrapWidth ABI drift");
+_Static_assert(_Generic(&textBufferViewSetWrapMode, opentui_text_buffer_view_set_wrap_mode_fn: 1, default: 0), "textBufferViewSetWrapMode ABI drift");
+_Static_assert(_Generic(&textBufferViewSetFirstLineOffset, opentui_text_buffer_view_set_first_line_offset_fn: 1, default: 0), "textBufferViewSetFirstLineOffset ABI drift");
+_Static_assert(_Generic(&textBufferViewMeasureForDimensions, opentui_text_buffer_view_measure_for_dimensions_fn: 1, default: 0), "textBufferViewMeasureForDimensions ABI drift");
 _Static_assert(_Generic(&getTerminalCapabilities, opentui_get_terminal_capabilities_fn: 1, default: 0), "getTerminalCapabilities ABI drift");
 _Static_assert(_Generic(&processCapabilityResponse, opentui_process_capability_response_fn: 1, default: 0), "processCapabilityResponse ABI drift");
 _Static_assert(_Generic(&createNativeSpanFeed, opentui_create_native_span_feed_fn: 1, default: 0), "createNativeSpanFeed ABI drift");

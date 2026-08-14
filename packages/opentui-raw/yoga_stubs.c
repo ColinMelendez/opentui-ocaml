@@ -15,6 +15,8 @@
 typedef struct opentui_raw_yoga_node_slot {
   uint16_t generation;
   bool alive;
+  bool native_renderable_attached;
+  bool native_measure_attached;
   opentui_yoga_node_ref node;
   uint32_t parent_handle;
 } opentui_raw_yoga_node_slot;
@@ -45,6 +47,8 @@ static uint32_t yoga_allocate_node(opentui_raw_yoga_node_slot **output) {
           ? 1
           : yoga_next_generation(slot->generation);
       slot->alive = true;
+      slot->native_renderable_attached = false;
+      slot->native_measure_attached = false;
       slot->node = NULL;
       slot->parent_handle = 0;
       *output = slot;
@@ -73,6 +77,8 @@ static void yoga_release_node(uint32_t handle) {
   uint32_t index = yoga_slot_index(handle);
   opentui_raw_yoga_node_slot *slot = &yoga_nodes[index];
   slot->alive = false;
+  slot->native_renderable_attached = false;
+  slot->native_measure_attached = false;
   slot->node = NULL;
   slot->parent_handle = 0;
 }
@@ -94,6 +100,35 @@ static void yoga_release_subtree_slots(uint32_t root_handle) {
 
     yoga_release_node(handle);
   }
+}
+
+static bool yoga_subtree_has_native_renderable(uint32_t root_handle) {
+  uint32_t pending[OPENTUI_RAW_YOGA_NODE_CAPACITY];
+  uint32_t pending_count = 1;
+  pending[0] = root_handle;
+
+  while (pending_count > 0) {
+    uint32_t handle = pending[--pending_count];
+    opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+    if (node == NULL) {
+      return true;
+    }
+    if (node->native_renderable_attached) {
+      return true;
+    }
+
+    for (uint32_t index = 1; index < OPENTUI_RAW_YOGA_NODE_CAPACITY; index++) {
+      opentui_raw_yoga_node_slot *candidate = &yoga_nodes[index];
+      if (candidate->alive && candidate->parent_handle == handle) {
+        if (pending_count == OPENTUI_RAW_YOGA_NODE_CAPACITY) {
+          return true;
+        }
+        pending[pending_count++] = yoga_handle(index, candidate->generation);
+      }
+    }
+  }
+
+  return false;
 }
 
 static bool yoga_would_create_cycle(uint32_t parent_handle, uint32_t child_handle) {
@@ -295,7 +330,9 @@ CAMLprim value opentui_raw_yoga_node_free(value node_value) {
   if (node == NULL) {
     CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
   }
-  if (node->parent_handle != 0 || yogaNodeGetChildCount(node->node) != 0) {
+  if (node->native_renderable_attached
+      || node->parent_handle != 0
+      || yogaNodeGetChildCount(node->node) != 0) {
     CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
   }
 
@@ -312,7 +349,8 @@ CAMLprim value opentui_raw_yoga_node_free_recursive(value node_value) {
   if (node == NULL) {
     CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
   }
-  if (node->parent_handle != 0) {
+  if (node->native_renderable_attached || node->parent_handle != 0
+      || yoga_subtree_has_native_renderable(handle)) {
     CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
   }
 
@@ -338,6 +376,9 @@ CAMLprim value opentui_raw_yoga_node_insert_child(
   opentui_raw_yoga_node_slot *child = yoga_node_from_handle(child_handle);
   if (parent == NULL || child == NULL) {
     CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (parent->native_measure_attached) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
   }
   if (parent_handle == child_handle || child->parent_handle != 0
       || yoga_would_create_cycle(parent_handle, child_handle)) {
@@ -455,6 +496,22 @@ CAMLprim value opentui_raw_yoga_node_is_dirty(value node_value) {
   }
 
   CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_OK, yogaNodeIsDirty(node->node)));
+}
+
+CAMLprim value opentui_raw_yoga_node_mark_dirty(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!node->native_measure_attached) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  yogaNodeMarkDirty(node->node);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
 CAMLprim value opentui_raw_yoga_node_has_new_layout(value node_value) {
@@ -615,4 +672,76 @@ CAMLprim value opentui_raw_yoga_node_layout(value node_value) {
   opentui_external_yoga_layout layout;
   yogaNodeGetComputedLayout(node->node, &layout);
   CAMLreturn(make_status_layout(OPENTUI_RAW_STATUS_OK, &layout));
+}
+
+CAMLprim value opentui_raw_native_renderable_attach_yoga_node(
+    value renderable_value,
+    value node_value) {
+  CAMLparam2(renderable_value, node_value);
+
+  opentui_native_handle renderable =
+      (opentui_native_handle)Int32_val(renderable_value);
+  uint32_t node_handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(node_handle);
+  if (renderable == 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (node == NULL) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!nativeRenderableAttachYogaNode(renderable, node->node)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_NATIVE_FAILURE));
+  }
+
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_yoga_node_claim_native_renderable(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (node->native_renderable_attached) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  node->native_renderable_attached = true;
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_yoga_node_release_native_renderable(
+    value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  node->native_renderable_attached = false;
+  node->native_measure_attached = false;
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_yoga_node_set_native_measure_attached(
+    value node_value,
+    value attached_value) {
+  CAMLparam2(node_value, attached_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  bool attached = Bool_val(attached_value);
+  if (attached && !node->native_renderable_attached) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  node->native_measure_attached = attached;
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }

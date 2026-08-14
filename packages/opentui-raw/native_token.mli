@@ -37,3 +37,18 @@ module Reservation : sig
   type t
 (** A span-feed reservation token. *)
 end
+
+module Text_buffer : sig
+  type t
+(** A native text-buffer token. *)
+end
+
+module Text_buffer_view : sig
+  type t
+(** A view token owned by a native text buffer. *)
+end
+
+module Native_renderable : sig
+  type t
+(** A native measure-callback owner. *)
+end

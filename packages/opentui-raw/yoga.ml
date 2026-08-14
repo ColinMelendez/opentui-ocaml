@@ -227,6 +227,10 @@ module Node = struct
         let status, value = Native.yoga_node_is_dirty node.handle in
         result_of_status status value)
 
+  let mark_dirty node =
+    with_live node (fun () ->
+        result_of_status (Native.yoga_node_mark_dirty node.handle) ())
+
   let has_new_layout node =
     with_live node (fun () ->
         let status, value = Native.yoga_node_has_new_layout node.handle in
@@ -344,4 +348,27 @@ module Node = struct
             Ok { left; top; right; bottom; width; height }
         | 0, None -> Error Error.Native_failure
         | _, _ -> Error (error_of_status status))
+
+  module Private = struct
+    let with_open_handle node operation =
+      with_live node (fun () -> operation node.handle)
+
+    let claim_native_renderable node =
+      with_live node (fun () ->
+          result_of_status
+            (Native.yoga_node_claim_native_renderable node.handle)
+            ())
+
+    let release_native_renderable node =
+      with_live node (fun () ->
+          result_of_status
+            (Native.yoga_node_release_native_renderable node.handle)
+            ())
+
+    let set_native_measure_attached node attached =
+      with_live node (fun () ->
+          result_of_status
+            (Native.yoga_node_set_native_measure_attached node.handle attached)
+            ())
+  end
 end
