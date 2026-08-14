@@ -3,6 +3,35 @@
 type t
 (** A retained layout/render object owned by one {!Render_context.t}. *)
 
+type mouse_event_kind =
+  | Down
+  | Up
+  | Move
+  | Drag
+  | Drag_end
+  | Drop
+  | Over
+  | Out
+  | Scroll
+
+type mouse_event
+(** A mutable pointer event routed through the retained renderable tree. *)
+
+val mouse_kind : mouse_event -> mouse_event_kind
+val mouse_button : mouse_event -> int
+val mouse_x : mouse_event -> int
+val mouse_y : mouse_event -> int
+val mouse_modifiers : mouse_event -> Lib.Mouse_decoder.modifiers
+val mouse_scroll : mouse_event -> Lib.Mouse_decoder.scroll option
+val mouse_source : mouse_event -> t option
+val mouse_target : mouse_event -> t option
+val mouse_current_target : mouse_event -> t option
+val mouse_is_dragging : mouse_event -> bool
+val mouse_default_prevented : mouse_event -> bool
+val mouse_stop_propagation : mouse_event -> unit
+val mouse_prevent_default : mouse_event -> unit
+val mouse_propagation_stopped : mouse_event -> bool
+
 val id : t -> string
 val set_id : t -> string -> (unit, Error.t) result
 val num : t -> int
@@ -28,6 +57,47 @@ val focused : t -> bool
 val focus : t -> (unit, Error.t) result
 val blur : t -> (unit, Error.t) result
 val has_focused_descendant : t -> bool
+
+(** These slots are invoked by the owning renderer's keyboard and pointer
+    dispatchers. Passing [None] removes a slot. *)
+val set_on_key_down :
+  t -> (Lib.Key_handler.key_event -> unit) option -> (unit, Error.t) result
+
+val set_on_key_release :
+  t -> (Lib.Key_handler.key_event -> unit) option -> (unit, Error.t) result
+
+val set_on_paste :
+  t -> (Lib.Key_handler.paste_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_down :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_up :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_move :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_drag :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_drag_end :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_drop :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_over :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_out :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
+
+val set_on_mouse_scroll :
+  t -> (mouse_event -> unit) option -> (unit, Error.t) result
 
 val live : t -> bool
 val set_live : t -> bool -> (unit, Error.t) result
@@ -112,6 +182,10 @@ module Private : sig
     ?on_resize:(t -> width:int -> height:int -> unit) ->
     ?on_remove:(t -> unit) ->
     ?lifecycle_pass:(t -> unit) ->
+    ?key_press:(t -> Lib.Key_handler.key_event -> unit) ->
+    ?key_release:(t -> Lib.Key_handler.key_event -> unit) ->
+    ?paste:(t -> Lib.Key_handler.paste_event -> unit) ->
+    ?mouse_event:(t -> mouse_event -> unit) ->
     ?render_before:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
     ?render_self:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
     ?render_after:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
@@ -155,6 +229,22 @@ module Private : sig
   val insert_before :
     parent:t -> child:t -> anchor:t -> (int, Error.t) result
   val detach : parent:t -> child:t -> (unit, Error.t) result
+
+  val find_by_num : t -> int -> t option
+
+  val make_mouse_event :
+    kind:mouse_event_kind ->
+    button:int ->
+    x:int ->
+    y:int ->
+    modifiers:Lib.Mouse_decoder.modifiers ->
+    scroll:Lib.Mouse_decoder.scroll option ->
+    source:t option ->
+    target:t option ->
+    is_dragging:bool ->
+    mouse_event
+
+  val process_mouse_event : t -> mouse_event -> unit
 
   val resize_root : t -> width:int32 -> height:int32 -> (unit, Error.t) result
   val render_root :

@@ -16,6 +16,18 @@ type frame_event = Render_context.frame_event = {
   frame_id : int64;
 }
 
+type handler_source = Render_context.handler_source = Keyboard | Pointer
+type handler_scope = Render_context.handler_scope = Global | Renderable
+type handler_kind = Render_context.handler_kind = Keypress | Keyrelease | Paste | Mouse
+
+type handler_error = Render_context.handler_error = {
+  source : handler_source;
+  scope : handler_scope;
+  kind : handler_kind;
+  owner_num : int option;
+  exception_value : exn;
+}
+
 (** [create ~width ~height] creates a renderer with positive dimensions. *)
 val create : width:int32 -> height:int32 -> (t, Error.t) result
 
@@ -57,6 +69,47 @@ val prepend_resize :
   t -> (resize_event -> unit) -> (Event_subscription.t, Error.t) result
 val on_frame :
   t -> (frame_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_frame :
+  t -> (frame_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_frame :
+  t -> (frame_event -> unit) -> (Event_subscription.t, Error.t) result
+
+val on_handler_error :
+  t -> (handler_error -> unit) -> (Event_subscription.t, Error.t) result
+val once_handler_error :
+  t -> (handler_error -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_handler_error :
+  t -> (handler_error -> unit) -> (Event_subscription.t, Error.t) result
+
+val on_keypress :
+  t -> (Lib.Key_handler.key_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_keypress :
+  t -> (Lib.Key_handler.key_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_keypress :
+  t -> (Lib.Key_handler.key_event -> unit) -> (Event_subscription.t, Error.t) result
+val on_keyrelease :
+  t -> (Lib.Key_handler.key_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_keyrelease :
+  t -> (Lib.Key_handler.key_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_keyrelease :
+  t -> (Lib.Key_handler.key_event -> unit) -> (Event_subscription.t, Error.t) result
+val on_paste :
+  t -> (Lib.Key_handler.paste_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_paste :
+  t -> (Lib.Key_handler.paste_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_paste :
+  t -> (Lib.Key_handler.paste_event -> unit) -> (Event_subscription.t, Error.t) result
+
+(** [handle_input renderer event] dispatches one already-framed parser event.
+    Key and paste dispatch is synchronous. A mouse event uses the committed
+    hit grid and retained-tree pointer route. The Boolean reports whether the
+    parser event belongs to a dispatchable family. *)
+val handle_input :
+  t -> Lib.Stdin_parser.event -> (bool, Error.t) result
+
+(** [hit_test renderer ~x ~y] looks up a renderable in the committed grid. *)
+val hit_test :
+  t -> x:int -> y:int -> (Renderable.t option, Error.t) result
 
 (** [resize renderer ...] mutates the native renderer's buffers in place and
     publishes the new dimensions. Borrowed buffer values remain the same

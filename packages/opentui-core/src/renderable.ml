@@ -5,7 +5,33 @@ type rect = {
   height : float;
 }
 
-type render_command =
+type mouse_event_kind =
+  | Down
+  | Up
+  | Move
+  | Drag
+  | Drag_end
+  | Drop
+  | Over
+  | Out
+  | Scroll
+
+type mouse_event = {
+  kind : mouse_event_kind;
+  button : int;
+  x : int;
+  y : int;
+  modifiers : Lib.Mouse_decoder.modifiers;
+  scroll : Lib.Mouse_decoder.scroll option;
+  source : t option;
+  target : t option;
+  mutable current_target : t option;
+  is_dragging : bool;
+  mutable default_prevented : bool;
+  mutable propagation_stopped : bool;
+}
+
+and render_command =
   | Render of t
   | Push_opacity of float
   | Pop_opacity
@@ -17,6 +43,10 @@ and behavior = {
   on_resize : t -> width:int -> height:int -> unit;
   on_remove : t -> unit;
   lifecycle_pass : (t -> unit) option;
+  key_press : (t -> Lib.Key_handler.key_event -> unit) option;
+  key_release : (t -> Lib.Key_handler.key_event -> unit) option;
+  paste : (t -> Lib.Key_handler.paste_event -> unit) option;
+  mouse_event : (t -> mouse_event -> unit) option;
   render_before : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
   render_self : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
   render_after : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
@@ -45,6 +75,22 @@ and t = {
   mutable focusable : bool;
   mutable focused : bool;
   mutable focused_descendant : bool;
+  mutable on_key_down : (Lib.Key_handler.key_event -> unit) option;
+  mutable on_key_release : (Lib.Key_handler.key_event -> unit) option;
+  mutable on_paste : (Lib.Key_handler.paste_event -> unit) option;
+  mutable on_mouse : (mouse_event -> unit) option;
+  mutable on_mouse_down : (mouse_event -> unit) option;
+  mutable on_mouse_up : (mouse_event -> unit) option;
+  mutable on_mouse_move : (mouse_event -> unit) option;
+  mutable on_mouse_drag : (mouse_event -> unit) option;
+  mutable on_mouse_drag_end : (mouse_event -> unit) option;
+  mutable on_mouse_drop : (mouse_event -> unit) option;
+  mutable on_mouse_over : (mouse_event -> unit) option;
+  mutable on_mouse_out : (mouse_event -> unit) option;
+  mutable on_mouse_scroll : (mouse_event -> unit) option;
+  mutable keypress_subscription : Event_subscription.t option;
+  mutable keyrelease_subscription : Event_subscription.t option;
+  mutable paste_subscription : Event_subscription.t option;
   mutable live : bool;
   mutable live_count : int;
   mutable translate_x : float;
@@ -157,6 +203,10 @@ let default_behavior =
       request_render_internal renderable);
     on_remove = (fun _ -> ());
     lifecycle_pass = None;
+    key_press = None;
+    key_release = None;
+    paste = None;
+    mouse_event = None;
     render_before = None;
     render_self = None;
     render_after = None;
@@ -169,15 +219,20 @@ let default_behavior =
     filters_children = false;
   }
 
-let make_behavior ?on_update ?on_resize ?on_remove ?lifecycle_pass ?render_before
-    ?render_self ?render_after ?render_replacement ?scissor_rect
-    ?visible_children ?destroy_self ?(updates_each_frame = false)
-    ?(custom_scissor = false) ?(filters_children = false) () =
+let make_behavior ?on_update ?on_resize ?on_remove ?lifecycle_pass ?key_press
+    ?key_release ?paste ?mouse_event ?render_before ?render_self ?render_after
+    ?render_replacement ?scissor_rect ?visible_children ?destroy_self
+    ?(updates_each_frame = false) ?(custom_scissor = false)
+    ?(filters_children = false) () =
   {
     on_update = Option.value on_update ~default:default_behavior.on_update;
     on_resize = Option.value on_resize ~default:default_behavior.on_resize;
     on_remove = Option.value on_remove ~default:default_behavior.on_remove;
     lifecycle_pass;
+    key_press;
+    key_release;
+    paste;
+    mouse_event;
     render_before;
     render_self;
     render_after;
@@ -218,6 +273,22 @@ let create_node context ~id ~behavior ~is_root =
             focusable = false;
             focused = false;
             focused_descendant = false;
+            on_key_down = None;
+            on_key_release = None;
+            on_paste = None;
+            on_mouse = None;
+            on_mouse_down = None;
+            on_mouse_up = None;
+            on_mouse_move = None;
+            on_mouse_drag = None;
+            on_mouse_drag_end = None;
+            on_mouse_drop = None;
+            on_mouse_over = None;
+            on_mouse_out = None;
+            on_mouse_scroll = None;
+            keypress_subscription = None;
+            keyrelease_subscription = None;
+            paste_subscription = None;
             live = false;
             live_count = 0;
             translate_x = 0.0;
@@ -550,6 +621,18 @@ let rec find_descendant renderable id =
   in
   search renderable.children_layout
 
+let rec find_by_num renderable target_num =
+  if Int.equal renderable.num target_num then Some renderable
+  else
+    let rec search = function
+      | [] -> None
+      | child :: rest ->
+          (match find_by_num child target_num with
+          | Some found -> Some found
+          | None -> search rest)
+    in
+    search renderable.children_layout
+
 let ensure_event_source renderable =
   match ensure_open renderable with
   | Error error -> Error error
@@ -854,14 +937,135 @@ let rec propagate_focus_change renderable value =
       end;
       propagate_focus_change parent value
 
+let cancel_keyboard_handlers renderable =
+  Option.iter Event_subscription.cancel renderable.keypress_subscription;
+  Option.iter Event_subscription.cancel renderable.keyrelease_subscription;
+  Option.iter Event_subscription.cancel renderable.paste_subscription;
+  renderable.keypress_subscription <- None;
+  renderable.keyrelease_subscription <- None;
+  renderable.paste_subscription <- None
+
+let install_keyboard_handlers renderable =
+  let handler = Render_context.Private.key_handler renderable.context in
+  let keypress_subscription =
+    Lib.Key_handler.on_internal_keypress handler ~owner_num:renderable.num
+      (fun event ->
+        if not renderable.destroyed then begin
+          Option.iter (fun callback -> callback event) renderable.on_key_down;
+          if not renderable.destroyed
+             && not (Lib.Key_handler.default_prevented event) then
+            Option.iter
+              (fun callback -> callback renderable event)
+              renderable.behavior.key_press
+        end)
+  in
+  let keyrelease_subscription =
+    Lib.Key_handler.on_internal_keyrelease handler ~owner_num:renderable.num
+      (fun event ->
+        if not renderable.destroyed then begin
+          Option.iter (fun callback -> callback event) renderable.on_key_release;
+          if not renderable.destroyed
+             && not (Lib.Key_handler.default_prevented event) then
+            Option.iter
+              (fun callback -> callback renderable event)
+              renderable.behavior.key_release
+        end)
+  in
+  let paste_subscription =
+    Lib.Key_handler.on_internal_paste handler ~owner_num:renderable.num
+      (fun event ->
+        if not renderable.destroyed then begin
+          Option.iter (fun callback -> callback event) renderable.on_paste;
+          if not renderable.destroyed
+             && not (Lib.Key_handler.paste_default_prevented event) then
+            Option.iter
+              (fun callback -> callback renderable event)
+              renderable.behavior.paste
+        end)
+  in
+  renderable.keypress_subscription <- Some keypress_subscription;
+  renderable.keyrelease_subscription <- Some keyrelease_subscription;
+  renderable.paste_subscription <- Some paste_subscription
+
 let blur_state renderable =
   if renderable.focused && renderable.focusable then begin
+    cancel_keyboard_handlers renderable;
     Render_context.Private.blur_renderable renderable.context ~id:renderable.num;
     renderable.focused <- false;
     propagate_focus_change renderable false;
     request_render_internal renderable;
     emit renderable.blurred_events renderable ()
-  end
+  end else cancel_keyboard_handlers renderable
+
+let mouse_handler renderable kind =
+  match kind with
+  | Down -> renderable.on_mouse_down
+  | Up -> renderable.on_mouse_up
+  | Move -> renderable.on_mouse_move
+  | Drag -> renderable.on_mouse_drag
+  | Drag_end -> renderable.on_mouse_drag_end
+  | Drop -> renderable.on_mouse_drop
+  | Over -> renderable.on_mouse_over
+  | Out -> renderable.on_mouse_out
+  | Scroll -> renderable.on_mouse_scroll
+
+let rec process_mouse_event renderable event =
+  event.current_target <- Some renderable;
+  Option.iter (fun callback -> callback event) renderable.on_mouse;
+  Option.iter (fun callback -> callback event) (mouse_handler renderable event.kind);
+  Option.iter
+    (fun callback -> callback renderable event)
+    renderable.behavior.mouse_event;
+  match renderable.parent with
+  | Some parent when not event.propagation_stopped ->
+      process_mouse_event parent event
+  | Some _ | None -> ()
+
+let make_mouse_event ~kind ~button ~x ~y ~modifiers ~scroll ~source ~target
+    ~is_dragging =
+  {
+    kind;
+    button;
+    x;
+    y;
+    modifiers;
+    scroll;
+    source;
+    target;
+    current_target = None;
+    is_dragging;
+    default_prevented = false;
+    propagation_stopped = false;
+  }
+
+let mouse_kind event = event.kind
+let mouse_button event = event.button
+let mouse_x event = event.x
+let mouse_y event = event.y
+let mouse_modifiers event = event.modifiers
+let mouse_scroll event = event.scroll
+let mouse_source event = event.source
+let mouse_target event = event.target
+let mouse_current_target event = event.current_target
+let mouse_is_dragging event = event.is_dragging
+let mouse_default_prevented event = event.default_prevented
+let mouse_stop_propagation event = event.propagation_stopped <- true
+let mouse_prevent_default event = event.default_prevented <- true
+let mouse_propagation_stopped event = event.propagation_stopped
+
+let set_key_listener renderable setter value =
+  match ensure_open renderable with
+  | Error error -> Error error
+  | Ok () ->
+      setter value;
+      Ok ()
+
+let set_mouse_listener renderable setter value =
+  match ensure_open renderable with
+  | Error error -> Error error
+  | Ok () ->
+      setter value;
+      Ok ()
 
 let detach_children renderable =
   List.iter
@@ -998,6 +1202,7 @@ let focus renderable =
       renderable.focused <- true;
       Render_context.Private.focus_renderable renderable.context
         ~id:renderable.num ~blur:(fun () -> blur_state renderable);
+      install_keyboard_handlers renderable;
       propagate_focus_change renderable true;
       request_render renderable
       |> Result.map (fun () -> emit renderable.focused_events renderable ())
@@ -1009,6 +1214,69 @@ let blur renderable =
   | Ok () ->
       blur_state renderable;
       Ok ()
+
+let set_on_key_down renderable callback =
+  set_key_listener renderable
+    (fun value -> renderable.on_key_down <- value)
+    callback
+
+let set_on_key_release renderable callback =
+  set_key_listener renderable
+    (fun value -> renderable.on_key_release <- value)
+    callback
+
+let set_on_paste renderable callback =
+  set_key_listener renderable
+    (fun value -> renderable.on_paste <- value)
+    callback
+
+let set_on_mouse renderable callback =
+  set_mouse_listener renderable (fun value -> renderable.on_mouse <- value) callback
+
+let set_on_mouse_down renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_down <- value)
+    callback
+
+let set_on_mouse_up renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_up <- value)
+    callback
+
+let set_on_mouse_move renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_move <- value)
+    callback
+
+let set_on_mouse_drag renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_drag <- value)
+    callback
+
+let set_on_mouse_drag_end renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_drag_end <- value)
+    callback
+
+let set_on_mouse_drop renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_drop <- value)
+    callback
+
+let set_on_mouse_over renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_over <- value)
+    callback
+
+let set_on_mouse_out renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_out <- value)
+    callback
+
+let set_on_mouse_scroll renderable callback =
+  set_mouse_listener renderable
+    (fun value -> renderable.on_mouse_scroll <- value)
+    callback
 
 let has_focused_descendant renderable = renderable.focused_descendant
 let live renderable = renderable.live
@@ -1280,6 +1548,9 @@ module Private = struct
   let attach = attach_internal
   let insert_before = insert_before_internal
   let detach = detach_internal
+  let find_by_num = find_by_num
+  let make_mouse_event = make_mouse_event
+  let process_mouse_event = process_mouse_event
 
   let resize_root root ~width ~height =
     match ensure_open root with

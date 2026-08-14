@@ -80,3 +80,13 @@
  (name test_text)
  (modules test_text)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_key_handler)
+ (modules test_key_handler)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_pointer_dispatch)
+ (modules test_pointer_dispatch)
+ (libraries opentui-core windtrap))
