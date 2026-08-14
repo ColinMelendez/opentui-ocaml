@@ -37,3 +37,8 @@ val measure_for_dimensions :
   t -> width:int32 -> height:int32 -> (Text_buffer_view.measure, Error.t) result
 
 val destroy : t -> unit
+
+module Private : sig
+  (** Install the lifecycle callback used by a concrete text renderable. *)
+  val set_lifecycle_pass : t -> (unit -> unit) option -> unit
+end

@@ -75,3 +75,8 @@
  (name test_text_buffer)
  (modules test_text_buffer)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_text)
+ (modules test_text)
+ (libraries opentui-core windtrap))

@@ -4,6 +4,7 @@ type t = {
   text_buffer_view : Text_buffer_view.t;
   native_measure : Native_measure.t;
   mutable wrap_mode : Text_buffer_view.wrap_mode;
+  mutable lifecycle_pass : (unit -> unit) option;
 }
 
 let close_resources text_buffer_renderable =
@@ -19,6 +20,21 @@ let cleanup_creation renderable text_buffer text_buffer_view native_measure =
 
 let mark_measure_dirty text_buffer_renderable =
   Renderable.Private.mark_yoga_dirty text_buffer_renderable.renderable
+
+let install_behavior text_buffer_renderable =
+  let on_resize _ ~width:_ ~height:_ =
+    ignore (Renderable.Private.mark_yoga_dirty text_buffer_renderable.renderable)
+  in
+  let lifecycle_pass =
+    Option.map
+      (fun callback _ -> callback ())
+      text_buffer_renderable.lifecycle_pass
+  in
+  let behavior =
+    Renderable.Private.make_behavior ~on_resize ?lifecycle_pass
+      ~destroy_self:(fun _ -> close_resources text_buffer_renderable) ()
+  in
+  Renderable.Private.set_behavior text_buffer_renderable.renderable behavior
 
 let ensure_alive text_buffer_renderable =
   if Renderable.is_destroyed text_buffer_renderable.renderable then
@@ -91,20 +107,10 @@ let create context ?id ?(width_method = Text_buffer.Wcwidth)
                                   text_buffer_view;
                                   native_measure;
                                   wrap_mode;
+                                  lifecycle_pass = None;
                                 }
                               in
-                              let on_resize _ ~width:_ ~height:_ =
-                                ignore
-                                  (Renderable.Private.mark_yoga_dirty renderable)
-                              in
-                              let behavior =
-                                Renderable.Private.make_behavior
-                                  ~on_resize
-                                  ~destroy_self:(fun _ ->
-                                    close_resources text_buffer_renderable)
-                                  ()
-                              in
-                              Renderable.Private.set_behavior renderable behavior;
+                              install_behavior text_buffer_renderable;
                               (match Render_context.width context with
                               | Error error ->
                                   Renderable.destroy renderable;
@@ -199,3 +205,9 @@ let measure_for_dimensions text_buffer_renderable ~width ~height =
 
 let destroy text_buffer_renderable =
   Renderable.destroy text_buffer_renderable.renderable
+
+module Private = struct
+  let set_lifecycle_pass text_buffer_renderable lifecycle_pass =
+    text_buffer_renderable.lifecycle_pass <- lifecycle_pass;
+    install_behavior text_buffer_renderable
+end
