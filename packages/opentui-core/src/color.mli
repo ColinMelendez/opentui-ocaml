@@ -14,6 +14,9 @@ val black : t
 (** The opaque white color. *)
 val white : t
 
+(** A fully transparent black color. *)
+val transparent : t
+
 (** [channels color] returns [red, green, blue, alpha]. *)
 val channels : t -> int * int * int * int
 

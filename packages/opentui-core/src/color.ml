@@ -12,6 +12,7 @@ let rgb ~red ~green ~blue = map_error (Opentui_raw.Color.rgb ~red ~green ~blue)
 
 let black = Opentui_raw.Color.black
 let white = Opentui_raw.Color.white
+let transparent = Opentui_raw.Color.transparent
 let channels = Opentui_raw.Color.channels
 
 module Private = struct

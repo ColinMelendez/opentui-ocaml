@@ -38,6 +38,24 @@ val draw_text :
   attributes:int32 ->
     (unit, Error.t) result
 
+(** [draw_box buffer ...] draws a box using the reference packed border
+    representation. Border code points remain borrowed for the synchronous
+    native call. *)
+val draw_box :
+  t ->
+  x:int32 ->
+  y:int32 ->
+  width:int32 ->
+  height:int32 ->
+  border_chars:int32 array ->
+  packed_options:int32 ->
+  border_color:Color.t ->
+  background_color:Color.t ->
+  title_color:Color.t ->
+  title:string option ->
+  bottom_title:string option ->
+  (unit, Error.t) result
+
 (** [draw_text_buffer buffer view ~x ~y] draws the visible native text view at
     the signed destination origin. The renderer owns [buffer] and the text
     renderable owns [view]. *)

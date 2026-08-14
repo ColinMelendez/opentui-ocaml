@@ -20,6 +20,7 @@ let rgb ~red ~green ~blue = rgba ~red ~green ~blue ~alpha:255
 
 let black = { red = 0; green = 0; blue = 0; alpha = 255 }
 let white = { red = 255; green = 255; blue = 255; alpha = 255 }
+let transparent = { red = 0; green = 0; blue = 0; alpha = 0 }
 
 let channels color = (color.red, color.green, color.blue, color.alpha)
 

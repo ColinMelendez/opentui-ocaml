@@ -28,6 +28,15 @@ let draw_text buffer ~text ~x ~y ~foreground ~background ~attributes =
        ~foreground:(Color.Private.to_raw foreground)
        ~background:(Color.Private.to_raw background) ~attributes)
 
+let draw_box buffer ~x ~y ~width ~height ~border_chars ~packed_options
+    ~border_color ~background_color ~title_color ~title ~bottom_title =
+  map_error
+    (Opentui_raw.Buffer.draw_box (raw buffer) ~x ~y ~width ~height
+       ~border_chars ~packed_options
+       ~border_color:(Color.Private.to_raw border_color)
+       ~background_color:(Color.Private.to_raw background_color)
+       ~title_color:(Color.Private.to_raw title_color) ~title ~bottom_title)
+
 let draw_text_buffer buffer ~view ~x ~y =
   map_error
     (Opentui_raw.Buffer.draw_text_buffer_view (raw buffer)

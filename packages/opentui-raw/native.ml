@@ -1,6 +1,9 @@
 type color = int * int * int * int
 type cell = int32 * int32 * int32 * color * color * int32
 type text = string * int32 * int32 * color * color * int32
+type box =
+  int32 * int32 * int32 * int32 * int32 array * int32 * color * color * color
+  * string option * string option
 type yoga_layout = float * float * float * float * float * float
 
 type capabilities =
@@ -60,6 +63,9 @@ external buffer_set_cell : Native_token.Buffer.t -> cell -> int =
 
 external buffer_draw_text : Native_token.Buffer.t -> text -> int =
   "opentui_raw_buffer_draw_text"
+
+external buffer_draw_box : Native_token.Buffer.t -> box -> int =
+  "opentui_raw_buffer_draw_box"
 
 external buffer_draw_text_buffer_view :
   Native_token.Buffer.t -> Native_token.Text_buffer_view.t -> int32 -> int32 -> int =

@@ -469,6 +469,11 @@ comptime {
         "bufferDrawText",
     );
     expectType(
+        @TypeOf(opentui.bufferDrawBox),
+        fn (opentui.NativeHandle, i32, i32, u32, u32, [*]const u32, u32, [*]const u16, [*]const u16, [*]const u16, ?[*]const u8, u32, ?[*]const u8, u32) callconv(.c) void,
+        "bufferDrawBox",
+    );
+    expectType(
         @TypeOf(opentui.bufferSetCell),
         fn (opentui.NativeHandle, u32, u32, u32, [*]const u16, [*]const u16, u32) callconv(.c) void,
         "bufferSetCell",

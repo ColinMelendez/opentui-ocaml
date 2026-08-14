@@ -33,6 +33,24 @@ val draw_text :
     attributes:int32 ->
     (unit, Error.t) result
 
+(** [draw_box buffer ...] draws a native box using an eleven-codepoint border
+    array and packed border, fill, and title-alignment options. The title
+    strings are consumed synchronously. *)
+val draw_box :
+  t ->
+  x:int32 ->
+  y:int32 ->
+  width:int32 ->
+  height:int32 ->
+  border_chars:int32 array ->
+  packed_options:int32 ->
+  border_color:Color.t ->
+  background_color:Color.t ->
+  title_color:Color.t ->
+  title:string option ->
+  bottom_title:string option ->
+  (unit, Error.t) result
+
 (** [draw_text_buffer_view buffer view ~x ~y] draws the visible native text
     view at the signed destination origin. The view remains owned by its text
     buffer and the buffer remains owned by its renderer. *)

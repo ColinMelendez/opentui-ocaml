@@ -12,6 +12,9 @@ val rgb : red:int -> green:int -> blue:int -> (t, Error.t) result
 val black : t
 val white : t
 
+(** [transparent] has zero alpha and black RGB channels. *)
+val transparent : t
+
 (** [channels color] returns [red, green, blue, alpha]. *)
 val channels : t -> int * int * int * int
 

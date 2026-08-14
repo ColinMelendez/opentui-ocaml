@@ -250,9 +250,9 @@ services. The supported slice includes:
 The retained core represents opacity and clipping in its command list. This
 slice exposes no Buffer operations for those stack operations, so the
 retained executor returns `Error Unsupported` instead of silently dropping a
-command. `Buffer.t` includes the reference native text-buffer-view draw
-operation used by `TextBufferRenderable`; box drawing and the opacity and
-clipping stack operations remain separate drawing-surface boundaries.
+command. `Buffer.t` includes the reference native text-buffer-view and box
+drawing operations used by the retained renderables. Opacity and clipping
+stack operations remain separate drawing-surface boundaries.
 
 The following remain outside this slice. This feature provides the retained
 objects and seams they require; it does not implement their dispatch or
@@ -685,8 +685,9 @@ layout properties. Its layout contract includes border sides and `gap`,
 `row_gap`, and `column_gap`; its drawing contract includes titles, focused
 border color, custom border characters, fills, and scissor insets derived from
 the active border sides. Buffer-backed drawing operations are separate from
-the retained layout capability; a drawing command that the Buffer surface
-does not expose returns `Error Unsupported`.
+the retained layout capability. Box drawing is issued synchronously through
+the renderer-owned buffer. Opacity and scissor stack commands remain separate
+renderer seams and return `Error Unsupported`.
 
 `Box.as_renderable` is the value stored in the retained tree.
 `Box.children` is the public layout-child mutation capability.

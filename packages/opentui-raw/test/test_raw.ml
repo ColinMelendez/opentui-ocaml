@@ -111,6 +111,77 @@ let () =
             (Opentui_raw.Buffer.draw_text_buffer_view buffer view ~x:0l ~y:0l);
           ignore (expect_ok (Opentui_raw.Text_buffer.close text_buffer));
           Opentui_raw.Renderer.close renderer);
+      test "boxes draw through the native buffer seam" (fun () ->
+          let renderer =
+            expect_ok (Opentui_raw.Renderer.create ~width:6l ~height:4l)
+          in
+          let buffer = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
+          let border_chars =
+            Array.of_list
+              [
+                Int32.of_int 0x250c;
+                Int32.of_int 0x2510;
+                Int32.of_int 0x2514;
+                Int32.of_int 0x2518;
+                Int32.of_int 0x2500;
+                Int32.of_int 0x2502;
+                Int32.of_int 0x252c;
+                Int32.of_int 0x2534;
+                Int32.of_int 0x251c;
+                Int32.of_int 0x2524;
+                Int32.of_int 0x253c;
+              ]
+          in
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.clear buffer
+                  ~background:Opentui_raw.Color.black));
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.draw_box buffer ~x:0l ~y:0l ~width:6l
+                  ~height:4l ~border_chars ~packed_options:15l
+                  ~border_color:Opentui_raw.Color.white
+                  ~background_color:Opentui_raw.Color.black
+                  ~title_color:Opentui_raw.Color.white ~title:None
+                  ~bottom_title:None));
+          let output = Bytes.create 128 in
+          let written =
+            expect_ok
+              (Opentui_raw.Buffer.write_resolved_chars buffer ~output
+                 ~add_line_breaks:false)
+          in
+          let rendered = Bytes.sub_string output 0 (Int32.to_int written) in
+          equal string "┌────┐│    ││    │└────┘" rendered;
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.clear buffer
+                  ~background:Opentui_raw.Color.black));
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.draw_box buffer ~x:(-1l) ~y:0l ~width:4l
+                  ~height:4l ~border_chars ~packed_options:15l
+                  ~border_color:Opentui_raw.Color.white
+                  ~background_color:Opentui_raw.Color.black
+                  ~title_color:Opentui_raw.Color.white ~title:None
+                  ~bottom_title:None));
+          let clipped_output = Bytes.create 128 in
+          let clipped_written =
+            expect_ok
+              (Opentui_raw.Buffer.write_resolved_chars buffer
+                 ~output:clipped_output ~add_line_breaks:false)
+          in
+          let clipped =
+            Bytes.sub_string clipped_output 0 (Int32.to_int clipped_written)
+          in
+          equal string "──┐     │     │   ──┘   " clipped;
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Buffer.draw_box buffer ~x:0l ~y:0l ~width:1l
+               ~height:1l ~border_chars:[||] ~packed_options:0l
+               ~border_color:Opentui_raw.Color.white
+               ~background_color:Opentui_raw.Color.black
+               ~title_color:Opentui_raw.Color.white ~title:None
+               ~bottom_title:None);
+          Opentui_raw.Renderer.close renderer);
       test "invalid dimensions and colors are structured errors" (fun () ->
           expect_error Opentui_raw.Error.Invalid_argument
             (Opentui_raw.Renderer.create ~width:0l ~height:1l);

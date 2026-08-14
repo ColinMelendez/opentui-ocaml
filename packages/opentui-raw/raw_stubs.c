@@ -99,6 +99,52 @@ static bool read_text_length(value text, uint32_t *length) {
   return true;
 }
 
+static bool read_border_chars(value chars, uint32_t output[11]) {
+  if (!Is_block(chars) || Wosize_val(chars) != 11) {
+    return false;
+  }
+
+  for (uintnat index = 0; index < 11; index++) {
+    value codepoint = Field(chars, index);
+    if (!Is_block(codepoint) || Tag_val(codepoint) != Custom_tag) {
+      return false;
+    }
+
+    int32_t codepoint_value = Int32_val(codepoint);
+    if (codepoint_value < 0) {
+      return false;
+    }
+    output[index] = (uint32_t)codepoint_value;
+  }
+  return true;
+}
+
+static bool read_optional_text(
+    value optional_text,
+    const uint8_t **data,
+    uint32_t *length) {
+  if (Is_long(optional_text)) {
+    if (Long_val(optional_text) != 0) {
+      return false;
+    }
+    *data = NULL;
+    *length = 0;
+    return true;
+  }
+
+  if (Wosize_val(optional_text) != 1) {
+    return false;
+  }
+  value text = Field(optional_text, 0);
+  if (!Is_block(text) || Tag_val(text) != String_tag
+      || !read_text_length(text, length)) {
+    return false;
+  }
+
+  *data = (const uint8_t *)String_val(text);
+  return true;
+}
+
 CAMLprim value opentui_raw_renderer_create(value width_value, value height_value) {
   CAMLparam2(width_value, height_value);
 
@@ -283,6 +329,58 @@ CAMLprim value opentui_raw_buffer_draw_text(value handle_value, value text_value
       foreground,
       background,
       attributes);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_buffer_draw_box(value handle_value, value box_value) {
+  CAMLparam2(handle_value, box_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!Is_block(box_value) || Wosize_val(box_value) != 11) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  int32_t x = Int32_val(Field(box_value, 0));
+  int32_t y = Int32_val(Field(box_value, 1));
+  int32_t width = Int32_val(Field(box_value, 2));
+  int32_t height = Int32_val(Field(box_value, 3));
+  uint32_t border_chars[11];
+  uint16_t border_color[4];
+  uint16_t background_color[4];
+  uint16_t title_color[4];
+  const uint8_t *title;
+  const uint8_t *bottom_title;
+  uint32_t title_length;
+  uint32_t bottom_title_length;
+  if (width < 0 || height < 0
+      || !read_border_chars(Field(box_value, 4), border_chars)
+      || !read_color(Field(box_value, 6), border_color)
+      || !read_color(Field(box_value, 7), background_color)
+      || !read_color(Field(box_value, 8), title_color)
+      || !read_optional_text(Field(box_value, 9), &title, &title_length)
+      || !read_optional_text(
+             Field(box_value, 10), &bottom_title, &bottom_title_length)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  bufferDrawBox(
+      handle,
+      x,
+      y,
+      (uint32_t)width,
+      (uint32_t)height,
+      border_chars,
+      (uint32_t)Int32_val(Field(box_value, 5)),
+      border_color,
+      background_color,
+      title_color,
+      title,
+      title_length,
+      bottom_title,
+      bottom_title_length);
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 

@@ -1,6 +1,9 @@
 type color = int * int * int * int
 type cell = int32 * int32 * int32 * color * color * int32
 type text = string * int32 * int32 * color * color * int32
+type box =
+  int32 * int32 * int32 * int32 * int32 array * int32 * color * color * color
+  * string option * string option
 type yoga_layout = float * float * float * float * float * float
 
 type capabilities =
@@ -42,6 +45,7 @@ val buffer_dimensions : Native_token.Buffer.t -> int * int32 * int32
 val buffer_clear : Native_token.Buffer.t -> color -> int
 val buffer_set_cell : Native_token.Buffer.t -> cell -> int
 val buffer_draw_text : Native_token.Buffer.t -> text -> int
+val buffer_draw_box : Native_token.Buffer.t -> box -> int
 val buffer_draw_text_buffer_view :
   Native_token.Buffer.t -> Native_token.Text_buffer_view.t -> int32 -> int32 -> int
 val buffer_write_resolved_chars :

@@ -41,6 +41,7 @@ modules. The contributor workflow is in
 | `buffer.ts` (`OptimizedBuffer`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/buffer.ml`; ABI binding: `packages/opentui-raw/buffer.ml` |
 | `NativeSpanFeed.ts` | `packages/opentui-raw/span_feed.ml` |
 | `renderables/Box.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md) and `packages/opentui-core/src/renderables/box.ml` |
+| `lib/border.ts` | `packages/opentui-core/src/lib/border.ml` |
 | `renderables/Text.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md) and `packages/opentui-core/src/renderables/text.ml` with `text_children.ml` |
 | `renderables/TextNode.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/renderables/text_node.ml` |
 | `renderables/TextBufferRenderable.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/renderables/text_buffer_renderable.ml` |

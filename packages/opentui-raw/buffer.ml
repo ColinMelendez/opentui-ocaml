@@ -59,6 +59,25 @@ let draw_text buffer ~text ~x ~y ~foreground ~background ~attributes =
       let status = Native.buffer_draw_text buffer.handle drawing in
       result_of_status status ())
 
+let draw_box buffer ~x ~y ~width ~height ~border_chars ~packed_options
+    ~border_color ~background_color ~title_color ~title ~bottom_title =
+  with_open buffer (fun () ->
+      let drawing =
+        ( x,
+          y,
+          width,
+          height,
+          border_chars,
+          packed_options,
+          Color.Private.to_native border_color,
+          Color.Private.to_native background_color,
+          Color.Private.to_native title_color,
+          title,
+          bottom_title )
+      in
+      let status = Native.buffer_draw_box buffer.handle drawing in
+      result_of_status status ())
+
 let draw_text_buffer_view buffer view ~x ~y =
   with_open buffer (fun () ->
       Text_buffer_view.Private.with_open view (fun view_handle ->

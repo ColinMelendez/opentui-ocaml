@@ -126,6 +126,15 @@ module Private : sig
 
   val default_behavior : behavior
 
+  val default_scissor_rect : t -> rect
+  val inset_rect :
+    rect ->
+    left:float ->
+    top:float ->
+    right:float ->
+    bottom:float ->
+    rect
+
   val create :
     Render_context.t ->
     ?id:string ->

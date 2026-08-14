@@ -77,13 +77,16 @@ let () =
             (expect_ok
                (Core.Layout_children.add (Box.children parent)
                   (Box.as_renderable second)));
-          expect_error Core.Error.Unsupported
-            (Renderer.render renderer ~force:true);
+          ignore (expect_ok (Renderer.render renderer ~force:true));
           let border = Box.border parent in
-          equal bool true border.left;
-          equal bool true border.top;
-          equal bool true border.right;
-          equal bool true border.bottom;
+          (match border with
+          | Core.Lib.Border.All_borders -> ()
+          | _ -> fail "expected all box borders");
+          let border_sides = Box.border_sides parent in
+          equal bool true (Core.Lib.Border.left border_sides);
+          equal bool true (Core.Lib.Border.top border_sides);
+          equal bool true (Core.Lib.Border.right border_sides);
+          equal bool true (Core.Lib.Border.bottom border_sides);
           let first_layout =
             expect_ok (Core.Renderable.layout (Box.as_renderable first))
           in
@@ -141,4 +144,55 @@ let () =
             (Option.is_none (Core.Renderable.parent (Box.as_renderable third)));
           Renderer.destroy left;
           Renderer.destroy right);
+      test "box draws its border at the laid out position" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:6l ~height:4l) in
+          let box =
+            expect_ok
+              (Box.create (Renderer.context renderer) ~border:Box.all_borders
+                 ())
+          in
+          ignore (expect_ok (Box.set_width box (Core.Yoga.Point 6.0)));
+          ignore (expect_ok (Box.set_height box (Core.Yoga.Point 4.0)));
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer)
+                  (Box.as_renderable box)));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let output = Bytes.create 128 in
+          let written =
+            expect_ok
+              (Core.Buffer.write_resolved_chars
+                 (expect_ok (Renderer.current_buffer renderer)) ~output
+                 ~add_line_breaks:false)
+          in
+          let rendered = Bytes.sub_string output 0 (Int32.to_int written) in
+          equal string "┌────┐│    ││    │└────┘" rendered;
+          Renderer.destroy renderer);
+      test "box forwards title and border style options" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:6l ~height:2l) in
+          let box =
+            expect_ok
+              (Box.create (Renderer.context renderer)
+                 ~border_style:Core.Lib.Border.Double ~title:"T" ())
+          in
+          (match Box.border box with
+          | Core.Lib.Border.All_borders -> ()
+          | _ -> fail "border style should initialize the border");
+          ignore (expect_ok (Box.set_width box (Core.Yoga.Point 6.0)));
+          ignore (expect_ok (Box.set_height box (Core.Yoga.Point 2.0)));
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer)
+                  (Box.as_renderable box)));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let output = Bytes.create 128 in
+          let written =
+            expect_ok
+              (Core.Buffer.write_resolved_chars
+                 (expect_ok (Renderer.current_buffer renderer)) ~output
+                 ~add_line_breaks:false)
+          in
+          let rendered = Bytes.sub_string output 0 (Int32.to_int written) in
+          equal string "╔═T══╗╚════╝" rendered;
+          Renderer.destroy renderer);
     ]

@@ -136,6 +136,14 @@ let default_scissor renderable =
     height = renderable.height;
   }
 
+let inset_rect (rect : rect) ~left ~top ~right ~bottom : rect =
+  {
+    x = rect.x +. left;
+    y = rect.y +. top;
+    width = Float.max 0.0 (rect.width -. left -. right);
+    height = Float.max 0.0 (rect.height -. top -. bottom);
+  }
+
 let default_visible_children renderable =
   List.filter (fun child -> child.visible && not child.destroyed) renderable.children_z
 
@@ -1229,6 +1237,8 @@ module Private = struct
 
   let make_behavior = make_behavior
   let default_behavior = default_behavior
+  let default_scissor_rect = default_scissor
+  let inset_rect = inset_rect
 
   let create context ?id ?(behavior = default_behavior) () =
     let id =
