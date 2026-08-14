@@ -781,8 +781,8 @@ The implementation follows the reference dependency order:
    text-buffer-renderable dependencies;
 7. port the TextNode tree and Text behavior, including lifecycle-pass
    synchronization into the text buffer; and
-8. leave keyboard and pointer dispatch connection to those feature records,
-   using the focus, hit-grid, and handler-slot seams established here.
+8. connect the dedicated keyboard and pointer dispatch systems to the
+   renderer, focus lifecycle, hit-grid, and renderable handler slots.
 
 `Scene` is not part of this port sequence. It is not a reference OpenTUI
 concept and does not remain as a compatibility facade around the new modules.
@@ -849,9 +849,9 @@ The feature satisfies these criteria when:
   unchanged, except for the Yoga and native-measure ABI expansions required
   by this feature.
 
-Keyboard delivery, pointer bubbling, and renderer-driven selection are
-accepted by their own feature records. This feature is not blocked on those
-records beyond exposing the focus, hit-grid, and handler-slot seams.
+Keyboard delivery and pointer bubbling are accepted by their own feature
+records. Renderer-driven selection remains a separate feature because the
+retained selection model is not part of this port slice.
 
 The feature record moves to
 `docs/major-features/implemented/renderable-core/` when these criteria are

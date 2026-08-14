@@ -26,11 +26,12 @@ renderable tree.
 | `vendor/opentui/packages/core/src/Renderable.ts` mouse handling | `opentui-core.Renderable.t` pointer handlers | Invoke the target's handlers and expose the current route node while bubbling. |
 | `vendor/opentui/packages/core/src/renderer.ts` mouse dispatch | `opentui-core.Renderer.t` and retained-tree pointer route | Hit-test the latest layout, derive pointer lifecycle events, manage capture/hover, and apply focus/selection defaults. |
 
-The current OCaml decoder already carries modifiers and scroll information.
-The minimal retained-tree route hit-tests the latest layout, routes a
-five-kind pointer event from target to root, and supports `Continue` or
-`Stop`. Full reference mouse-event lifecycle, capture, hover, derived events,
-and default actions remain in progress.
+The OCaml decoder carries modifiers and scroll information. The renderer
+owns a current/next hit grid, hit-tests the committed grid, routes pointer
+events from target to root, derives hover and drag lifecycle events, and
+applies left-button focus and pointer-capture policy. Renderable handlers
+expose target/current-target identity and mutable propagation/default-action
+flags.
 
 ## Active contract
 
@@ -58,11 +59,11 @@ event fact and must be defined for each action.
 
 ### Pointer state and renderer policy
 
-The reference renderer derives `over`, `out`, `drag-end`, and `drop` behavior,
-tracks the pressed/captured target, updates hover state, and uses pointer
-events in focus and selection decisions. Those are part of this feature's
-compatibility target, but they are not implicit consequences of the small
-minimal retained-tree route currently exposed.
+The renderer derives `over`, `out`, `drag-end`, and `drop` behavior, tracks the
+captured target, updates hover state after input and committed frames, and
+uses left-button pointer events for focus. A resize releases pointer capture.
+Selection remains a separate renderer-owned feature because the retained
+selection model is not implemented by this package boundary.
 
 The retained renderable tree owns tree routing and node-local lifecycle. The renderer/runtime
 owns capture, hover transitions, focus and selection defaults, and any terminal
@@ -72,24 +73,27 @@ one.
 
 ### Handler errors and lifecycle
 
-The current minimal route propagates handler exceptions. The
-reference renderer catches pointer-handler failures and applies its
-handler-error/reporting policy. The eventual routed API must choose and
-document the corresponding owner boundary; it must not silently conflate
-pointer errors with ordinary `Event.Channel` callback behavior.
+The renderer catches pointer-handler failures and publishes a typed
+`handler_error` notification through the renderer/context event source. The
+pointer route does not use ordinary event-channel exception propagation.
 
 Destroyed subtrees are excluded from hit-testing and cannot receive a later
-route. Pointer capture and subscriptions, once implemented, must be released
-when their owner is destroyed, and repeated cleanup must be safe.
+route. Pointer capture is released when its owner is destroyed or the renderer
+is resized, and repeated cleanup is safe. Destroyed renderables do not receive
+later pointer callbacks.
 
-## Current scope
+## Implemented boundary and remaining correspondence
 
-Mouse decoding and a minimal target-to-root retained-tree route are
-implemented. The
-full reference pointer lifecycle and its renderer integration remain in
-progress. This record deliberately does not promise a new public event shape
-until target/current-target identity, propagation, default-action prevention,
-capture, cleanup, and handler-error behavior have a single tested owner.
+Mouse decoding, current/next committed hit-grid routing, target-to-root
+bubbling, target/current-target identity, propagation/default-action flags,
+hover transitions, drag capture, drop delivery, focus-on-down, resize cleanup,
+stationary-pointer hover recheck, and handler-error reporting are implemented
+in `Renderable.t` and `Renderer.t`.
+
+Selection default actions and native scissor-aware hit-grid writes remain
+separate correspondence work. The current hit grid is OCaml-owned and follows
+the reference current/next semantics; replacing its storage with the native
+renderer grid requires an explicit raw ABI seam.
 
 ## Acceptance criteria
 

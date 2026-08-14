@@ -37,7 +37,7 @@ modules. The contributor workflow is in
 | `types.ts` (`RenderContext`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/render_context.ml` |
 | `yoga.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/yoga.ml` with private per-renderable ownership |
 | Cross-cutting event model in `Renderable.ts`, `renderer.ts`, `types.ts`, and `lib/KeyHandler.ts` | `docs/major-features/in-progress/event-system/feature.md` plus the owning `opentui-core` modules |
-| `Renderable.ts` mouse handlers and pointer dispatch in `renderer.ts` | `docs/major-features/in-progress/pointer-dispatch/feature.md` and the `renderable-core` renderer/renderable modules |
+| `Renderable.ts` mouse handlers and pointer dispatch in `renderer.ts` | `docs/major-features/in-progress/pointer-dispatch/feature.md`; `packages/opentui-core/src/renderable.ml` and `renderer.ml` |
 | `buffer.ts` (`OptimizedBuffer`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); target `packages/opentui-core/src/buffer.ml`; ABI binding: `packages/opentui-raw/buffer.ml` |
 | `NativeSpanFeed.ts` | `packages/opentui-raw/span_feed.ml` |
 | `renderables/Box.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md) and `packages/opentui-core/src/renderables/box.ml` |
@@ -63,7 +63,7 @@ modules. The contributor workflow is in
 | `lib/queue.ts` | `deferred` |
 | private `ByteQueue` in `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/byte_queue.ml` |
 | OCaml input handoff | `packages/opentui-core/src/lib/input_coordinator.ml` and `event_queue.ml` |
-| `lib/KeyHandler.ts` (`KeyHandler`, `InternalKeyHandler`) | `docs/major-features/in-progress/keyboard-dispatch/feature.md` (implementation deferred) |
+| `lib/KeyHandler.ts` (`KeyHandler`, `InternalKeyHandler`) | `docs/major-features/in-progress/keyboard-dispatch/feature.md`; `packages/opentui-core/src/lib/key_handler.ml` |
 | `lib/paste.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` |
 | `lib/clock.ts` | `packages/opentui-core/src/platform/eio_runtime` |
 | `lib/terminal-*`, `ansi.ts` | `packages/opentui-core/src/lib/terminal_modes.ml` and terminal modules |

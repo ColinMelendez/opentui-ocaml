@@ -44,5 +44,12 @@ modules. `Platform.Eio_unix_runtime` contains Unix terminal-size, signal, and
 termios-session modules. These modules provide explicit building blocks for
 an application runtime; they do not hide resource ownership in a global loop.
 
+`Lib.Key_handler` is the keyboard dispatch boundary. It runs renderer-global
+handlers before the focused renderable's handlers and carries the reference
+prevention, propagation, snapshot, and handler-error semantics. Pointer
+dispatch is owned by `Renderer.t` and `Renderable.t`: the renderer selects a
+target from the committed hit grid, and the retained tree bubbles the typed
+pointer event toward its root.
+
 The source location and deferred reference areas are listed in the [source
 correspondence map](../../docs/upstream-map.md).

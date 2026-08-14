@@ -24,15 +24,16 @@ own feature records and modules.
 
 | Reference source | OCaml correspondence | Responsibility |
 | --- | --- | --- |
-| `vendor/opentui/packages/core/src/lib/KeyHandler.ts` | Dedicated keyboard-dispatch module (not yet exposed) | Key, key-release, and paste dispatch; global/local ordering; prevention; propagation; handler-error policy. |
+| `vendor/opentui/packages/core/src/lib/KeyHandler.ts` | `packages/opentui-core/src/lib/key_handler.ml` | Key, key-release, and paste dispatch; global/local ordering; prevention; propagation; handler-error policy. |
 | `vendor/opentui/packages/core/src/Renderable.ts` focus and key handlers | `opentui-core.Renderable.t` focus state and concrete renderables | The focused renderable owns local keyboard behavior and its internal registrations. |
 | `vendor/opentui/packages/core/src/renderer.ts` focus methods | `opentui-core.Renderer.t` and `Render_context.t` focus ownership | There is one current focused renderable; focus transitions update the previous and next owners. |
 | `vendor/opentui/packages/core/src/lib/stdin-parser.ts` and `parse.keypress.ts` | `Stdin_parser` and `Key_decoder` | Framing and decoding produce typed input. They do not implement keyboard dispatch. |
 
-The current OCaml parser exposes typed key and paste events, but no public
-keyboard-dispatch module. Key-release events and the complete reference key
-metadata remain part of this feature's future correspondence rather than an
-unstated promise of the parser's current surface.
+`Lib.Key_handler` exposes the keyboard-dispatch boundary. The parser produces
+typed key and paste events, while the dispatcher also accepts an explicit
+key-release payload. `Stdin_parser` does not yet classify Kitty press, repeat,
+and release frames, so terminal key-release delivery remains a parser
+extension rather than an implicit promise of the current parser surface.
 
 ## Active contract
 
@@ -118,13 +119,17 @@ ordinary event-channel exception propagation separate. The OCaml dispatcher
 must document and test the corresponding reporting and continuation behavior;
 it must not silently broaden a catch-all policy to `Event.Channel`.
 
-## Current scope
+## Implemented boundary and remaining correspondence
 
-The parser and decoder are implemented. The focused keyboard dispatcher,
-focus integration, key-release support, and the full reference payload surface
-remain in progress. No separate public API is committed here until its
-ownership, lifecycle, duplicate-listener, control-flag, and exception
-semantics are tested.
+The parser and decoder are implemented. `Lib.Key_handler` provides global
+keypress, key-release, and paste channels, focused-renderable registrations,
+snapshot dispatch, control flags, exception reporting, and explicit cleanup.
+`Renderable.focus`, `blur`, visibility changes, detachment, and destruction
+own the local registration lifecycle.
+
+The Kitty keyboard protocol event-type extension and the complete reference
+key metadata remain outside the parser boundary. The dispatcher does not
+invent those fields or silently classify an ordinary parsed key as a release.
 
 ## Acceptance criteria
 
