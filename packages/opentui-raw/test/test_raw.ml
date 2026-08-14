@@ -63,6 +63,54 @@ let () =
           Opentui_raw.Renderer.close renderer;
           expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.width current);
           expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.height next));
+      test "text buffer views draw through the native buffer seam" (fun () ->
+          let renderer =
+            expect_ok (Opentui_raw.Renderer.create ~width:6l ~height:2l)
+          in
+          let buffer = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
+          let text_buffer =
+            expect_ok (Opentui_raw.Text_buffer.create Opentui_raw.Text_buffer.Wcwidth)
+          in
+          let view = expect_ok (Opentui_raw.Text_buffer_view.create text_buffer) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Text_buffer.set_text text_buffer (Bytes.of_string "AB")));
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.clear buffer
+                  ~background:Opentui_raw.Color.black));
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.draw_text_buffer_view buffer view ~x:1l ~y:0l));
+          let output = Bytes.create 12 in
+          let written =
+            expect_ok
+              (Opentui_raw.Buffer.write_resolved_chars buffer ~output
+                 ~add_line_breaks:false)
+          in
+          equal int32 12l written;
+          equal string " AB         " (Bytes.to_string output);
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.clear buffer
+                  ~background:Opentui_raw.Color.black));
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.draw_text_buffer_view buffer view ~x:(-1l)
+                  ~y:0l));
+          let clipped_output = Bytes.create 12 in
+          let clipped_written =
+            expect_ok
+              (Opentui_raw.Buffer.write_resolved_chars buffer
+                 ~output:clipped_output ~add_line_breaks:false)
+          in
+          equal int32 12l clipped_written;
+          equal string "B           " (Bytes.to_string clipped_output);
+          ignore (expect_ok (Opentui_raw.Text_buffer_view.close view));
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Buffer.draw_text_buffer_view buffer view ~x:0l ~y:0l);
+          ignore (expect_ok (Opentui_raw.Text_buffer.close text_buffer));
+          Opentui_raw.Renderer.close renderer);
       test "invalid dimensions and colors are structured errors" (fun () ->
           expect_error Opentui_raw.Error.Invalid_argument
             (Opentui_raw.Renderer.create ~width:0l ~height:1l);

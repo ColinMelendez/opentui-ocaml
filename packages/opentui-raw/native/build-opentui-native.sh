@@ -28,14 +28,20 @@ upstream_dir="$project_root/vendor/opentui/packages/core/src/zig"
 
 if command -v sha256sum >/dev/null 2>&1; then
   span_feed_hash=$(sha256sum "$upstream_dir/native-span-feed.zig" | awk '{print $1}')
+  buffer_hash=$(sha256sum "$upstream_dir/buffer.zig" | awk '{print $1}')
 elif command -v shasum >/dev/null 2>&1; then
   span_feed_hash=$(shasum -a 256 "$upstream_dir/native-span-feed.zig" | awk '{print $1}')
+  buffer_hash=$(shasum -a 256 "$upstream_dir/buffer.zig" | awk '{print $1}')
 else
   printf '%s\n' "the native source audit requires sha256sum or shasum" >&2
   exit 127
 fi
 if [ "$span_feed_hash" != "a41a8228e920a9250b44f9812240844ccfbcca4f803ebd29e2002374e80ecfbe" ]; then
   printf '%s\n' "pinned native-span-feed.zig does not match the audited source" >&2
+  exit 1
+fi
+if [ "$buffer_hash" != "25db0f331d257cab16317c5a652aadaa5f593187a8d4cb8a7aa483fa8b187059" ]; then
+  printf '%s\n' "pinned buffer.zig does not match the audited source" >&2
   exit 1
 fi
 
@@ -84,8 +90,9 @@ if ! command -v patch >/dev/null 2>&1; then
   printf '%s\n' "the native source patch requires the patch utility" >&2
   exit 127
 fi
-chmod u+w "$patched_source_dir/native-span-feed.zig"
+chmod u+w "$patched_source_dir/native-span-feed.zig" "$patched_source_dir/buffer.zig"
 (CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/span_feed_exports.patch")
+(CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/text-buffer-negative-origin.patch")
 (CDPATH= cd -- "$patched_source_dir" && zig build -Doptimize=ReleaseSafe --prefix "$zig_prefix")
 
 artifact="$output_dir/lib/$target_name/$library_name"

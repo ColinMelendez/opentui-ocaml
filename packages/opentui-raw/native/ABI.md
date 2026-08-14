@@ -5,6 +5,13 @@ This audit targets revision `de64d210e4f0163720fc1fbfa838d4d1aad47d53` of the
 `vendor/opentui/packages/core/src/zig.ts` are a cross-check only; the Zig
 definitions are authoritative.
 
+The native build verifies the audited `native-span-feed.zig` and `buffer.zig`
+source hashes before copying the sources. It applies the tracked
+`text-buffer-negative-origin.patch` to preserve the signed-coordinate
+clipping contract for one-column glyphs whose origin is just outside the
+destination buffer. The unpatched reference loop can cast that negative
+coordinate to an unsigned cell index.
+
 ## Selected probe surface
 
 The checked-in C declarations in [`opentui_abi.h`](opentui_abi.h) cover the
@@ -24,6 +31,7 @@ typed raw renderer, buffer, event, Yoga, and capability boundary:
 | `bufferClear` | `lib.zig:1168` | `u32, pointer to four u16 values -> void` | The color pointer is consumed synchronously. |
 | `bufferDrawText` | `lib.zig:1228` | `u32, nullable byte pointer/u32, coordinates, two color pointers, u32 attributes -> void` | Text and colors are synchronous caller-owned input. |
 | `bufferSetCell` | `lib.zig:1245` | `u32, coordinates, u32 character, two color pointers, u32 attributes -> void` | The cell is written in native SoA storage; no native cell view crosses the boundary. |
+| `bufferDrawTextBufferView` | `lib.zig:2634` | `u32, u32, i32, i32 -> void` | The buffer and text-buffer-view handles are borrowed for the synchronous draw. Coordinates are signed so clipping can handle a view whose origin is outside the destination buffer. |
 | `bufferWriteResolvedChars` | `lib.zig:1219` | `u32, nullable caller output pointer, `u32` capacity, `bool` -> `u32` | Native writes into caller-owned bounded storage and returns the byte count; a capacity smaller than the resolved output returns `0`. |
 | `getRenderStats` | `lib.zig:788` | `u32, pointer to ExternalRenderStats -> void` | Caller supplies output storage; the Zig probe checks the nine-field C-compatible layout. |
 | `getAllocatorStats` | `lib.zig:617` | `pointer to ExternalAllocatorStats -> void` | Active allocation counters are sampled for a diagnostic baseline. `total_requested_bytes` is valid only when the build enables GPA safe stats. |

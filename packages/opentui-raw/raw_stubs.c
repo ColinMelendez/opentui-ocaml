@@ -286,6 +286,29 @@ CAMLprim value opentui_raw_buffer_draw_text(value handle_value, value text_value
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
+CAMLprim value opentui_raw_buffer_draw_text_buffer_view(
+    value buffer_handle_value,
+    value view_handle_value,
+    value x_value,
+    value y_value) {
+  CAMLparam4(buffer_handle_value, view_handle_value, x_value, y_value);
+
+  opentui_native_handle buffer_handle =
+      (opentui_native_handle)Int32_val(buffer_handle_value);
+  opentui_native_handle view_handle =
+      (opentui_native_handle)Int32_val(view_handle_value);
+  if (!buffer_is_valid(buffer_handle) || view_handle == 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  bufferDrawTextBufferView(
+      buffer_handle,
+      view_handle,
+      Int32_val(x_value),
+      Int32_val(y_value));
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
 CAMLprim value opentui_raw_buffer_write_resolved_chars(
     value handle_value,
     value output_value,

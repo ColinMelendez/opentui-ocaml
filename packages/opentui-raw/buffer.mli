@@ -33,6 +33,16 @@ val draw_text :
     attributes:int32 ->
     (unit, Error.t) result
 
+(** [draw_text_buffer_view buffer view ~x ~y] draws the visible native text
+    view at the signed destination origin. The view remains owned by its text
+    buffer and the buffer remains owned by its renderer. *)
+val draw_text_buffer_view :
+  t ->
+  Text_buffer_view.t ->
+  x:int32 ->
+  y:int32 ->
+  (unit, Error.t) result
+
 (** [write_resolved_chars buffer ~output ~add_line_breaks] writes the resolved
     output into caller-owned [output]. On success only the prefix reported by
     the returned count is defined; insufficient capacity is an error rather

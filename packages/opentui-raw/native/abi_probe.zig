@@ -473,6 +473,11 @@ comptime {
         fn (opentui.NativeHandle, u32, u32, u32, [*]const u16, [*]const u16, u32) callconv(.c) void,
         "bufferSetCell",
     );
+    expectType(
+        @TypeOf(opentui.bufferDrawTextBufferView),
+        fn (opentui.NativeHandle, opentui.NativeHandle, i32, i32) callconv(.c) void,
+        "bufferDrawTextBufferView",
+    );
 
     expectSize(opentui.ExternalBuildOptions, 2, "ExternalBuildOptions");
     expectOffset(opentui.ExternalBuildOptions, "gpa_safe_stats", 0, "ExternalBuildOptions.gpa_safe_stats");

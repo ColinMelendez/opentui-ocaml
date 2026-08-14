@@ -30,8 +30,17 @@ let install_behavior text_buffer_renderable =
       (fun callback _ -> callback ())
       text_buffer_renderable.lifecycle_pass
   in
+  let render_self renderable buffer _delta_time =
+    Buffer.draw_text_buffer buffer
+      ~view:text_buffer_renderable.text_buffer_view
+      ~x:(Int32.of_float
+            (Renderable.screen_x renderable))
+      ~y:(Int32.of_float
+            (Renderable.screen_y renderable))
+  in
   let behavior =
     Renderable.Private.make_behavior ~on_resize ?lifecycle_pass
+      ~render_self
       ~destroy_self:(fun _ -> close_resources text_buffer_renderable) ()
   in
   Renderable.Private.set_behavior text_buffer_renderable.renderable behavior

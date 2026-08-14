@@ -59,6 +59,14 @@ let draw_text buffer ~text ~x ~y ~foreground ~background ~attributes =
       let status = Native.buffer_draw_text buffer.handle drawing in
       result_of_status status ())
 
+let draw_text_buffer_view buffer view ~x ~y =
+  with_open buffer (fun () ->
+      Text_buffer_view.Private.with_open view (fun view_handle ->
+          let status =
+            Native.buffer_draw_text_buffer_view buffer.handle view_handle x y
+          in
+          result_of_status status ()))
+
 let write_resolved_chars buffer ~output ~add_line_breaks =
   with_open buffer (fun () ->
       let status, count =

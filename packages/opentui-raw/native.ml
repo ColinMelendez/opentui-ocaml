@@ -61,6 +61,10 @@ external buffer_set_cell : Native_token.Buffer.t -> cell -> int =
 external buffer_draw_text : Native_token.Buffer.t -> text -> int =
   "opentui_raw_buffer_draw_text"
 
+external buffer_draw_text_buffer_view :
+  Native_token.Buffer.t -> Native_token.Text_buffer_view.t -> int32 -> int32 -> int =
+  "opentui_raw_buffer_draw_text_buffer_view"
+
 external buffer_write_resolved_chars :
   Native_token.Buffer.t -> bytes -> bool -> int * int32 =
   "opentui_raw_buffer_write_resolved_chars"

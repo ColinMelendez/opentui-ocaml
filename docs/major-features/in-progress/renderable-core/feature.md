@@ -250,7 +250,9 @@ services. The supported slice includes:
 The retained core represents opacity and clipping in its command list. This
 slice exposes no Buffer operations for those stack operations, so the
 retained executor returns `Error Unsupported` instead of silently dropping a
-command. The Buffer drawing surface is a separate port-sequence boundary.
+command. `Buffer.t` includes the reference native text-buffer-view draw
+operation used by `TextBufferRenderable`; box drawing and the opacity and
+clipping stack operations remain separate drawing-surface boundaries.
 
 The following remain outside this slice. This feature provides the retained
 objects and seams they require; it does not implement their dispatch or
@@ -697,9 +699,9 @@ buffer, text-buffer view, text-node, and styled-text layers. A plain string is
 a valid convenience input, but the core type does not reduce the reference
 text model to a permanent single-string drawing helper. Text mutation
 invalidates the retained node and updates the text-buffer state used by layout
-and rendering. Local selection methods on the text-buffer renderable exist as
-retained state; renderer-driven selection from pointer input is not part of
-this slice.
+and native text-view rendering. Local selection methods on the text-buffer
+renderable exist as retained state; renderer-driven selection from pointer
+input is not part of this slice.
 
 `TextNode.t` is a separate text-composition tree. It has no Yoga node and does
 not participate in the retained layout tree. `Text.t` owns a root text node;

@@ -184,6 +184,11 @@ void bufferSetCell(
     const uint16_t *foreground,
     const uint16_t *background,
     uint32_t attributes);
+void bufferDrawTextBufferView(
+    opentui_native_handle buffer_handle,
+    opentui_native_handle text_buffer_view_handle,
+    int32_t x,
+    int32_t y);
 
 void getRenderStats(
     opentui_native_handle renderer_handle,
@@ -374,6 +379,7 @@ typedef void (*opentui_buffer_clear_fn)(opentui_native_handle, const uint16_t *)
 typedef uint32_t (*opentui_buffer_write_fn)(opentui_native_handle, uint8_t *, uint32_t, bool);
 typedef void (*opentui_buffer_draw_text_fn)(opentui_native_handle, const uint8_t *, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
 typedef void (*opentui_buffer_set_cell_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
+typedef void (*opentui_buffer_draw_text_buffer_view_fn)(opentui_native_handle, opentui_native_handle, int32_t, int32_t);
 typedef void (*opentui_get_render_stats_fn)(opentui_native_handle, opentui_external_render_stats *);
 typedef void (*opentui_get_allocator_stats_fn)(opentui_external_allocator_stats *);
 typedef opentui_yoga_config_ref (*opentui_yoga_config_create_fn)(void);
@@ -448,6 +454,7 @@ _Static_assert(_Generic(&bufferClear, opentui_buffer_clear_fn: 1, default: 0), "
 _Static_assert(_Generic(&bufferWriteResolvedChars, opentui_buffer_write_fn: 1, default: 0), "bufferWriteResolvedChars ABI drift");
 _Static_assert(_Generic(&bufferDrawText, opentui_buffer_draw_text_fn: 1, default: 0), "bufferDrawText ABI drift");
 _Static_assert(_Generic(&bufferSetCell, opentui_buffer_set_cell_fn: 1, default: 0), "bufferSetCell ABI drift");
+_Static_assert(_Generic(&bufferDrawTextBufferView, opentui_buffer_draw_text_buffer_view_fn: 1, default: 0), "bufferDrawTextBufferView ABI drift");
 _Static_assert(_Generic(&getRenderStats, opentui_get_render_stats_fn: 1, default: 0), "getRenderStats ABI drift");
 _Static_assert(_Generic(&getAllocatorStats, opentui_get_allocator_stats_fn: 1, default: 0), "getAllocatorStats ABI drift");
 _Static_assert(_Generic(&yogaConfigCreate, opentui_yoga_config_create_fn: 1, default: 0), "yogaConfigCreate ABI drift");

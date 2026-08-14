@@ -122,6 +122,51 @@ let () =
             (Text_buffer_renderable.set_text text "after-destroy");
           Text_buffer_renderable.destroy text;
           Renderer.destroy renderer);
+      test "text-buffer renderable draws its view into the renderer buffer" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:6l ~height:2l) in
+          let text =
+            expect_ok
+              (Text_buffer_renderable.create (Renderer.context renderer)
+                 ~wrap_mode:Text_buffer_view.No_wrap ())
+          in
+          ignore (expect_ok (Text_buffer_renderable.set_text text "AB"));
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer)
+                  (Text_buffer_renderable.as_renderable text)));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let output = Bytes.create 12 in
+          let written =
+            expect_ok
+              (Core.Buffer.write_resolved_chars
+                 (expect_ok (Renderer.current_buffer renderer)) ~output
+                 ~add_line_breaks:false)
+          in
+          equal int32 12l written;
+          equal string "AB          " (Bytes.to_string output);
+          Renderer.destroy renderer);
+      test "text-buffer renderable forwards signed screen coordinates" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:6l ~height:2l) in
+          let text =
+            expect_ok
+              (Text_buffer_renderable.create (Renderer.context renderer)
+                 ~wrap_mode:Text_buffer_view.No_wrap ())
+          in
+          let renderable = Text_buffer_renderable.as_renderable text in
+          ignore (expect_ok (Text_buffer_renderable.set_text text "AB"));
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer) renderable));
+          ignore (expect_ok (Core.Renderable.set_translate_x renderable (-1.0)));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let output = Bytes.create 12 in
+          ignore
+            (expect_ok
+               (Core.Buffer.write_resolved_chars
+                  (expect_ok (Renderer.current_buffer renderer)) ~output
+                  ~add_line_breaks:false));
+          equal string "B           " (Bytes.to_string output);
+          Renderer.destroy renderer);
       test "text mutations invalidate Yoga measurement" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:5l ~height:10l) in
           let text =

@@ -28,6 +28,11 @@ let draw_text buffer ~text ~x ~y ~foreground ~background ~attributes =
        ~foreground:(Color.Private.to_raw foreground)
        ~background:(Color.Private.to_raw background) ~attributes)
 
+let draw_text_buffer buffer ~view ~x ~y =
+  map_error
+    (Opentui_raw.Buffer.draw_text_buffer_view (raw buffer)
+       (Text_buffer_view_internal.raw view) ~x ~y)
+
 let write_resolved_chars buffer ~output ~add_line_breaks =
   map_error
     (Opentui_raw.Buffer.write_resolved_chars (raw buffer) ~output
