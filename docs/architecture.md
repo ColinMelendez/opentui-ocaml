@@ -72,17 +72,24 @@ contract.
 
 ## `opentui-core/src`
 
-The `opentui-core/src` tree follows `vendor/opentui/packages/core/src`. A
-directory or module with a different OCaml name is listed in the source map.
+The `opentui-core/src` tree follows `vendor/opentui/packages/core/src`. This
+tree lists the primary package modules and the internal modules that define
+current boundaries. The source map is the exhaustive path inventory, and it
+lists every deliberate directory or module-name difference.
 
 ```text
 src/
 ├── renderer.ml              CliRenderer ownership, frame lifecycle, and output
 ├── render_context.ml        capabilities supplied to renderables
 ├── buffer.ml                renderable-facing buffer operations
+├── color.ml                 raw-backed renderer color values
+├── error.ml                 structured core errors
+├── event_kernel.ml          internal synchronous event dispatch
+├── event_subscription.ml    owner-local notification cancellation
+├── layout_children.ml       typed layout-child capability
+├── native_measure.ml        internal text measurement seam
 ├── yoga.ml                  private layout-node ownership and readback
-├── event_subscription.ml     owner-local notification cancellation
-├── renderer_events.ml        renderer resize and frame event vocabulary
+├── renderer_events.ml        internal renderer event vocabulary
 ├── lib/                     terminal protocol and input support
 │   ├── styled_text.ml
 │   ├── stdin_parser.ml
@@ -93,15 +100,23 @@ src/
 │   ├── mouse_decoder.ml
 │   ├── terminal_modes.ml
 │   └── ...
+├── renderables/               retained renderable modules
+│   ├── box.ml
+│   ├── text.ml
+│   ├── text_children.ml
+│   ├── text_node.ml
+│   └── text_buffer_renderable.ml
+├── text_buffer.ml             text-buffer state
+├── text_buffer_view.ml        text-buffer viewport state
 ├── platform/                Eio and operating-system integration
 │   ├── eio_runtime/         Eio flows, output, wakeups, and dispatch
 │   └── eio_unix_runtime/    termios, SIGWINCH, and terminal-size support
 └── native/                  OCaml errors for native composition
 ```
 
-Retained renderables and text-buffer modules are planned under the reference
-paths recorded in the renderable-core feature record. They are not part of the
-current source tree until their corresponding implementation steps begin.
+Retained renderables and text-buffer modules occupy the reference directories
+recorded in the renderable-core feature record. Their coverage is partial;
+missing reference modules are listed in the [core source mirror](major-features/in-progress/core-source-mirror/feature.md).
 
 The names `eio_runtime` and `eio_unix_runtime` avoid a Dune namespace conflict:
 with qualified subdirectories, a directory named `eio` or `unix` would shadow
@@ -164,6 +179,11 @@ input-boundary relationships that the translation table summarizes.
 The [renderable-core feature record](major-features/in-progress/renderable-core/feature.md)
 defines the retained tree, renderer, render context, buffer, Yoga ownership,
 and concrete Box and Text relationships.
+
+The [core source mirror feature record](major-features/in-progress/core-source-mirror/feature.md)
+defines the complete `core/src` inventory, correspondence statuses, directory
+placement rules, and the boundary between present modules and deferred core
+areas.
 
 The specialized dispatch contracts are recorded separately in the
 [keyboard-dispatch feature record](major-features/in-progress/keyboard-dispatch/feature.md)

@@ -35,7 +35,7 @@ owns the retained objects those systems dispatch through.
 | `vendor/opentui/packages/core/src/renderables/TextBufferRenderable.ts` | `packages/opentui-core/src/renderables/text_buffer_renderable.ml` | Common renderable state and drawing path for text backed by a text buffer. |
 | `vendor/opentui/packages/core/src/renderables/TextNode.ts` | `packages/opentui-core/src/renderables/text_node.ml` | Styled text-node composition used by `TextRenderable`. |
 | `vendor/opentui/packages/core/src/lib/styled-text.ts` | `packages/opentui-core/src/lib/styled_text.ml` | Styled text chunks and conversion from plain strings. |
-| `vendor/opentui/packages/core/src/syntax-style.ts` | `packages/opentui-core/src/syntax_style.ml` | Syntax-style state used by the text-buffer renderable. |
+| `vendor/opentui/packages/core/src/syntax-style.ts` | Deferred; see the [core source mirror](../core-source-mirror/feature.md) | Syntax-style state is a separate core dependency and has no OCaml module in this slice. |
 
 The low-level `opentui-raw` modules remain ABI bindings. They do not replace
 the core `Buffer`, `Renderable`, or `CliRenderer` counterparts.
@@ -375,8 +375,9 @@ returns no error. A destroyed renderable remains a queryable value for `id`,
   destruction is harmless.
 - Concrete overrides preserve their own reference cleanup order around the
   common operation. `Text` clears its text-node children and releases its
-  native renderable, syntax-style, text-buffer-view, and text-buffer resources
-  before it invokes common renderable destruction.
+  native renderable, text-buffer-view, and text-buffer resources before it
+  invokes common renderable destruction. Syntax-style state is a separate
+  deferred core dependency.
 - `destroy_recursively` explicitly destroys descendants before destroying the
   receiver. The ordinary `destroy` operation never silently changes into
   recursive destruction.
@@ -777,11 +778,12 @@ The implementation follows the reference dependency order:
    `Layout_children.t` capability, then port the reference Box behavior onto
    the common renderable;
 6. add the native-measure ABI used by text-buffer renderables, then port the
-   text-buffer, text-buffer-view, styled-text, syntax-style, and
-   text-buffer-renderable dependencies;
-7. port the TextNode tree and Text behavior, including lifecycle-pass
+   text-buffer, text-buffer-view, styled-text, and text-buffer-renderable
+   dependencies;
+7. port syntax-style state as a separate core dependency;
+8. port the TextNode tree and Text behavior, including lifecycle-pass
    synchronization into the text buffer; and
-8. connect the dedicated keyboard and pointer dispatch systems to the
+9. connect the dedicated keyboard and pointer dispatch systems to the
    renderer, focus lifecycle, hit-grid, and renderable handler slots.
 
 `Scene` is not part of this port sequence. It is not a reference OpenTUI

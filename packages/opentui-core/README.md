@@ -2,9 +2,11 @@
 
 `opentui-core` is the user-facing Eio-native OCaml library for terminal UI
 programs. It uses `opentui-raw` for checked calls to the Zig renderer. Its
-source directories correspond to the matching directories in
-`vendor/opentui/packages/core/src`; package-local tests, reference tools, and
-performance tools remain under this package.
+implemented source directories follow the matching directories in
+`vendor/opentui/packages/core/src`; the coverage status and deferred areas are
+listed in the [core source mirror](../../docs/major-features/in-progress/core-source-mirror/feature.md).
+Package-local tests, reference tools, and performance tools remain under this
+package.
 
 ## Renderer and buffers
 
@@ -30,7 +32,9 @@ The retained renderable tree, concrete Box and Text modules, and their
 text-buffer dependencies follow the source correspondence recorded in the
 [renderable-core feature record](../../docs/major-features/in-progress/renderable-core/feature.md).
 They use the renderer, context, buffer, and Yoga ownership boundaries defined
-here rather than introducing a second tree owner.
+here rather than introducing a second tree owner. The other reference core
+areas have explicit partial or deferred entries in the [source correspondence
+map](../../docs/upstream-map.md).
 
 ## Terminal modules
 

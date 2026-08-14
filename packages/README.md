@@ -1,30 +1,36 @@
 # Packages
 
 OpenTUI is a terminal user-interface framework whose reference implementation
-is checked out in `vendor/opentui`. This directory contains the two OCaml
-packages that implement and expose the terminal UI library. The package
-boundary is explicit: `opentui-core` is the UI library, and `opentui-raw` is
-the low-level foreign-function boundary that `opentui-core` uses.
+is checked out in `vendor/opentui`. This directory contains the OCaml packages
+that port the reference package boundaries. The package boundary is explicit:
+`opentui-core` owns the Eio-native UI and terminal library, and `opentui-raw`
+owns the low-level foreign-function boundary that `opentui-core` uses.
 
 ## Package layout
 
 [`opentui-core`](opentui-core/) is the user-facing Eio-native library. Its
-source directories correspond to the directories in
-`vendor/opentui/packages/core/src`:
+implemented source directories follow the directories in
+`vendor/opentui/packages/core/src`; the complete coverage and deferred areas
+are recorded in the [core source mirror](../docs/major-features/in-progress/core-source-mirror/feature.md):
 
 ```text
 opentui-core/src/
 ├── renderer.ml              renderer ownership and frame execution
 ├── render_context.ml        renderer-owned capabilities
 ├── buffer.ml                checked borrowed drawing views
+├── color.ml                 raw-backed renderer color values
+├── error.ml                 structured core errors
+├── event_kernel.ml          internal synchronous event dispatch
 ├── yoga.ml                  independent layout-node ownership and readback
 ├── event_subscription.ml    owner-local notification cancellation
-├── renderer_events.ml       renderer resize and frame event vocabulary
+├── layout_children.ml       typed layout-child capability
+├── renderer_events.ml       internal renderer event vocabulary
+├── native_measure.ml        internal text measurement seam
 ├── lib/                     terminal protocol and input modules
 ├── platform/                Eio and Unix terminal integration
 │   ├── eio_runtime/
 │   └── eio_unix_runtime/
-└── native/                  OCaml errors for native composition
+└── native/                  core-side errors for native composition
 ```
 
 The package-local validation and development material is beside the source:
@@ -62,7 +68,8 @@ inspect the ABI boundary without also loading the retained-rendering or
 terminal-runtime API.
 
 For a path-by-path lookup from the reference source to the OCaml source, use
-the [source correspondence map](../docs/upstream-map.md). For package ownership and
-the Eio effect boundary, use [`docs/architecture.md`](../docs/architecture.md).
-For the procedure for adding a corresponding feature, use the repository
+the [source correspondence map](../docs/upstream-map.md). For package
+ownership and the Eio effect boundary, use
+[`docs/architecture.md`](../docs/architecture.md). For the procedure for
+adding a corresponding feature, use the repository
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
