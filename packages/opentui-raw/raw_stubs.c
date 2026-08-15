@@ -3,6 +3,8 @@
 #include <caml/mlvalues.h>
 
 #include <stdbool.h>
+#include <math.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -52,6 +54,43 @@ static value make_status_count(int status, uint32_t count) {
 
 static bool buffer_is_valid(opentui_native_handle handle) {
   return handle != 0 && getBufferWidth(handle) != 0;
+}
+
+static bool optimized_buffer_is_valid(opentui_native_handle handle) {
+  return buffer_is_valid(handle);
+}
+
+static bool read_int32_array(
+    value array_value,
+    int32_t **output,
+    uint32_t *length) {
+  if (!Is_block(array_value) || Tag_val(array_value) != 0) {
+    return false;
+  }
+
+  mlsize_t array_length = Wosize_val(array_value);
+  if (array_length > UINT32_MAX) {
+    return false;
+  }
+
+  *length = (uint32_t)array_length;
+  if (array_length == 0) {
+    *output = NULL;
+    return true;
+  }
+
+  int32_t *values = caml_stat_alloc(array_length * sizeof(*values));
+  for (mlsize_t index = 0; index < array_length; index++) {
+    value element = Field(array_value, index);
+    if (!Is_block(element) || Tag_val(element) != Custom_tag) {
+      caml_stat_free(values);
+      return false;
+    }
+    values[index] = Int32_val(element);
+  }
+
+  *output = values;
+  return true;
 }
 
 static bool renderer_buffers_have_dimensions(
@@ -432,6 +471,395 @@ CAMLprim value opentui_raw_buffer_write_resolved_chars(
   }
 
   CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_OK, written));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_create(
+    value width_value,
+    value height_value,
+    value respect_alpha_value,
+    value width_method_value,
+    value id_value) {
+  CAMLparam5(width_value, height_value, respect_alpha_value,
+             width_method_value, id_value);
+
+  int32_t width = Int32_val(width_value);
+  int32_t height = Int32_val(height_value);
+  int32_t width_method = Int32_val(width_method_value);
+  uint32_t id_length;
+  if (width <= 0 || height <= 0 || (width_method != 0 && width_method != 1)
+      || !read_text_length(id_value, &id_length)) {
+    CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+  }
+
+  opentui_native_handle handle = createOptimizedBuffer(
+      (uint32_t)width,
+      (uint32_t)height,
+      Bool_val(respect_alpha_value),
+      (uint8_t)width_method,
+      (const uint8_t *)String_val(id_value),
+      id_length);
+  if (handle == 0) {
+    CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_NATIVE_FAILURE, 0));
+  }
+  CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_OK, handle));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_destroy(value handle_value) {
+  CAMLparam1(handle_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (handle != 0) {
+    destroyOptimizedBuffer(handle);
+  }
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_optimized_buffer_dimensions(value handle_value) {
+  CAMLparam1(handle_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(make_status_dimensions(
+        OPENTUI_RAW_STATUS_STALE_HANDLE, 0, 0));
+  }
+  CAMLreturn(make_status_dimensions(
+      OPENTUI_RAW_STATUS_OK, getBufferWidth(handle), getBufferHeight(handle)));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_clear(
+    value handle_value,
+    value color_value) {
+  CAMLparam2(handle_value, color_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  uint16_t background[4];
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!read_color(color_value, background)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  bufferClear(handle, background);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+static value optimized_buffer_set_cell(
+    value handle_value,
+    value cell_value,
+    bool alpha_blending) {
+  CAMLparam2(handle_value, cell_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!Is_block(cell_value) || Wosize_val(cell_value) != 6) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  int32_t x = Int32_val(Field(cell_value, 0));
+  int32_t y = Int32_val(Field(cell_value, 1));
+  int32_t character = Int32_val(Field(cell_value, 2));
+  uint16_t foreground[4];
+  uint16_t background[4];
+  if (x < 0 || y < 0
+      || !read_color(Field(cell_value, 3), foreground)
+      || !read_color(Field(cell_value, 4), background)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  uint32_t attributes = (uint32_t)Int32_val(Field(cell_value, 5));
+  if (alpha_blending) {
+    bufferSetCellWithAlphaBlending(
+        handle, (uint32_t)x, (uint32_t)y, (uint32_t)character,
+        foreground, background, attributes);
+  } else {
+    bufferSetCell(
+        handle, (uint32_t)x, (uint32_t)y, (uint32_t)character,
+        foreground, background, attributes);
+  }
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_set_cell(
+    value handle_value,
+    value cell_value) {
+  return optimized_buffer_set_cell(handle_value, cell_value, false);
+}
+
+CAMLprim value opentui_raw_optimized_buffer_set_cell_with_alpha_blending(
+    value handle_value,
+    value cell_value) {
+  return optimized_buffer_set_cell(handle_value, cell_value, true);
+}
+
+CAMLprim value opentui_raw_optimized_buffer_draw_text(
+    value handle_value,
+    value text_value) {
+  CAMLparam2(handle_value, text_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!Is_block(text_value) || Wosize_val(text_value) != 6) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  value string_value = Field(text_value, 0);
+  int32_t x = Int32_val(Field(text_value, 1));
+  int32_t y = Int32_val(Field(text_value, 2));
+  uint16_t foreground[4];
+  uint16_t background[4];
+  uint32_t string_length;
+  if (x < 0 || y < 0
+      || !read_color(Field(text_value, 3), foreground)
+      || !read_color(Field(text_value, 4), background)
+      || !read_text_length(string_value, &string_length)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  bufferDrawText(
+      handle,
+      (const uint8_t *)String_val(string_value),
+      string_length,
+      (uint32_t)x,
+      (uint32_t)y,
+      foreground,
+      background,
+      (uint32_t)Int32_val(Field(text_value, 5)));
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_fill_rect(
+    value handle_value,
+    value rect_value) {
+  CAMLparam2(handle_value, rect_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!Is_block(rect_value) || Wosize_val(rect_value) != 5) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  int32_t x = Int32_val(Field(rect_value, 0));
+  int32_t y = Int32_val(Field(rect_value, 1));
+  int32_t width = Int32_val(Field(rect_value, 2));
+  int32_t height = Int32_val(Field(rect_value, 3));
+  uint16_t background[4];
+  if (x < 0 || y < 0 || width < 0 || height < 0
+      || !read_color(Field(rect_value, 4), background)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  bufferFillRect(handle, (uint32_t)x, (uint32_t)y, (uint32_t)width,
+                 (uint32_t)height, background);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_draw_frame_buffer(
+    value target_value,
+    value args_value) {
+  CAMLparam2(target_value, args_value);
+  opentui_native_handle target =
+      (opentui_native_handle)Int32_val(target_value);
+  if (!Is_block(args_value) || Wosize_val(args_value) != 7) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  value x_value = Field(args_value, 0);
+  value y_value = Field(args_value, 1);
+  value source_value = Field(args_value, 2);
+  value source_x_value = Field(args_value, 3);
+  value source_y_value = Field(args_value, 4);
+  value source_width_value = Field(args_value, 5);
+  value source_height_value = Field(args_value, 6);
+  opentui_native_handle source =
+      (opentui_native_handle)Int32_val(source_value);
+  int32_t x = Int32_val(x_value);
+  int32_t y = Int32_val(y_value);
+  int32_t source_x = Int32_val(source_x_value);
+  int32_t source_y = Int32_val(source_y_value);
+  int32_t source_width = Int32_val(source_width_value);
+  int32_t source_height = Int32_val(source_height_value);
+  if (!optimized_buffer_is_valid(target) || !optimized_buffer_is_valid(source)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (source_x < 0 || source_y < 0 || source_width < 0 || source_height < 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  drawFrameBuffer(target, x, y, source, (uint32_t)source_x,
+                  (uint32_t)source_y, (uint32_t)source_width,
+                  (uint32_t)source_height);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_resize(
+    value handle_value,
+    value width_value,
+    value height_value) {
+  CAMLparam3(handle_value, width_value, height_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  int32_t width = Int32_val(width_value);
+  int32_t height = Int32_val(height_value);
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (width <= 0 || height <= 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  bufferResize(handle, (uint32_t)width, (uint32_t)height);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_draw_grid(
+    value handle_value,
+    value args_value) {
+  CAMLparam2(handle_value, args_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!Is_block(args_value) || Wosize_val(args_value) != 7) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  value border_value = Field(args_value, 0);
+  value foreground_value = Field(args_value, 1);
+  value background_value = Field(args_value, 2);
+  value columns_value = Field(args_value, 3);
+  value rows_value = Field(args_value, 4);
+  value draw_inner_value = Field(args_value, 5);
+  value draw_outer_value = Field(args_value, 6);
+
+  uint32_t border_chars[11];
+  uint16_t foreground[4];
+  uint16_t background[4];
+  int32_t *columns = NULL;
+  int32_t *rows = NULL;
+  uint32_t column_count = 0;
+  uint32_t row_count = 0;
+  if (!read_border_chars(border_value, border_chars)
+      || !read_color(foreground_value, foreground)
+      || !read_color(background_value, background)
+      || !read_int32_array(columns_value, &columns, &column_count)
+      || !read_int32_array(rows_value, &rows, &row_count)) {
+    if (columns != NULL) caml_stat_free(columns);
+    if (rows != NULL) caml_stat_free(rows);
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  opentui_external_grid_draw_options options = {
+      .draw_inner = Bool_val(draw_inner_value),
+      .draw_outer = Bool_val(draw_outer_value),
+  };
+  bufferDrawGrid(handle, border_chars, foreground, background, columns,
+                 column_count, rows, row_count, &options);
+  if (columns != NULL) caml_stat_free(columns);
+  if (rows != NULL) caml_stat_free(rows);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_buffer_draw_frame_buffer(
+    value target_value,
+    value args_value) {
+  return opentui_raw_optimized_buffer_draw_frame_buffer(target_value, args_value);
+}
+
+CAMLprim value opentui_raw_buffer_draw_grid(
+    value handle_value,
+    value args_value) {
+  return opentui_raw_optimized_buffer_draw_grid(handle_value, args_value);
+}
+
+CAMLprim value opentui_raw_buffer_set_cell_with_alpha_blending(
+    value handle_value,
+    value cell_value) {
+  return opentui_raw_optimized_buffer_set_cell_with_alpha_blending(
+      handle_value, cell_value);
+}
+
+CAMLprim value opentui_raw_buffer_fill_rect(
+    value handle_value,
+    value rect_value) {
+  return opentui_raw_optimized_buffer_fill_rect(handle_value, rect_value);
+}
+
+CAMLprim value opentui_raw_buffer_push_scissor_rect(
+    value handle_value,
+    value args_value) {
+  CAMLparam2(handle_value, args_value);
+  if (!Is_block(args_value) || Wosize_val(args_value) != 4) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t x = Int32_val(Field(args_value, 0));
+  int32_t y = Int32_val(Field(args_value, 1));
+  int32_t width = Int32_val(Field(args_value, 2));
+  int32_t height = Int32_val(Field(args_value, 3));
+  if (!buffer_is_valid(handle) || width < 0 || height < 0) {
+    CAMLreturn(Val_int(
+        buffer_is_valid(handle) ? OPENTUI_RAW_STATUS_INVALID_ARGUMENT
+                                 : OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  bufferPushScissorRect(handle, x, y, (uint32_t)width, (uint32_t)height);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_buffer_pop_scissor_rect(value handle_value) {
+  CAMLparam1(handle_value);
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!buffer_is_valid(handle)) CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  bufferPopScissorRect(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_buffer_clear_scissor_rects(value handle_value) {
+  CAMLparam1(handle_value);
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!buffer_is_valid(handle)) CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  bufferClearScissorRects(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_buffer_push_opacity(
+    value handle_value,
+    value opacity_value) {
+  CAMLparam2(handle_value, opacity_value);
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!buffer_is_valid(handle) || !Is_block(opacity_value)
+      || Tag_val(opacity_value) != Double_tag
+      || !isfinite(Double_val(opacity_value))) {
+    CAMLreturn(Val_int(
+        buffer_is_valid(handle) ? OPENTUI_RAW_STATUS_INVALID_ARGUMENT
+                                 : OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  bufferPushOpacity(handle, (float)Double_val(opacity_value));
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_buffer_pop_opacity(value handle_value) {
+  CAMLparam1(handle_value);
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!buffer_is_valid(handle)) CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  bufferPopOpacity(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_buffer_get_current_opacity(value handle_value) {
+  CAMLparam1(handle_value);
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!buffer_is_valid(handle)) CAMLreturn(caml_copy_double(1.0));
+  CAMLreturn(caml_copy_double((double)bufferGetCurrentOpacity(handle)));
+}
+
+CAMLprim value opentui_raw_buffer_clear_opacity(value handle_value) {
+  CAMLparam1(handle_value);
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!buffer_is_valid(handle)) CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  bufferClearOpacity(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
 #define OPENTUI_RAW_EVENT_QUEUE_CAPACITY 64

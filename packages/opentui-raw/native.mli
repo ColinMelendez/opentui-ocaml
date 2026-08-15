@@ -34,6 +34,7 @@ type capabilities =
 
 type span_feed_options = int32 * int32 * int64 * int * bool * int32
 type span_feed_stats = int64 * int64 * int32 * int32
+type image_info = int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32
 
 val renderer_create : int32 -> int32 -> int * Native_token.Renderer.t
 val renderer_resize : Native_token.Renderer.t -> int32 -> int32 -> int
@@ -45,11 +46,93 @@ val buffer_dimensions : Native_token.Buffer.t -> int * int32 * int32
 val buffer_clear : Native_token.Buffer.t -> color -> int
 val buffer_set_cell : Native_token.Buffer.t -> cell -> int
 val buffer_draw_text : Native_token.Buffer.t -> text -> int
+val buffer_set_cell_with_alpha_blending : Native_token.Buffer.t -> cell -> int
+val buffer_fill_rect :
+  Native_token.Buffer.t -> int32 * int32 * int32 * int32 * color -> int
 val buffer_draw_box : Native_token.Buffer.t -> box -> int
 val buffer_draw_text_buffer_view :
   Native_token.Buffer.t -> Native_token.Text_buffer_view.t -> int32 -> int32 -> int
+val buffer_draw_frame_buffer :
+  Native_token.Buffer.t ->
+  (int32 * int32 * Native_token.Optimized_buffer.t * int32 * int32 * int32 * int32) -> int
+val buffer_draw_grid :
+  Native_token.Buffer.t ->
+  (int32 array * color * color * int32 array * int32 array * bool * bool) -> int
 val buffer_write_resolved_chars :
   Native_token.Buffer.t -> bytes -> bool -> int * int32
+val buffer_draw_image :
+  Native_token.Buffer.t ->
+  (int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32 *
+   int32 * Native_token.Image.t) -> int
+val buffer_color_matrix :
+  Native_token.Buffer.t -> floatarray -> floatarray -> float -> int -> int
+val buffer_color_matrix_uniform :
+  Native_token.Buffer.t -> floatarray -> float -> int -> int
+val buffer_push_scissor_rect :
+  Native_token.Buffer.t -> int32 * int32 * int32 * int32 -> int
+val buffer_pop_scissor_rect : Native_token.Buffer.t -> int
+val buffer_clear_scissor_rects : Native_token.Buffer.t -> int
+val buffer_push_opacity : Native_token.Buffer.t -> float -> int
+val buffer_pop_opacity : Native_token.Buffer.t -> int
+val buffer_get_current_opacity : Native_token.Buffer.t -> float
+val buffer_clear_opacity : Native_token.Buffer.t -> int
+type buffer_snapshot = int32 array * int32 array * int32 array * int32 array
+val buffer_snapshot : Native_token.Buffer.t -> int * buffer_snapshot
+val buffer_restore : Native_token.Buffer.t -> buffer_snapshot -> int
+val image_info : bytes -> int * image_info
+val image_decode : bytes -> int * Native_token.Image.t
+val image_create_from_rgba :
+  bytes -> int32 -> int32 -> int32 -> int * Native_token.Image.t
+val image_destroy : Native_token.Image.t -> unit
+val image_retain : Native_token.Image.t -> int * Native_token.Image.t
+val image_get_info : Native_token.Image.t -> int * image_info
+val image_materialize : Native_token.Image.t -> int
+val image_ensure_encoded_png : Native_token.Image.t -> int
+val image_clone : Native_token.Image.t -> int * Native_token.Image.t
+val image_copy_pixels : Native_token.Image.t -> bytes -> int32 -> bool -> int
+val image_resize :
+  Native_token.Image.t -> (int32 * int32 * int32) -> int * Native_token.Image.t
+val image_extract :
+  Native_token.Image.t -> (int32 * int32 * int32 * int32) ->
+  int * Native_token.Image.t
+val image_extend :
+  Native_token.Image.t -> (int32 * int32 * int32 * int32 * bytes) ->
+  int * Native_token.Image.t
+val image_transform :
+  Native_token.Image.t -> int32 -> int * Native_token.Image.t
+val image_composite :
+  Native_token.Image.t ->
+  Native_token.Image.t -> (int32 * int32 * int32 * int32) ->
+  int * Native_token.Image.t
+
+module Optimized_buffer : sig
+  val create :
+    width:int32 -> height:int32 -> respect_alpha:bool -> width_method:int32 ->
+    id:string -> int * Native_token.Optimized_buffer.t
+  val destroy : Native_token.Optimized_buffer.t -> unit
+  val dimensions : Native_token.Optimized_buffer.t -> int * int32 * int32
+  val clear : Native_token.Optimized_buffer.t -> color -> int
+  val set_cell : Native_token.Optimized_buffer.t -> cell -> int
+  val set_cell_with_alpha_blending : Native_token.Optimized_buffer.t -> cell -> int
+  val draw_text : Native_token.Optimized_buffer.t -> text -> int
+  val draw_text_buffer_view :
+    Native_token.Optimized_buffer.t -> Native_token.Text_buffer_view.t -> int32 -> int32 -> int
+  val fill_rect :
+    Native_token.Optimized_buffer.t -> int32 * int32 * int32 * int32 * color -> int
+  val draw_frame_buffer :
+    Native_token.Optimized_buffer.t ->
+    (int32 * int32 * Native_token.Optimized_buffer.t * int32 * int32 * int32 * int32) -> int
+  val resize : Native_token.Optimized_buffer.t -> int32 -> int32 -> int
+  val draw_grid :
+    Native_token.Optimized_buffer.t ->
+    (int32 array * color * color * int32 array * int32 array * bool * bool) -> int
+  val draw_image :
+    Native_token.Optimized_buffer.t ->
+    (int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32 *
+   int32 * Native_token.Image.t) -> int
+  val snapshot : Native_token.Optimized_buffer.t -> int * buffer_snapshot
+  val restore : Native_token.Optimized_buffer.t -> buffer_snapshot -> int
+end
 val event_sink_create : unit -> int * Native_token.Event_sink.t
 val event_sink_destroy : Native_token.Event_sink.t -> unit
 val event_sink_poll :
@@ -78,6 +161,13 @@ val yoga_node_style_set_float :
   Native_token.Yoga_node.t -> int32 -> float -> int
 val yoga_node_style_set_border :
   Native_token.Yoga_node.t -> int32 -> float -> int
+val yoga_node_set_measure_func : Native_token.Yoga_node.t -> bool -> unit
+val yoga_node_unset_measure_func : Native_token.Yoga_node.t -> unit
+val yoga_node_has_measure_func : Native_token.Yoga_node.t -> bool
+  val yoga_set_measure_callback :
+    (Nativeint.t * float * int32 * float * int32 -> float * float) -> unit
+val yoga_clear_measure_callback : unit -> unit
+val yoga_node_pointer : Native_token.Yoga_node.t -> Nativeint.t
 val yoga_node_layout :
   Native_token.Yoga_node.t -> int * yoga_layout option
 val renderer_capabilities :
@@ -105,6 +195,7 @@ val span_release : Native_token.Span.t -> int
 val text_buffer_create : int32 -> int * Native_token.Text_buffer.t
 val text_buffer_destroy : Native_token.Text_buffer.t -> unit
 val text_buffer_clear : Native_token.Text_buffer.t -> int
+val text_buffer_reset : Native_token.Text_buffer.t -> int
 val text_buffer_append :
   Native_token.Text_buffer.t ->
   (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t -> int
@@ -120,6 +211,34 @@ val text_buffer_set_text_from_mem :
   Native_token.Text_buffer.t -> int32 -> int32 -> int
 val text_buffer_length : Native_token.Text_buffer.t -> int * int32
 val text_buffer_byte_size : Native_token.Text_buffer.t -> int * int32
+val text_buffer_line_count : Native_token.Text_buffer.t -> int * int32
+val text_buffer_load_file : Native_token.Text_buffer.t -> string -> int
+val text_buffer_get_tab_width : Native_token.Text_buffer.t -> int * int32
+val text_buffer_set_tab_width : Native_token.Text_buffer.t -> int32 -> int
+type styled_chunk = string * color option * color option * int32 * string option
+val text_buffer_set_styled_text : Native_token.Text_buffer.t -> styled_chunk list -> int
+val text_buffer_clear_all_highlights : Native_token.Text_buffer.t -> int
+type highlight = int32 * int32 * int32 * int * int
+val text_buffer_add_highlight_by_char_range :
+  Native_token.Text_buffer.t -> highlight -> int
+val text_buffer_add_highlight :
+  Native_token.Text_buffer.t -> int32 -> highlight -> int
+val text_buffer_remove_highlights_by_ref :
+  Native_token.Text_buffer.t -> int -> int
+val text_buffer_clear_line_highlights :
+  Native_token.Text_buffer.t -> int32 -> int
+val text_buffer_set_default_fg : Native_token.Text_buffer.t -> color option -> int
+val text_buffer_set_default_bg : Native_token.Text_buffer.t -> color option -> int
+val text_buffer_set_default_attributes : Native_token.Text_buffer.t -> int32 option -> int
+val text_buffer_reset_defaults : Native_token.Text_buffer.t -> int
+val text_buffer_set_syntax_style :
+  Native_token.Text_buffer.t -> Native_token.Syntax_style.t option -> int
+val syntax_style_create : unit -> int * Native_token.Syntax_style.t
+val syntax_style_destroy : Native_token.Syntax_style.t -> unit
+val syntax_style_register :
+  Native_token.Syntax_style.t -> string -> color option -> color option -> int32 -> int * int32
+val syntax_style_resolve : Native_token.Syntax_style.t -> string -> int * int32
+val syntax_style_count : Native_token.Syntax_style.t -> int * int32
 val text_buffer_view_create :
   Native_token.Text_buffer.t -> int * Native_token.Text_buffer_view.t
 val text_buffer_view_destroy : Native_token.Text_buffer_view.t -> unit
@@ -129,8 +248,46 @@ val text_buffer_view_set_wrap_mode :
   Native_token.Text_buffer_view.t -> int32 -> int
 val text_buffer_view_set_first_line_offset :
   Native_token.Text_buffer_view.t -> int32 -> int
+val text_buffer_view_set_selection :
+  Native_token.Text_buffer_view.t -> int32 -> int32 -> Color.t option ->
+  Color.t option -> int
+val text_buffer_view_update_selection :
+  Native_token.Text_buffer_view.t -> int32 -> Color.t option -> Color.t option ->
+  int
+val text_buffer_view_reset_selection : Native_token.Text_buffer_view.t -> int
+val text_buffer_view_get_selection_info :
+  Native_token.Text_buffer_view.t -> int64
+val text_buffer_view_set_local_selection :
+  Native_token.Text_buffer_view.t ->
+  (int32 * int32 * int32 * int32 * Color.t option * Color.t option) ->
+  int * bool
+val text_buffer_view_update_local_selection :
+  Native_token.Text_buffer_view.t ->
+  (int32 * int32 * int32 * int32 * Color.t option * Color.t option) ->
+  int * bool
+val text_buffer_view_reset_local_selection :
+  Native_token.Text_buffer_view.t -> int
+val text_buffer_view_get_selected_text :
+  Native_token.Text_buffer_view.t -> bytes -> int32 -> int * int32
+val text_buffer_view_set_viewport_size :
+  Native_token.Text_buffer_view.t -> int32 -> int32 -> int
+val text_buffer_view_set_viewport :
+  Native_token.Text_buffer_view.t -> int32 -> int32 -> int32 -> int32 -> int
+val text_buffer_view_get_virtual_line_count :
+  Native_token.Text_buffer_view.t -> int * int32
+val text_buffer_view_set_tab_indicator :
+  Native_token.Text_buffer_view.t -> int32 -> int
+val text_buffer_view_set_tab_indicator_color :
+  Native_token.Text_buffer_view.t -> Color.t -> int
+val text_buffer_view_set_truncate : Native_token.Text_buffer_view.t -> bool -> int
 val text_buffer_view_measure_for_dimensions :
   Native_token.Text_buffer_view.t -> int32 -> int32 -> int * int32 * int32
+val text_buffer_view_get_line_info :
+  Native_token.Text_buffer_view.t ->
+  int * int32 array * int32 array * int32 array * int32 array * int32
+val text_buffer_view_get_logical_line_info :
+  Native_token.Text_buffer_view.t ->
+  int * int32 array * int32 array * int32 array * int32 array * int32
 val native_renderable_create :
   unit -> int * Native_token.Native_renderable.t
 val native_renderable_destroy : Native_token.Native_renderable.t -> unit

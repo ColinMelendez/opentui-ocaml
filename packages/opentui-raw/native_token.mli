@@ -13,6 +13,11 @@ module Buffer : sig
 (** A renderer-owned buffer token. *)
 end
 
+module Optimized_buffer : sig
+  type t
+(** An explicitly owned standalone optimized-buffer token. *)
+end
+
 module Event_sink : sig
   type t
 (** An event-sink token. *)
@@ -48,7 +53,17 @@ module Text_buffer_view : sig
 (** A view token owned by a native text buffer. *)
 end
 
+module Syntax_style : sig
+  type t
+(** A native syntax-style token. *)
+end
+
 module Native_renderable : sig
   type t
 (** A native measure-callback owner. *)
+end
+
+module Image : sig
+  type t
+(** A reference-counted native image handle. *)
 end

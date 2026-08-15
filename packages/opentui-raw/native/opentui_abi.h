@@ -67,6 +67,36 @@ typedef struct opentui_external_measure_result {
   uint32_t width_cols_max;
 } opentui_external_measure_result;
 
+typedef struct opentui_external_line_info {
+  const uint32_t *start_cols_ptr;
+  uint32_t start_cols_len;
+  const uint32_t *width_cols_ptr;
+  uint32_t width_cols_len;
+  const uint32_t *sources_ptr;
+  uint32_t sources_len;
+  const uint32_t *wraps_ptr;
+  uint32_t wraps_len;
+  uint32_t width_cols_max;
+} opentui_external_line_info;
+
+typedef struct opentui_external_styled_chunk {
+  const uint8_t *text_ptr;
+  size_t text_len;
+  const uint16_t *fg_ptr;
+  const uint16_t *bg_ptr;
+  uint32_t attributes;
+  const uint8_t *link_ptr;
+  size_t link_len;
+} opentui_external_styled_chunk;
+
+typedef struct opentui_external_highlight {
+  uint32_t start;
+  uint32_t end;
+  uint32_t style_id;
+  uint8_t priority;
+  uint16_t hl_ref;
+} opentui_external_highlight;
+
 typedef struct opentui_external_capabilities {
   bool kitty_keyboard;
   bool kitty_graphics;
@@ -161,6 +191,24 @@ uint8_t render(opentui_native_handle renderer_handle, bool force);
 
 uint32_t getBufferWidth(opentui_native_handle buffer_handle);
 uint32_t getBufferHeight(opentui_native_handle buffer_handle);
+opentui_native_handle createOptimizedBuffer(
+    uint32_t width,
+    uint32_t height,
+    bool respect_alpha,
+    uint8_t width_method,
+    const uint8_t *id_ptr,
+    uint32_t id_len);
+void destroyOptimizedBuffer(opentui_native_handle buffer_handle);
+void destroyFrameBuffer(opentui_native_handle buffer_handle);
+void drawFrameBuffer(
+    opentui_native_handle target_handle,
+    int32_t dest_x,
+    int32_t dest_y,
+    opentui_native_handle frame_buffer_handle,
+    uint32_t source_x,
+    uint32_t source_y,
+    uint32_t source_width,
+    uint32_t source_height);
 void bufferClear(opentui_native_handle buffer_handle, const uint16_t *background);
 uint32_t bufferWriteResolvedChars(
     opentui_native_handle buffer_handle,
@@ -184,6 +232,65 @@ void bufferSetCell(
     const uint16_t *foreground,
     const uint16_t *background,
     uint32_t attributes);
+void bufferSetCellWithAlphaBlending(
+    opentui_native_handle buffer_handle,
+    uint32_t x,
+    uint32_t y,
+    uint32_t character,
+    const uint16_t *foreground,
+    const uint16_t *background,
+    uint32_t attributes);
+void bufferFillRect(
+    opentui_native_handle buffer_handle,
+    uint32_t x,
+    uint32_t y,
+    uint32_t width,
+    uint32_t height,
+    const uint16_t *background);
+void bufferResize(opentui_native_handle buffer_handle, uint32_t width, uint32_t height);
+typedef struct opentui_external_grid_draw_options {
+  bool draw_inner;
+  bool draw_outer;
+} opentui_external_grid_draw_options;
+
+/* These layouts mirror the public extern structs in the pinned Zig library.
+ * Image values are owned by the native image subsystem; callers only borrow
+ * their pixels for the duration of a synchronous operation. */
+typedef struct opentui_external_image_info {
+  uint32_t width;
+  uint32_t height;
+  uint32_t source_width;
+  uint32_t source_height;
+  uint32_t format;
+  uint32_t color_status;
+  uint32_t orientation;
+  uint32_t has_alpha;
+} opentui_external_image_info;
+
+typedef struct opentui_external_image_draw_options {
+  int32_t x;
+  int32_t y;
+  uint32_t width;
+  uint32_t height;
+  uint32_t pixel_width;
+  uint32_t pixel_height;
+  uint32_t source_x;
+  uint32_t source_y;
+  uint32_t source_width;
+  uint32_t source_height;
+  uint32_t protocol;
+} opentui_external_image_draw_options;
+
+void bufferDrawGrid(
+    opentui_native_handle buffer_handle,
+    const uint32_t *border_chars,
+    const uint16_t *border_foreground,
+    const uint16_t *border_background,
+    const int32_t *column_offsets,
+    uint32_t column_count,
+    const int32_t *row_offsets,
+    uint32_t row_count,
+    const opentui_external_grid_draw_options *options);
 void bufferDrawBox(
     opentui_native_handle buffer_handle,
     int32_t x,
@@ -204,6 +311,100 @@ void bufferDrawTextBufferView(
     opentui_native_handle text_buffer_view_handle,
     int32_t x,
     int32_t y);
+uint8_t bufferDrawImage(
+    opentui_native_handle buffer_handle,
+    opentui_native_handle image_handle,
+    const opentui_external_image_draw_options *options);
+void bufferColorMatrix(
+    opentui_native_handle buffer_handle,
+    const float *matrix,
+    const float *cell_mask,
+    uint32_t cell_mask_count,
+    float strength,
+    uint8_t target);
+void bufferColorMatrixUniform(
+    opentui_native_handle buffer_handle,
+    const float *matrix,
+    float strength,
+    uint8_t target);
+void bufferPushScissorRect(
+    opentui_native_handle buffer_handle,
+    int32_t x,
+    int32_t y,
+    uint32_t width,
+    uint32_t height);
+void bufferPopScissorRect(opentui_native_handle buffer_handle);
+void bufferClearScissorRects(opentui_native_handle buffer_handle);
+void bufferPushOpacity(opentui_native_handle buffer_handle, float opacity);
+void bufferPopOpacity(opentui_native_handle buffer_handle);
+float bufferGetCurrentOpacity(opentui_native_handle buffer_handle);
+void bufferClearOpacity(opentui_native_handle buffer_handle);
+uint32_t *bufferGetCharPtr(opentui_native_handle buffer_handle);
+uint16_t *bufferGetFgPtr(opentui_native_handle buffer_handle);
+uint16_t *bufferGetBgPtr(opentui_native_handle buffer_handle);
+uint32_t *bufferGetAttributesPtr(opentui_native_handle buffer_handle);
+
+uint32_t imageInfo(
+    const uint8_t *data_ptr,
+    uint32_t data_len,
+    opentui_external_image_info *out_info);
+uint32_t imageDecode(
+    const uint8_t *data_ptr,
+    uint32_t data_len,
+    opentui_native_handle *out_handle);
+uint32_t imageCreateFromRgba(
+    const uint8_t *pixels_ptr,
+    uint64_t pixels_len,
+    uint32_t width,
+    uint32_t height,
+    uint32_t stride,
+    opentui_native_handle *out_handle);
+void imageDestroy(opentui_native_handle image_handle);
+uint32_t imageRetain(opentui_native_handle image_handle, opentui_native_handle *out_handle);
+uint32_t imageGetInfo(opentui_native_handle image_handle, opentui_external_image_info *out_info);
+uint8_t *imageGetPixelsPtr(opentui_native_handle image_handle);
+uint32_t imageMaterialize(opentui_native_handle image_handle);
+uint32_t imageEnsureEncodedPng(opentui_native_handle image_handle);
+uint32_t imageClone(opentui_native_handle image_handle, opentui_native_handle *out_handle);
+uint32_t imageCopyPixels(
+    opentui_native_handle image_handle,
+    uint8_t *destination_ptr,
+    uint64_t destination_len,
+    uint32_t stride,
+    uint8_t bgra);
+uint32_t imageResize(
+    opentui_native_handle image_handle,
+    uint32_t width,
+    uint32_t height,
+    uint32_t filter,
+    opentui_native_handle *out_handle);
+uint32_t imageExtract(
+    opentui_native_handle image_handle,
+    uint32_t left,
+    uint32_t top,
+    uint32_t width,
+    uint32_t height,
+    opentui_native_handle *out_handle);
+uint32_t imageExtend(
+    opentui_native_handle image_handle,
+    uint32_t top,
+    uint32_t right,
+    uint32_t bottom,
+    uint32_t left,
+    const uint8_t *background_ptr,
+    opentui_native_handle *out_handle);
+uint32_t imageTransform(
+    opentui_native_handle image_handle,
+    uint32_t operation,
+    opentui_native_handle *out_handle);
+uint32_t imageComposite(
+    opentui_native_handle base_handle,
+    opentui_native_handle overlay_handle,
+    int32_t left,
+    int32_t top,
+    uint32_t blend,
+    uint8_t opacity,
+    opentui_native_handle *out_handle);
 
 void getRenderStats(
     opentui_native_handle renderer_handle,
@@ -235,6 +436,11 @@ void yogaNodeStyleSetValue(
 void yogaNodeStyleSetEnum(opentui_yoga_node_ref node, uint32_t kind, uint32_t value);
 void yogaNodeStyleSetFloat(opentui_yoga_node_ref node, uint32_t kind, float value);
 void yogaNodeStyleSetBorder(opentui_yoga_node_ref node, uint32_t edge, float border);
+void yogaNodeSetMeasureFunc(opentui_yoga_node_ref node, bool enabled);
+void yogaNodeUnsetMeasureFunc(opentui_yoga_node_ref node);
+bool yogaNodeHasMeasureFunc(opentui_yoga_node_const_ref node);
+void yogaSetMeasureCallback(const void *callback);
+void yogaStoreMeasureResult(float width, float height);
 
 opentui_native_handle createNativeRenderable(void);
 void destroyNativeRenderable(opentui_native_handle native_renderable_handle);
@@ -250,7 +456,48 @@ opentui_native_handle createTextBuffer(uint8_t width_method);
 void destroyTextBuffer(opentui_native_handle text_buffer_handle);
 uint32_t textBufferGetLength(opentui_native_handle text_buffer_handle);
 uint32_t textBufferGetByteSize(opentui_native_handle text_buffer_handle);
+uint32_t textBufferGetLineCount(opentui_native_handle text_buffer_handle);
+uint8_t textBufferGetTabWidth(opentui_native_handle text_buffer_handle);
+void textBufferReset(opentui_native_handle text_buffer_handle);
 void textBufferClear(opentui_native_handle text_buffer_handle);
+bool textBufferLoadFile(
+    opentui_native_handle text_buffer_handle,
+    const uint8_t *path_ptr,
+    uint32_t path_len);
+void textBufferSetTabWidth(
+    opentui_native_handle text_buffer_handle,
+    uint8_t width);
+void textBufferSetDefaultFg(
+    opentui_native_handle text_buffer_handle,
+    const uint16_t *fg);
+void textBufferSetDefaultBg(
+    opentui_native_handle text_buffer_handle,
+    const uint16_t *bg);
+void textBufferSetDefaultAttributes(
+    opentui_native_handle text_buffer_handle,
+    const uint32_t *attributes);
+void textBufferResetDefaults(opentui_native_handle text_buffer_handle);
+void textBufferSetStyledText(
+    opentui_native_handle text_buffer_handle,
+    const opentui_external_styled_chunk *chunks,
+    uint32_t chunk_count);
+void textBufferClearAllHighlights(opentui_native_handle text_buffer_handle);
+void textBufferAddHighlightByCharRange(
+    opentui_native_handle text_buffer_handle,
+    const opentui_external_highlight *highlight);
+void textBufferAddHighlight(
+    opentui_native_handle text_buffer_handle,
+    uint32_t line_index,
+    const opentui_external_highlight *highlight);
+void textBufferRemoveHighlightsByRef(
+    opentui_native_handle text_buffer_handle,
+    uint16_t highlight_ref);
+void textBufferClearLineHighlights(
+    opentui_native_handle text_buffer_handle,
+    uint32_t line_index);
+bool textBufferSetSyntaxStyle(
+    opentui_native_handle text_buffer_handle,
+    opentui_native_handle style_handle);
 void textBufferAppend(
     opentui_native_handle text_buffer_handle,
     const uint8_t *data_ptr,
@@ -281,11 +528,90 @@ void textBufferViewSetWrapMode(
 void textBufferViewSetFirstLineOffset(
     opentui_native_handle text_buffer_view_handle,
     uint32_t offset);
+void textBufferViewSetSelection(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t start,
+    uint32_t end,
+    const uint16_t *background,
+    const uint16_t *foreground);
+void textBufferViewUpdateSelection(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t end,
+    const uint16_t *background,
+    const uint16_t *foreground);
+void textBufferViewResetSelection(opentui_native_handle text_buffer_view_handle);
+uint64_t textBufferViewGetSelectionInfo(opentui_native_handle text_buffer_view_handle);
+bool textBufferViewSetLocalSelection(
+    opentui_native_handle text_buffer_view_handle,
+    int32_t anchor_x,
+    int32_t anchor_y,
+    int32_t focus_x,
+    int32_t focus_y,
+    const uint16_t *background,
+    const uint16_t *foreground);
+bool textBufferViewUpdateLocalSelection(
+    opentui_native_handle text_buffer_view_handle,
+    int32_t anchor_x,
+    int32_t anchor_y,
+    int32_t focus_x,
+    int32_t focus_y,
+    const uint16_t *background,
+    const uint16_t *foreground);
+void textBufferViewResetLocalSelection(opentui_native_handle text_buffer_view_handle);
+uint32_t textBufferViewGetSelectedText(
+    opentui_native_handle text_buffer_view_handle,
+    uint8_t *output,
+    uint32_t output_len);
+void textBufferViewSetViewportSize(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t width,
+    uint32_t height);
+void textBufferViewSetViewport(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t x,
+    uint32_t y,
+    uint32_t width,
+    uint32_t height);
+uint32_t textBufferViewGetVirtualLineCount(opentui_native_handle text_buffer_view_handle);
+void textBufferViewSetTabIndicator(
+    opentui_native_handle text_buffer_view_handle,
+    uint32_t indicator);
+void textBufferViewSetTabIndicatorColor(
+    opentui_native_handle text_buffer_view_handle,
+    const uint16_t *color);
+void textBufferViewSetTruncate(
+    opentui_native_handle text_buffer_view_handle,
+    bool truncate);
 bool textBufferViewMeasureForDimensions(
     opentui_native_handle text_buffer_view_handle,
     uint32_t width,
     uint32_t height,
     opentui_external_measure_result *output);
+void textBufferViewGetLineInfoDirect(
+    opentui_native_handle text_buffer_view_handle,
+    opentui_external_line_info *output);
+void textBufferViewGetLogicalLineInfoDirect(
+    opentui_native_handle text_buffer_view_handle,
+    opentui_external_line_info *output);
+
+opentui_native_handle createSyntaxStyle(void);
+void destroySyntaxStyle(opentui_native_handle style_handle);
+uint32_t syntaxStyleRegister(
+    opentui_native_handle style_handle,
+    const uint8_t *name_ptr,
+    uint32_t name_len,
+    const uint16_t *fg,
+    const uint16_t *bg,
+    uint32_t attributes);
+uint32_t syntaxStyleResolveByName(
+    opentui_native_handle style_handle,
+    const uint8_t *name_ptr,
+    uint32_t name_len);
+uint32_t syntaxStyleGetStyleCount(opentui_native_handle style_handle);
+uint32_t linkAlloc(const uint8_t *url_ptr, uint32_t url_len);
+uint32_t linkGetUrl(uint32_t link_id, uint8_t *output, uint32_t output_len);
+uint32_t attributesWithLink(uint32_t attributes, uint32_t link_id);
+uint32_t attributesGetLinkId(uint32_t attributes);
 
 void getTerminalCapabilities(
     opentui_native_handle renderer_handle,
@@ -333,6 +659,21 @@ _Static_assert(sizeof(opentui_external_allocator_stats) == 40, "allocator stats 
 _Static_assert(sizeof(opentui_external_render_stats) == 56, "render stats ABI drift");
 _Static_assert(sizeof(opentui_external_yoga_layout) == 24, "Yoga layout ABI drift");
 _Static_assert(sizeof(opentui_external_measure_result) == 8, "measure result ABI drift");
+_Static_assert(sizeof(opentui_external_styled_chunk) == 56, "styled chunk ABI drift");
+_Static_assert(offsetof(opentui_external_styled_chunk, text_len) == 8, "styled chunk text length offset drift");
+_Static_assert(offsetof(opentui_external_styled_chunk, fg_ptr) == 16, "styled chunk foreground offset drift");
+_Static_assert(offsetof(opentui_external_styled_chunk, bg_ptr) == 24, "styled chunk background offset drift");
+_Static_assert(offsetof(opentui_external_styled_chunk, attributes) == 32, "styled chunk attributes offset drift");
+_Static_assert(offsetof(opentui_external_styled_chunk, link_ptr) == 40, "styled chunk link offset drift");
+_Static_assert(sizeof(opentui_external_grid_draw_options) == 2, "grid draw options ABI drift");
+_Static_assert(sizeof(opentui_external_image_info) == 32, "image info ABI drift");
+_Static_assert(sizeof(opentui_external_image_draw_options) == 44, "image draw options ABI drift");
+_Static_assert(offsetof(opentui_external_image_draw_options, y) == 4, "image draw y offset drift");
+_Static_assert(offsetof(opentui_external_image_draw_options, width) == 8, "image draw width offset drift");
+_Static_assert(offsetof(opentui_external_image_draw_options, pixel_width) == 16, "image draw pixel width offset drift");
+_Static_assert(offsetof(opentui_external_image_draw_options, source_x) == 24, "image draw source x offset drift");
+_Static_assert(offsetof(opentui_external_image_draw_options, source_width) == 32, "image draw source width offset drift");
+_Static_assert(offsetof(opentui_external_image_draw_options, protocol) == 40, "image draw protocol offset drift");
 _Static_assert(offsetof(opentui_external_measure_result, width_cols_max) == 4, "measure result offset drift");
 _Static_assert(offsetof(opentui_external_yoga_layout, top) == 4, "Yoga layout offset drift");
 _Static_assert(offsetof(opentui_external_yoga_layout, right) == 8, "Yoga layout offset drift");
@@ -390,12 +731,45 @@ typedef void (*opentui_destroy_renderer_fn)(opentui_native_handle);
 typedef opentui_native_handle (*opentui_get_buffer_fn)(opentui_native_handle);
 typedef uint8_t (*opentui_render_fn)(opentui_native_handle, bool);
 typedef uint32_t (*opentui_get_buffer_dimension_fn)(opentui_native_handle);
+typedef opentui_native_handle (*opentui_create_optimized_buffer_fn)(uint32_t, uint32_t, bool, uint8_t, const uint8_t *, uint32_t);
+typedef void (*opentui_destroy_optimized_buffer_fn)(opentui_native_handle);
+typedef void (*opentui_draw_frame_buffer_fn)(opentui_native_handle, int32_t, int32_t, opentui_native_handle, uint32_t, uint32_t, uint32_t, uint32_t);
 typedef void (*opentui_buffer_clear_fn)(opentui_native_handle, const uint16_t *);
 typedef uint32_t (*opentui_buffer_write_fn)(opentui_native_handle, uint8_t *, uint32_t, bool);
 typedef void (*opentui_buffer_draw_text_fn)(opentui_native_handle, const uint8_t *, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
 typedef void (*opentui_buffer_draw_box_fn)(opentui_native_handle, int32_t, int32_t, uint32_t, uint32_t, const uint32_t *, uint32_t, const uint16_t *, const uint16_t *, const uint16_t *, const uint8_t *, uint32_t, const uint8_t *, uint32_t);
 typedef void (*opentui_buffer_set_cell_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
+typedef void (*opentui_buffer_set_cell_with_alpha_blending_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
+typedef void (*opentui_buffer_fill_rect_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, uint32_t, const uint16_t *);
+typedef void (*opentui_buffer_resize_fn)(opentui_native_handle, uint32_t, uint32_t);
+typedef void (*opentui_buffer_draw_grid_fn)(opentui_native_handle, const uint32_t *, const uint16_t *, const uint16_t *, const int32_t *, uint32_t, const int32_t *, uint32_t, const opentui_external_grid_draw_options *);
 typedef void (*opentui_buffer_draw_text_buffer_view_fn)(opentui_native_handle, opentui_native_handle, int32_t, int32_t);
+typedef uint8_t (*opentui_buffer_draw_image_fn)(opentui_native_handle, opentui_native_handle, const opentui_external_image_draw_options *);
+typedef void (*opentui_buffer_color_matrix_fn)(opentui_native_handle, const float *, const float *, uint32_t, float, uint8_t);
+typedef void (*opentui_buffer_color_matrix_uniform_fn)(opentui_native_handle, const float *, float, uint8_t);
+typedef void (*opentui_buffer_push_scissor_rect_fn)(opentui_native_handle, int32_t, int32_t, uint32_t, uint32_t);
+typedef void (*opentui_buffer_pop_scissor_rect_fn)(opentui_native_handle);
+typedef void (*opentui_buffer_clear_scissor_rects_fn)(opentui_native_handle);
+typedef void (*opentui_buffer_push_opacity_fn)(opentui_native_handle, float);
+typedef void (*opentui_buffer_pop_opacity_fn)(opentui_native_handle);
+typedef float (*opentui_buffer_get_current_opacity_fn)(opentui_native_handle);
+typedef void (*opentui_buffer_clear_opacity_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_image_info_fn)(const uint8_t *, uint32_t, opentui_external_image_info *);
+typedef uint32_t (*opentui_image_decode_fn)(const uint8_t *, uint32_t, opentui_native_handle *);
+typedef uint32_t (*opentui_image_create_from_rgba_fn)(const uint8_t *, uint64_t, uint32_t, uint32_t, uint32_t, opentui_native_handle *);
+typedef void (*opentui_image_destroy_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_image_retain_fn)(opentui_native_handle, opentui_native_handle *);
+typedef uint32_t (*opentui_image_get_info_fn)(opentui_native_handle, opentui_external_image_info *);
+typedef uint8_t *(*opentui_image_get_pixels_ptr_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_image_materialize_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_image_ensure_encoded_png_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_image_clone_fn)(opentui_native_handle, opentui_native_handle *);
+typedef uint32_t (*opentui_image_copy_pixels_fn)(opentui_native_handle, uint8_t *, uint64_t, uint32_t, uint8_t);
+typedef uint32_t (*opentui_image_resize_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, opentui_native_handle *);
+typedef uint32_t (*opentui_image_extract_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, uint32_t, opentui_native_handle *);
+typedef uint32_t (*opentui_image_extend_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, uint32_t, const uint8_t *, opentui_native_handle *);
+typedef uint32_t (*opentui_image_transform_fn)(opentui_native_handle, uint32_t, opentui_native_handle *);
+typedef uint32_t (*opentui_image_composite_fn)(opentui_native_handle, opentui_native_handle, int32_t, int32_t, uint32_t, uint8_t, opentui_native_handle *);
 typedef void (*opentui_get_render_stats_fn)(opentui_native_handle, opentui_external_render_stats *);
 typedef void (*opentui_get_allocator_stats_fn)(opentui_external_allocator_stats *);
 typedef opentui_yoga_config_ref (*opentui_yoga_config_create_fn)(void);
@@ -416,6 +790,11 @@ typedef void (*opentui_yoga_node_style_set_value_fn)(opentui_yoga_node_ref, uint
 typedef void (*opentui_yoga_node_style_set_enum_fn)(opentui_yoga_node_ref, uint32_t, uint32_t);
 typedef void (*opentui_yoga_node_style_set_float_fn)(opentui_yoga_node_ref, uint32_t, float);
 typedef void (*opentui_yoga_node_style_set_border_fn)(opentui_yoga_node_ref, uint32_t, float);
+typedef void (*opentui_yoga_node_set_measure_func_fn)(opentui_yoga_node_ref, bool);
+typedef void (*opentui_yoga_node_unset_measure_func_fn)(opentui_yoga_node_ref);
+typedef bool (*opentui_yoga_node_has_measure_func_fn)(opentui_yoga_node_const_ref);
+typedef void (*opentui_yoga_set_measure_callback_fn)(const void *);
+typedef void (*opentui_yoga_store_measure_result_fn)(float, float);
 typedef opentui_native_handle (*opentui_create_native_renderable_fn)(void);
 typedef void (*opentui_destroy_native_renderable_fn)(opentui_native_handle);
 typedef bool (*opentui_native_renderable_attach_yoga_node_fn)(opentui_native_handle, opentui_yoga_node_ref);
@@ -424,17 +803,59 @@ typedef opentui_native_handle (*opentui_create_text_buffer_fn)(uint8_t);
 typedef void (*opentui_destroy_text_buffer_fn)(opentui_native_handle);
 typedef uint32_t (*opentui_text_buffer_get_length_fn)(opentui_native_handle);
 typedef uint32_t (*opentui_text_buffer_get_byte_size_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_text_buffer_get_line_count_fn)(opentui_native_handle);
+typedef uint8_t (*opentui_text_buffer_get_tab_width_fn)(opentui_native_handle);
+typedef void (*opentui_text_buffer_reset_fn)(opentui_native_handle);
 typedef void (*opentui_text_buffer_clear_fn)(opentui_native_handle);
+typedef bool (*opentui_text_buffer_load_file_fn)(
+    opentui_native_handle,
+    const uint8_t *,
+    uint32_t);
+typedef void (*opentui_text_buffer_set_tab_width_fn)(
+    opentui_native_handle,
+    uint8_t);
 typedef void (*opentui_text_buffer_append_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 typedef uint16_t (*opentui_text_buffer_register_mem_buffer_fn)(opentui_native_handle, const uint8_t *, uint32_t, bool);
 typedef bool (*opentui_text_buffer_replace_mem_buffer_fn)(opentui_native_handle, uint8_t, const uint8_t *, uint32_t, bool);
 typedef void (*opentui_text_buffer_set_text_from_mem_fn)(opentui_native_handle, uint8_t);
+typedef void (*opentui_text_buffer_set_default_fg_fn)(opentui_native_handle, const uint16_t *);
+typedef void (*opentui_text_buffer_set_default_bg_fn)(opentui_native_handle, const uint16_t *);
+typedef void (*opentui_text_buffer_set_default_attributes_fn)(opentui_native_handle, const uint32_t *);
+typedef void (*opentui_text_buffer_reset_defaults_fn)(opentui_native_handle);
+typedef void (*opentui_text_buffer_set_styled_text_fn)(opentui_native_handle, const opentui_external_styled_chunk *, uint32_t);
+typedef void (*opentui_text_buffer_clear_all_highlights_fn)(opentui_native_handle);
+typedef void (*opentui_text_buffer_add_highlight_by_char_range_fn)(opentui_native_handle, const opentui_external_highlight *);
+typedef void (*opentui_text_buffer_add_highlight_fn)(opentui_native_handle, uint32_t, const opentui_external_highlight *);
+typedef void (*opentui_text_buffer_remove_highlights_by_ref_fn)(opentui_native_handle, uint16_t);
+typedef void (*opentui_text_buffer_clear_line_highlights_fn)(opentui_native_handle, uint32_t);
+typedef bool (*opentui_text_buffer_set_syntax_style_fn)(opentui_native_handle, opentui_native_handle);
+typedef opentui_native_handle (*opentui_create_syntax_style_fn)(void);
+typedef void (*opentui_destroy_syntax_style_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_syntax_style_register_fn)(opentui_native_handle, const uint8_t *, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
+typedef uint32_t (*opentui_syntax_style_resolve_fn)(opentui_native_handle, const uint8_t *, uint32_t);
+typedef uint32_t (*opentui_syntax_style_count_fn)(opentui_native_handle);
 typedef opentui_native_handle (*opentui_create_text_buffer_view_fn)(opentui_native_handle);
 typedef void (*opentui_destroy_text_buffer_view_fn)(opentui_native_handle);
 typedef void (*opentui_text_buffer_view_set_wrap_width_fn)(opentui_native_handle, uint32_t);
 typedef void (*opentui_text_buffer_view_set_wrap_mode_fn)(opentui_native_handle, uint8_t);
 typedef void (*opentui_text_buffer_view_set_first_line_offset_fn)(opentui_native_handle, uint32_t);
+typedef void (*opentui_text_buffer_view_set_selection_fn)(opentui_native_handle, uint32_t, uint32_t, const uint16_t *, const uint16_t *);
+typedef void (*opentui_text_buffer_view_update_selection_fn)(opentui_native_handle, uint32_t, const uint16_t *, const uint16_t *);
+typedef void (*opentui_text_buffer_view_reset_selection_fn)(opentui_native_handle);
+typedef uint64_t (*opentui_text_buffer_view_get_selection_info_fn)(opentui_native_handle);
+typedef bool (*opentui_text_buffer_view_set_local_selection_fn)(opentui_native_handle, int32_t, int32_t, int32_t, int32_t, const uint16_t *, const uint16_t *);
+typedef bool (*opentui_text_buffer_view_update_local_selection_fn)(opentui_native_handle, int32_t, int32_t, int32_t, int32_t, const uint16_t *, const uint16_t *);
+typedef void (*opentui_text_buffer_view_reset_local_selection_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_text_buffer_view_get_selected_text_fn)(opentui_native_handle, uint8_t *, uint32_t);
+typedef void (*opentui_text_buffer_view_set_viewport_size_fn)(opentui_native_handle, uint32_t, uint32_t);
+typedef void (*opentui_text_buffer_view_set_viewport_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, uint32_t);
+typedef uint32_t (*opentui_text_buffer_view_get_virtual_line_count_fn)(opentui_native_handle);
+typedef void (*opentui_text_buffer_view_set_tab_indicator_fn)(opentui_native_handle, uint32_t);
+typedef void (*opentui_text_buffer_view_set_tab_indicator_color_fn)(opentui_native_handle, const uint16_t *);
+typedef void (*opentui_text_buffer_view_set_truncate_fn)(opentui_native_handle, bool);
 typedef bool (*opentui_text_buffer_view_measure_for_dimensions_fn)(opentui_native_handle, uint32_t, uint32_t, opentui_external_measure_result *);
+typedef void (*opentui_text_buffer_view_get_line_info_direct_fn)(opentui_native_handle, opentui_external_line_info *);
+typedef void (*opentui_text_buffer_view_get_logical_line_info_direct_fn)(opentui_native_handle, opentui_external_line_info *);
 typedef void (*opentui_get_terminal_capabilities_fn)(opentui_native_handle, opentui_external_capabilities *);
 typedef void (*opentui_process_capability_response_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 typedef opentui_span_feed_ref (*opentui_create_native_span_feed_fn)(const opentui_external_span_feed_options *);
@@ -466,12 +887,46 @@ _Static_assert(OPENTUI_RENDER_STATUS_FAILED == 2, "failed status ABI drift");
 _Static_assert(_Generic(&render, opentui_render_fn: 1, default: 0), "render ABI drift");
 _Static_assert(_Generic(&getBufferWidth, opentui_get_buffer_dimension_fn: 1, default: 0), "getBufferWidth ABI drift");
 _Static_assert(_Generic(&getBufferHeight, opentui_get_buffer_dimension_fn: 1, default: 0), "getBufferHeight ABI drift");
+_Static_assert(_Generic(&createOptimizedBuffer, opentui_create_optimized_buffer_fn: 1, default: 0), "createOptimizedBuffer ABI drift");
+_Static_assert(_Generic(&destroyOptimizedBuffer, opentui_destroy_optimized_buffer_fn: 1, default: 0), "destroyOptimizedBuffer ABI drift");
+_Static_assert(_Generic(&destroyFrameBuffer, opentui_destroy_optimized_buffer_fn: 1, default: 0), "destroyFrameBuffer ABI drift");
+_Static_assert(_Generic(&drawFrameBuffer, opentui_draw_frame_buffer_fn: 1, default: 0), "drawFrameBuffer ABI drift");
 _Static_assert(_Generic(&bufferClear, opentui_buffer_clear_fn: 1, default: 0), "bufferClear ABI drift");
 _Static_assert(_Generic(&bufferWriteResolvedChars, opentui_buffer_write_fn: 1, default: 0), "bufferWriteResolvedChars ABI drift");
 _Static_assert(_Generic(&bufferDrawText, opentui_buffer_draw_text_fn: 1, default: 0), "bufferDrawText ABI drift");
 _Static_assert(_Generic(&bufferDrawBox, opentui_buffer_draw_box_fn: 1, default: 0), "bufferDrawBox ABI drift");
 _Static_assert(_Generic(&bufferSetCell, opentui_buffer_set_cell_fn: 1, default: 0), "bufferSetCell ABI drift");
+_Static_assert(_Generic(&bufferSetCellWithAlphaBlending, opentui_buffer_set_cell_with_alpha_blending_fn: 1, default: 0), "bufferSetCellWithAlphaBlending ABI drift");
+_Static_assert(_Generic(&bufferFillRect, opentui_buffer_fill_rect_fn: 1, default: 0), "bufferFillRect ABI drift");
+_Static_assert(_Generic(&bufferResize, opentui_buffer_resize_fn: 1, default: 0), "bufferResize ABI drift");
+_Static_assert(_Generic(&bufferDrawGrid, opentui_buffer_draw_grid_fn: 1, default: 0), "bufferDrawGrid ABI drift");
 _Static_assert(_Generic(&bufferDrawTextBufferView, opentui_buffer_draw_text_buffer_view_fn: 1, default: 0), "bufferDrawTextBufferView ABI drift");
+_Static_assert(_Generic(&bufferDrawImage, opentui_buffer_draw_image_fn: 1, default: 0), "bufferDrawImage ABI drift");
+_Static_assert(_Generic(&bufferColorMatrix, opentui_buffer_color_matrix_fn: 1, default: 0), "bufferColorMatrix ABI drift");
+_Static_assert(_Generic(&bufferColorMatrixUniform, opentui_buffer_color_matrix_uniform_fn: 1, default: 0), "bufferColorMatrixUniform ABI drift");
+_Static_assert(_Generic(&bufferPushScissorRect, opentui_buffer_push_scissor_rect_fn: 1, default: 0), "bufferPushScissorRect ABI drift");
+_Static_assert(_Generic(&bufferPopScissorRect, opentui_buffer_pop_scissor_rect_fn: 1, default: 0), "bufferPopScissorRect ABI drift");
+_Static_assert(_Generic(&bufferClearScissorRects, opentui_buffer_clear_scissor_rects_fn: 1, default: 0), "bufferClearScissorRects ABI drift");
+_Static_assert(_Generic(&bufferPushOpacity, opentui_buffer_push_opacity_fn: 1, default: 0), "bufferPushOpacity ABI drift");
+_Static_assert(_Generic(&bufferPopOpacity, opentui_buffer_pop_opacity_fn: 1, default: 0), "bufferPopOpacity ABI drift");
+_Static_assert(_Generic(&bufferGetCurrentOpacity, opentui_buffer_get_current_opacity_fn: 1, default: 0), "bufferGetCurrentOpacity ABI drift");
+_Static_assert(_Generic(&bufferClearOpacity, opentui_buffer_clear_opacity_fn: 1, default: 0), "bufferClearOpacity ABI drift");
+_Static_assert(_Generic(&imageInfo, opentui_image_info_fn: 1, default: 0), "imageInfo ABI drift");
+_Static_assert(_Generic(&imageDecode, opentui_image_decode_fn: 1, default: 0), "imageDecode ABI drift");
+_Static_assert(_Generic(&imageCreateFromRgba, opentui_image_create_from_rgba_fn: 1, default: 0), "imageCreateFromRgba ABI drift");
+_Static_assert(_Generic(&imageDestroy, opentui_image_destroy_fn: 1, default: 0), "imageDestroy ABI drift");
+_Static_assert(_Generic(&imageRetain, opentui_image_retain_fn: 1, default: 0), "imageRetain ABI drift");
+_Static_assert(_Generic(&imageGetInfo, opentui_image_get_info_fn: 1, default: 0), "imageGetInfo ABI drift");
+_Static_assert(_Generic(&imageGetPixelsPtr, opentui_image_get_pixels_ptr_fn: 1, default: 0), "imageGetPixelsPtr ABI drift");
+_Static_assert(_Generic(&imageMaterialize, opentui_image_materialize_fn: 1, default: 0), "imageMaterialize ABI drift");
+_Static_assert(_Generic(&imageEnsureEncodedPng, opentui_image_ensure_encoded_png_fn: 1, default: 0), "imageEnsureEncodedPng ABI drift");
+_Static_assert(_Generic(&imageClone, opentui_image_clone_fn: 1, default: 0), "imageClone ABI drift");
+_Static_assert(_Generic(&imageCopyPixels, opentui_image_copy_pixels_fn: 1, default: 0), "imageCopyPixels ABI drift");
+_Static_assert(_Generic(&imageResize, opentui_image_resize_fn: 1, default: 0), "imageResize ABI drift");
+_Static_assert(_Generic(&imageExtract, opentui_image_extract_fn: 1, default: 0), "imageExtract ABI drift");
+_Static_assert(_Generic(&imageExtend, opentui_image_extend_fn: 1, default: 0), "imageExtend ABI drift");
+_Static_assert(_Generic(&imageTransform, opentui_image_transform_fn: 1, default: 0), "imageTransform ABI drift");
+_Static_assert(_Generic(&imageComposite, opentui_image_composite_fn: 1, default: 0), "imageComposite ABI drift");
 _Static_assert(_Generic(&getRenderStats, opentui_get_render_stats_fn: 1, default: 0), "getRenderStats ABI drift");
 _Static_assert(_Generic(&getAllocatorStats, opentui_get_allocator_stats_fn: 1, default: 0), "getAllocatorStats ABI drift");
 _Static_assert(_Generic(&yogaConfigCreate, opentui_yoga_config_create_fn: 1, default: 0), "yogaConfigCreate ABI drift");
@@ -492,6 +947,11 @@ _Static_assert(_Generic(&yogaNodeStyleSetValue, opentui_yoga_node_style_set_valu
 _Static_assert(_Generic(&yogaNodeStyleSetEnum, opentui_yoga_node_style_set_enum_fn: 1, default: 0), "yogaNodeStyleSetEnum ABI drift");
 _Static_assert(_Generic(&yogaNodeStyleSetFloat, opentui_yoga_node_style_set_float_fn: 1, default: 0), "yogaNodeStyleSetFloat ABI drift");
 _Static_assert(_Generic(&yogaNodeStyleSetBorder, opentui_yoga_node_style_set_border_fn: 1, default: 0), "yogaNodeStyleSetBorder ABI drift");
+_Static_assert(_Generic(&yogaNodeSetMeasureFunc, opentui_yoga_node_set_measure_func_fn: 1, default: 0), "yogaNodeSetMeasureFunc ABI drift");
+_Static_assert(_Generic(&yogaNodeUnsetMeasureFunc, opentui_yoga_node_unset_measure_func_fn: 1, default: 0), "yogaNodeUnsetMeasureFunc ABI drift");
+_Static_assert(_Generic(&yogaNodeHasMeasureFunc, opentui_yoga_node_has_measure_func_fn: 1, default: 0), "yogaNodeHasMeasureFunc ABI drift");
+_Static_assert(_Generic(&yogaSetMeasureCallback, opentui_yoga_set_measure_callback_fn: 1, default: 0), "yogaSetMeasureCallback ABI drift");
+_Static_assert(_Generic(&yogaStoreMeasureResult, opentui_yoga_store_measure_result_fn: 1, default: 0), "yogaStoreMeasureResult ABI drift");
 _Static_assert(_Generic(&createNativeRenderable, opentui_create_native_renderable_fn: 1, default: 0), "createNativeRenderable ABI drift");
 _Static_assert(_Generic(&destroyNativeRenderable, opentui_destroy_native_renderable_fn: 1, default: 0), "destroyNativeRenderable ABI drift");
 _Static_assert(_Generic(&nativeRenderableAttachYogaNode, opentui_native_renderable_attach_yoga_node_fn: 1, default: 0), "nativeRenderableAttachYogaNode ABI drift");
@@ -500,17 +960,54 @@ _Static_assert(_Generic(&createTextBuffer, opentui_create_text_buffer_fn: 1, def
 _Static_assert(_Generic(&destroyTextBuffer, opentui_destroy_text_buffer_fn: 1, default: 0), "destroyTextBuffer ABI drift");
 _Static_assert(_Generic(&textBufferGetLength, opentui_text_buffer_get_length_fn: 1, default: 0), "textBufferGetLength ABI drift");
 _Static_assert(_Generic(&textBufferGetByteSize, opentui_text_buffer_get_byte_size_fn: 1, default: 0), "textBufferGetByteSize ABI drift");
+_Static_assert(_Generic(&textBufferGetLineCount, opentui_text_buffer_get_line_count_fn: 1, default: 0), "textBufferGetLineCount ABI drift");
+_Static_assert(_Generic(&textBufferGetTabWidth, opentui_text_buffer_get_tab_width_fn: 1, default: 0), "textBufferGetTabWidth ABI drift");
+_Static_assert(_Generic(&textBufferReset, opentui_text_buffer_reset_fn: 1, default: 0), "textBufferReset ABI drift");
 _Static_assert(_Generic(&textBufferClear, opentui_text_buffer_clear_fn: 1, default: 0), "textBufferClear ABI drift");
+_Static_assert(_Generic(&textBufferLoadFile, opentui_text_buffer_load_file_fn: 1, default: 0), "textBufferLoadFile ABI drift");
+_Static_assert(_Generic(&textBufferSetTabWidth, opentui_text_buffer_set_tab_width_fn: 1, default: 0), "textBufferSetTabWidth ABI drift");
 _Static_assert(_Generic(&textBufferAppend, opentui_text_buffer_append_fn: 1, default: 0), "textBufferAppend ABI drift");
 _Static_assert(_Generic(&textBufferRegisterMemBuffer, opentui_text_buffer_register_mem_buffer_fn: 1, default: 0), "textBufferRegisterMemBuffer ABI drift");
 _Static_assert(_Generic(&textBufferReplaceMemBuffer, opentui_text_buffer_replace_mem_buffer_fn: 1, default: 0), "textBufferReplaceMemBuffer ABI drift");
 _Static_assert(_Generic(&textBufferSetTextFromMem, opentui_text_buffer_set_text_from_mem_fn: 1, default: 0), "textBufferSetTextFromMem ABI drift");
+_Static_assert(_Generic(&textBufferSetDefaultFg, opentui_text_buffer_set_default_fg_fn: 1, default: 0), "textBufferSetDefaultFg ABI drift");
+_Static_assert(_Generic(&textBufferSetDefaultBg, opentui_text_buffer_set_default_bg_fn: 1, default: 0), "textBufferSetDefaultBg ABI drift");
+_Static_assert(_Generic(&textBufferSetDefaultAttributes, opentui_text_buffer_set_default_attributes_fn: 1, default: 0), "textBufferSetDefaultAttributes ABI drift");
+_Static_assert(_Generic(&textBufferResetDefaults, opentui_text_buffer_reset_defaults_fn: 1, default: 0), "textBufferResetDefaults ABI drift");
+_Static_assert(_Generic(&textBufferSetStyledText, opentui_text_buffer_set_styled_text_fn: 1, default: 0), "textBufferSetStyledText ABI drift");
+_Static_assert(_Generic(&textBufferClearAllHighlights, opentui_text_buffer_clear_all_highlights_fn: 1, default: 0), "textBufferClearAllHighlights ABI drift");
+_Static_assert(_Generic(&textBufferAddHighlightByCharRange, opentui_text_buffer_add_highlight_by_char_range_fn: 1, default: 0), "textBufferAddHighlightByCharRange ABI drift");
+_Static_assert(_Generic(&textBufferAddHighlight, opentui_text_buffer_add_highlight_fn: 1, default: 0), "textBufferAddHighlight ABI drift");
+_Static_assert(_Generic(&textBufferRemoveHighlightsByRef, opentui_text_buffer_remove_highlights_by_ref_fn: 1, default: 0), "textBufferRemoveHighlightsByRef ABI drift");
+_Static_assert(_Generic(&textBufferClearLineHighlights, opentui_text_buffer_clear_line_highlights_fn: 1, default: 0), "textBufferClearLineHighlights ABI drift");
+_Static_assert(_Generic(&textBufferSetSyntaxStyle, opentui_text_buffer_set_syntax_style_fn: 1, default: 0), "textBufferSetSyntaxStyle ABI drift");
+_Static_assert(_Generic(&createSyntaxStyle, opentui_create_syntax_style_fn: 1, default: 0), "createSyntaxStyle ABI drift");
+_Static_assert(_Generic(&destroySyntaxStyle, opentui_destroy_syntax_style_fn: 1, default: 0), "destroySyntaxStyle ABI drift");
+_Static_assert(_Generic(&syntaxStyleRegister, opentui_syntax_style_register_fn: 1, default: 0), "syntaxStyleRegister ABI drift");
+_Static_assert(_Generic(&syntaxStyleResolveByName, opentui_syntax_style_resolve_fn: 1, default: 0), "syntaxStyleResolveByName ABI drift");
+_Static_assert(_Generic(&syntaxStyleGetStyleCount, opentui_syntax_style_count_fn: 1, default: 0), "syntaxStyleGetStyleCount ABI drift");
 _Static_assert(_Generic(&createTextBufferView, opentui_create_text_buffer_view_fn: 1, default: 0), "createTextBufferView ABI drift");
 _Static_assert(_Generic(&destroyTextBufferView, opentui_destroy_text_buffer_view_fn: 1, default: 0), "destroyTextBufferView ABI drift");
 _Static_assert(_Generic(&textBufferViewSetWrapWidth, opentui_text_buffer_view_set_wrap_width_fn: 1, default: 0), "textBufferViewSetWrapWidth ABI drift");
 _Static_assert(_Generic(&textBufferViewSetWrapMode, opentui_text_buffer_view_set_wrap_mode_fn: 1, default: 0), "textBufferViewSetWrapMode ABI drift");
 _Static_assert(_Generic(&textBufferViewSetFirstLineOffset, opentui_text_buffer_view_set_first_line_offset_fn: 1, default: 0), "textBufferViewSetFirstLineOffset ABI drift");
+_Static_assert(_Generic(&textBufferViewSetSelection, opentui_text_buffer_view_set_selection_fn: 1, default: 0), "textBufferViewSetSelection ABI drift");
+_Static_assert(_Generic(&textBufferViewUpdateSelection, opentui_text_buffer_view_update_selection_fn: 1, default: 0), "textBufferViewUpdateSelection ABI drift");
+_Static_assert(_Generic(&textBufferViewResetSelection, opentui_text_buffer_view_reset_selection_fn: 1, default: 0), "textBufferViewResetSelection ABI drift");
+_Static_assert(_Generic(&textBufferViewGetSelectionInfo, opentui_text_buffer_view_get_selection_info_fn: 1, default: 0), "textBufferViewGetSelectionInfo ABI drift");
+_Static_assert(_Generic(&textBufferViewSetLocalSelection, opentui_text_buffer_view_set_local_selection_fn: 1, default: 0), "textBufferViewSetLocalSelection ABI drift");
+_Static_assert(_Generic(&textBufferViewUpdateLocalSelection, opentui_text_buffer_view_update_local_selection_fn: 1, default: 0), "textBufferViewUpdateLocalSelection ABI drift");
+_Static_assert(_Generic(&textBufferViewResetLocalSelection, opentui_text_buffer_view_reset_local_selection_fn: 1, default: 0), "textBufferViewResetLocalSelection ABI drift");
+_Static_assert(_Generic(&textBufferViewGetSelectedText, opentui_text_buffer_view_get_selected_text_fn: 1, default: 0), "textBufferViewGetSelectedText ABI drift");
+_Static_assert(_Generic(&textBufferViewSetViewportSize, opentui_text_buffer_view_set_viewport_size_fn: 1, default: 0), "textBufferViewSetViewportSize ABI drift");
+_Static_assert(_Generic(&textBufferViewSetViewport, opentui_text_buffer_view_set_viewport_fn: 1, default: 0), "textBufferViewSetViewport ABI drift");
+_Static_assert(_Generic(&textBufferViewGetVirtualLineCount, opentui_text_buffer_view_get_virtual_line_count_fn: 1, default: 0), "textBufferViewGetVirtualLineCount ABI drift");
+_Static_assert(_Generic(&textBufferViewSetTabIndicator, opentui_text_buffer_view_set_tab_indicator_fn: 1, default: 0), "textBufferViewSetTabIndicator ABI drift");
+_Static_assert(_Generic(&textBufferViewSetTabIndicatorColor, opentui_text_buffer_view_set_tab_indicator_color_fn: 1, default: 0), "textBufferViewSetTabIndicatorColor ABI drift");
+_Static_assert(_Generic(&textBufferViewSetTruncate, opentui_text_buffer_view_set_truncate_fn: 1, default: 0), "textBufferViewSetTruncate ABI drift");
 _Static_assert(_Generic(&textBufferViewMeasureForDimensions, opentui_text_buffer_view_measure_for_dimensions_fn: 1, default: 0), "textBufferViewMeasureForDimensions ABI drift");
+_Static_assert(_Generic(&textBufferViewGetLineInfoDirect, opentui_text_buffer_view_get_line_info_direct_fn: 1, default: 0), "textBufferViewGetLineInfoDirect ABI drift");
+_Static_assert(_Generic(&textBufferViewGetLogicalLineInfoDirect, opentui_text_buffer_view_get_logical_line_info_direct_fn: 1, default: 0), "textBufferViewGetLogicalLineInfoDirect ABI drift");
 _Static_assert(_Generic(&getTerminalCapabilities, opentui_get_terminal_capabilities_fn: 1, default: 0), "getTerminalCapabilities ABI drift");
 _Static_assert(_Generic(&processCapabilityResponse, opentui_process_capability_response_fn: 1, default: 0), "processCapabilityResponse ABI drift");
 _Static_assert(_Generic(&createNativeSpanFeed, opentui_create_native_span_feed_fn: 1, default: 0), "createNativeSpanFeed ABI drift");

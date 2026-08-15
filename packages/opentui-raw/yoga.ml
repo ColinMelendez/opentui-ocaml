@@ -353,6 +353,25 @@ module Node = struct
     let with_open_handle node operation =
       with_live node (fun () -> operation node.handle)
 
+    let set_measure_func node enabled =
+      with_live node (fun () ->
+          Native.yoga_node_set_measure_func node.handle enabled;
+          Ok ())
+
+    let unset_measure_func node =
+      with_live node (fun () ->
+          Native.yoga_node_unset_measure_func node.handle;
+          Ok ())
+
+    let has_measure_func node =
+      with_live node (fun () -> Ok (Native.yoga_node_has_measure_func node.handle))
+
+    let native_pointer node =
+      with_live node (fun () ->
+          let pointer = Native.yoga_node_pointer node.handle in
+          if Nativeint.equal pointer Nativeint.zero then Error Error.Native_failure
+          else Ok pointer)
+
     let claim_native_renderable node =
       with_live node (fun () ->
           result_of_status
@@ -370,5 +389,8 @@ module Node = struct
           result_of_status
             (Native.yoga_node_set_native_measure_attached node.handle attached)
             ())
+
+    let set_measure_callback callback = Native.yoga_set_measure_callback callback
+    let clear_measure_callback () = Native.yoga_clear_measure_callback ()
   end
 end

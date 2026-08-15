@@ -1,4 +1,5 @@
 type width_method = Wcwidth | Unicode
+type styled_chunk = Native.styled_chunk
 
 type t = {
   handle : Native_token.Text_buffer.t;
@@ -41,6 +42,118 @@ let clear buffer =
       match Native.text_buffer_clear handle with
       | 0 ->
           Ok ()
+      | status -> Error (error_of_status status))
+
+let reset buffer =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_reset handle with
+      | 0 ->
+          buffer.retained <- [];
+          buffer.text_storage <- None;
+          buffer.text_memory_id <- None;
+          Ok ()
+      | status -> Error (error_of_status status))
+
+let set_styled_text buffer chunks =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_set_styled_text handle chunks with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+let clear_all_highlights buffer =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_clear_all_highlights handle with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+type highlight = {
+  start : int32;
+  end_ : int32;
+  style_id : int32;
+  priority : int;
+  hl_ref : int;
+}
+
+let native_highlight highlight =
+  (highlight.start, highlight.end_, highlight.style_id, highlight.priority,
+   highlight.hl_ref)
+
+let int32_of_nonnegative value =
+  let value64 = Int64.of_int value in
+  if value < 0
+     || Int64.compare value64 (Int64.of_int32 Int32.max_int) > 0
+  then None
+  else Some (Int32.of_int value)
+
+let add_highlight_by_char_range buffer highlight =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_add_highlight_by_char_range handle
+              (native_highlight highlight) with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+let add_highlight buffer ~line highlight =
+  match int32_of_nonnegative line with
+  | None -> Error Error.Invalid_argument
+  | Some line ->
+      with_open buffer (fun handle ->
+          match Native.text_buffer_add_highlight handle line
+                  (native_highlight highlight) with
+          | 0 -> Ok ()
+          | status -> Error (error_of_status status))
+
+let remove_highlights_by_ref buffer reference =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_remove_highlights_by_ref handle reference with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+let clear_line_highlights buffer line =
+  match int32_of_nonnegative line with
+  | None -> Error Error.Invalid_argument
+  | Some line ->
+      with_open buffer (fun handle ->
+          match Native.text_buffer_clear_line_highlights handle line with
+          | 0 -> Ok ()
+          | status -> Error (error_of_status status))
+
+let set_default_fg buffer color =
+  with_open buffer (fun handle ->
+      match
+        Native.text_buffer_set_default_fg handle
+          (Option.map Color.Private.to_native color)
+      with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+let set_default_bg buffer color =
+  with_open buffer (fun handle ->
+      match
+        Native.text_buffer_set_default_bg handle
+          (Option.map Color.Private.to_native color)
+      with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+let set_default_attributes buffer attributes =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_set_default_attributes handle attributes with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+let reset_defaults buffer =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_reset_defaults handle with
+      | 0 -> Ok ()
+      | status -> Error (error_of_status status))
+
+let set_syntax_style buffer style =
+  with_open buffer (fun handle ->
+      match
+        Native.text_buffer_set_syntax_style handle
+          (Option.map Syntax_style.Private.raw style)
+      with
+      | 0 -> Ok ()
       | status -> Error (error_of_status status))
 
 let stable_copy bytes =
@@ -89,7 +202,7 @@ let set_text buffer bytes =
             (match Native.text_buffer_replace_mem_buffer handle memory_id stable
                      false with
             | 0 -> Ok memory_id
-            | status when status = 3 ->
+            | status when Int.equal status 3 ->
                 (match
                    Native.text_buffer_register_mem_buffer handle stable false
                  with
@@ -138,6 +251,37 @@ let byte_size buffer =
       match status with
       | 0 -> Ok value
       | status -> Error (error_of_status status))
+
+let line_count buffer =
+  with_open buffer (fun handle ->
+      let status, value = Native.text_buffer_line_count handle in
+      match status with
+      | 0 -> Ok value
+      | status -> Error (error_of_status status))
+
+let load_file buffer path =
+  with_open buffer (fun handle ->
+      match Native.text_buffer_load_file handle path with
+      | 0 ->
+          buffer.text_storage <- None;
+          buffer.text_memory_id <- None;
+          Ok ()
+      | status -> Error (error_of_status status))
+
+let tab_width buffer =
+  with_open buffer (fun handle ->
+      let status, value = Native.text_buffer_get_tab_width handle in
+      match status with
+      | 0 -> Ok value
+      | status -> Error (error_of_status status))
+
+let set_tab_width buffer width =
+  if width < 0l || width > 255l then Error Error.Invalid_argument
+  else
+    with_open buffer (fun handle ->
+        match Native.text_buffer_set_tab_width handle width with
+        | 0 -> Ok ()
+        | status -> Error (error_of_status status))
 
 let close buffer =
   if not (Native_owner.is_open buffer.owner) then Ok ()

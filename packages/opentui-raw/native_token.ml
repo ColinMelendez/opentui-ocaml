@@ -6,6 +6,10 @@ module Buffer = struct
   type t = int32
 end
 
+module Optimized_buffer = struct
+  type t = int32
+end
+
 module Event_sink = struct
   type t = int32
 end
@@ -34,6 +38,14 @@ module Text_buffer_view = struct
   type t = int32
 end
 
+module Syntax_style = struct
+  type t = int32
+end
+
 module Native_renderable = struct
+  type t = int32
+end
+
+module Image = struct
   type t = int32
 end

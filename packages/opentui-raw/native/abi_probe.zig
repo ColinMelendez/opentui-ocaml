@@ -226,6 +226,31 @@ comptime {
         "yogaNodeCalculateLayout",
     );
     expectType(
+        @TypeOf(yoga.yogaNodeSetMeasureFunc),
+        fn (yoga.YGNodeRef, bool) callconv(.c) void,
+        "yogaNodeSetMeasureFunc",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeUnsetMeasureFunc),
+        fn (yoga.YGNodeRef) callconv(.c) void,
+        "yogaNodeUnsetMeasureFunc",
+    );
+    expectType(
+        @TypeOf(yoga.yogaNodeHasMeasureFunc),
+        fn (yoga.YGNodeConstRef) callconv(.c) bool,
+        "yogaNodeHasMeasureFunc",
+    );
+    expectType(
+        @TypeOf(yoga.yogaSetMeasureCallback),
+        fn (?*const anyopaque) callconv(.c) void,
+        "yogaSetMeasureCallback",
+    );
+    expectType(
+        @TypeOf(yoga.yogaStoreMeasureResult),
+        fn (f32, f32) callconv(.c) void,
+        "yogaStoreMeasureResult",
+    );
+    expectType(
         @TypeOf(yoga.yogaNodeIsDirty),
         fn (yoga.YGNodeConstRef) callconv(.c) bool,
         "yogaNodeIsDirty",
@@ -305,6 +330,11 @@ comptime {
         "textBufferGetByteSize",
     );
     expectType(
+        @TypeOf(opentui.textBufferReset),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "textBufferReset",
+    );
+    expectType(
         @TypeOf(opentui.textBufferClear),
         fn (opentui.NativeHandle) callconv(.c) void,
         "textBufferClear",
@@ -329,6 +359,21 @@ comptime {
         fn (opentui.NativeHandle, u8) callconv(.c) void,
         "textBufferSetTextFromMem",
     );
+    expectType(@TypeOf(opentui.textBufferSetDefaultFg), fn (opentui.NativeHandle, ?[*]const u16) callconv(.c) void, "textBufferSetDefaultFg");
+    expectType(@TypeOf(opentui.textBufferSetDefaultBg), fn (opentui.NativeHandle, ?[*]const u16) callconv(.c) void, "textBufferSetDefaultBg");
+    expectType(@TypeOf(opentui.textBufferSetDefaultAttributes), fn (opentui.NativeHandle, ?[*]const u32) callconv(.c) void, "textBufferSetDefaultAttributes");
+    expectType(@TypeOf(opentui.textBufferResetDefaults), fn (opentui.NativeHandle) callconv(.c) void, "textBufferResetDefaults");
+    expectType(@TypeOf(opentui.textBufferClearAllHighlights), fn (opentui.NativeHandle) callconv(.c) void, "textBufferClearAllHighlights");
+    expectType(@TypeOf(opentui.textBufferAddHighlightByCharRange), fn (opentui.NativeHandle, [*]const opentui.ExternalHighlight) callconv(.c) void, "textBufferAddHighlightByCharRange");
+    expectType(@TypeOf(opentui.textBufferAddHighlight), fn (opentui.NativeHandle, u32, [*]const opentui.ExternalHighlight) callconv(.c) void, "textBufferAddHighlight");
+    expectType(@TypeOf(opentui.textBufferRemoveHighlightsByRef), fn (opentui.NativeHandle, u16) callconv(.c) void, "textBufferRemoveHighlightsByRef");
+    expectType(@TypeOf(opentui.textBufferClearLineHighlights), fn (opentui.NativeHandle, u32) callconv(.c) void, "textBufferClearLineHighlights");
+    expectType(@TypeOf(opentui.textBufferSetSyntaxStyle), fn (opentui.NativeHandle, opentui.NativeHandle) callconv(.c) bool, "textBufferSetSyntaxStyle");
+    expectType(@TypeOf(opentui.createSyntaxStyle), fn () callconv(.c) opentui.NativeHandle, "createSyntaxStyle");
+    expectType(@TypeOf(opentui.destroySyntaxStyle), fn (opentui.NativeHandle) callconv(.c) void, "destroySyntaxStyle");
+    expectType(@TypeOf(opentui.syntaxStyleRegister), fn (opentui.NativeHandle, ?[*]const u8, u32, ?[*]const u16, ?[*]const u16, u32) callconv(.c) u32, "syntaxStyleRegister");
+    expectType(@TypeOf(opentui.syntaxStyleResolveByName), fn (opentui.NativeHandle, ?[*]const u8, u32) callconv(.c) u32, "syntaxStyleResolveByName");
+    expectType(@TypeOf(opentui.syntaxStyleGetStyleCount), fn (opentui.NativeHandle) callconv(.c) u32, "syntaxStyleGetStyleCount");
     expectType(
         @TypeOf(opentui.createTextBufferView),
         fn (opentui.NativeHandle) callconv(.c) opentui.NativeHandle,
@@ -452,6 +497,26 @@ comptime {
         fn (opentui.NativeHandle) callconv(.c) u32,
         "getBufferHeight",
     );
+    expectType(
+        @TypeOf(opentui.createOptimizedBuffer),
+        fn (u32, u32, bool, u8, ?[*]const u8, u32) callconv(.c) opentui.NativeHandle,
+        "createOptimizedBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.destroyOptimizedBuffer),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "destroyOptimizedBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.destroyFrameBuffer),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "destroyFrameBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.drawFrameBuffer),
+        fn (opentui.NativeHandle, i32, i32, opentui.NativeHandle, u32, u32, u32, u32) callconv(.c) void,
+        "drawFrameBuffer",
+    );
 
     expectType(
         @TypeOf(opentui.bufferClear),
@@ -479,9 +544,34 @@ comptime {
         "bufferSetCell",
     );
     expectType(
+        @TypeOf(opentui.bufferSetCellWithAlphaBlending),
+        fn (opentui.NativeHandle, u32, u32, u32, [*]const u16, [*]const u16, u32) callconv(.c) void,
+        "bufferSetCellWithAlphaBlending",
+    );
+    expectType(
+        @TypeOf(opentui.bufferFillRect),
+        fn (opentui.NativeHandle, u32, u32, u32, u32, [*]const u16) callconv(.c) void,
+        "bufferFillRect",
+    );
+    expectType(
+        @TypeOf(opentui.bufferResize),
+        fn (opentui.NativeHandle, u32, u32) callconv(.c) void,
+        "bufferResize",
+    );
+    expectType(
+        @TypeOf(opentui.bufferDrawGrid),
+        fn (opentui.NativeHandle, [*]const u32, [*]const u16, [*]const u16, [*]const i32, u32, [*]const i32, u32, *const opentui.ExternalGridDrawOptions) callconv(.c) void,
+        "bufferDrawGrid",
+    );
+    expectType(
         @TypeOf(opentui.bufferDrawTextBufferView),
         fn (opentui.NativeHandle, opentui.NativeHandle, i32, i32) callconv(.c) void,
         "bufferDrawTextBufferView",
+    );
+    expectType(
+        @TypeOf(opentui.bufferDrawGrid),
+        fn (opentui.NativeHandle, [*]const u32, [*]const u16, [*]const u16, [*]const i32, u32, [*]const i32, u32, *const opentui.ExternalGridDrawOptions) callconv(.c) void,
+        "bufferDrawGrid",
     );
 
     expectSize(opentui.ExternalBuildOptions, 2, "ExternalBuildOptions");

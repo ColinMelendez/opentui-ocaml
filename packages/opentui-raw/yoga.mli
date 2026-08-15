@@ -182,6 +182,13 @@ module Node : sig
       t ->
       (Native_token.Yoga_node.t -> ('a, Error.t) result) ->
       ('a, Error.t) result
+    val set_measure_func : t -> bool -> (unit, Error.t) result
+    val unset_measure_func : t -> (unit, Error.t) result
+    val has_measure_func : t -> (bool, Error.t) result
+    val native_pointer : t -> (Nativeint.t, Error.t) result
+    val set_measure_callback :
+      (Nativeint.t * float * int32 * float * int32 -> float * float) -> unit
+    val clear_measure_callback : unit -> unit
 
     val claim_native_renderable : t -> (unit, Error.t) result
     val release_native_renderable : t -> (unit, Error.t) result

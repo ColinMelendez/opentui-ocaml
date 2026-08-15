@@ -1,4 +1,5 @@
 #include <caml/alloc.h>
+#include <caml/callback.h>
 #include <caml/memory.h>
 #include <caml/mlvalues.h>
 
@@ -22,6 +23,50 @@ typedef struct opentui_raw_yoga_node_slot {
 } opentui_raw_yoga_node_slot;
 
 static opentui_raw_yoga_node_slot yoga_nodes[OPENTUI_RAW_YOGA_NODE_CAPACITY];
+
+static value yoga_measure_callback = Val_unit;
+static bool yoga_measure_callback_registered = false;
+
+static void raw_yoga_measure_callback(
+    void *node,
+    float width,
+    uint32_t width_mode,
+    float height,
+    uint32_t height_mode) {
+  CAMLparam0();
+  CAMLlocal5(node_value, arguments, result, width_value, height_value);
+
+  if (!yoga_measure_callback_registered) {
+    yogaStoreMeasureResult(NAN, NAN);
+    CAMLreturn0;
+  }
+
+  node_value = caml_copy_nativeint((intnat)node);
+  arguments = caml_alloc_tuple(5);
+  Store_field(arguments, 0, node_value);
+  Store_field(arguments, 1, caml_copy_double((double)width));
+  Store_field(arguments, 2, caml_copy_int32((int32_t)width_mode));
+  Store_field(arguments, 3, caml_copy_double((double)height));
+  Store_field(arguments, 4, caml_copy_int32((int32_t)height_mode));
+  result = caml_callback_exn(yoga_measure_callback, arguments);
+  if (!Is_exception_result(result)
+      && Is_block(result)
+      && Wosize_val(result) == 2
+      && Is_block(Field(result, 0))
+      && Tag_val(Field(result, 0)) == Double_tag
+      && Is_block(Field(result, 1))
+      && Tag_val(Field(result, 1)) == Double_tag) {
+    width_value = Field(result, 0);
+    height_value = Field(result, 1);
+    yogaStoreMeasureResult(
+        (float)Double_val(width_value),
+        (float)Double_val(height_value));
+  } else {
+    yogaStoreMeasureResult(NAN, NAN);
+  }
+
+  CAMLreturn0;
+}
 
 static uint32_t yoga_handle(uint32_t slot, uint16_t generation) {
   return ((uint32_t)generation << 16) | slot;
@@ -744,4 +789,73 @@ CAMLprim value opentui_raw_yoga_node_set_native_measure_attached(
 
   node->native_measure_attached = attached;
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_yoga_node_set_measure_func(
+    value node_value,
+    value enabled_value) {
+  CAMLparam2(node_value, enabled_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node != NULL) {
+    yogaNodeSetMeasureFunc(node->node, Bool_val(enabled_value));
+  }
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_yoga_node_unset_measure_func(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node != NULL) {
+    yogaNodeUnsetMeasureFunc(node->node);
+  }
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_yoga_node_has_measure_func(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  CAMLreturn(Val_bool(node != NULL && yogaNodeHasMeasureFunc(node->node)));
+}
+
+CAMLprim value opentui_raw_yoga_node_pointer(value node_value) {
+  CAMLparam1(node_value);
+
+  uint32_t handle = (uint32_t)Int32_val(node_value);
+  opentui_raw_yoga_node_slot *node = yoga_node_from_handle(handle);
+  if (node == NULL) {
+    CAMLreturn(caml_copy_nativeint(0));
+  }
+  CAMLreturn(caml_copy_nativeint((intnat)node->node));
+}
+
+CAMLprim value opentui_raw_yoga_set_measure_callback(value callback) {
+  CAMLparam1(callback);
+
+  if (yoga_measure_callback_registered) {
+    caml_remove_global_root(&yoga_measure_callback);
+    yoga_measure_callback_registered = false;
+  }
+  yoga_measure_callback = callback;
+  caml_register_global_root(&yoga_measure_callback);
+  yoga_measure_callback_registered = true;
+  yogaSetMeasureCallback((const void *)&raw_yoga_measure_callback);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_yoga_clear_measure_callback(value unit_value) {
+  CAMLparam1(unit_value);
+
+  yogaSetMeasureCallback(NULL);
+  if (yoga_measure_callback_registered) {
+    caml_remove_global_root(&yoga_measure_callback);
+    yoga_measure_callback_registered = false;
+  }
+  yoga_measure_callback = Val_unit;
+  CAMLreturn(Val_unit);
 }
