@@ -13,8 +13,7 @@ let update_from_nodes text =
   if Text_node.is_dirty text.root && not text.manual_content then
     let content = Text_node.gather text.root in
     match
-      Text_buffer_renderable.set_text text.text_buffer_renderable
-        (Lib.Styled_text.plain_text content)
+      Text_buffer_renderable.set_styled_text text.text_buffer_renderable content
     with
     | Error error -> Error error
     | Ok () ->
@@ -31,8 +30,7 @@ let create context ?id ?width_method ?wrap_mode ?content () =
       let manual_content = Option.is_some content in
       let content = Option.value content ~default:(Lib.Styled_text.of_string "") in
       (match
-         Text_buffer_renderable.set_text text_buffer_renderable
-           (Lib.Styled_text.plain_text content)
+         Text_buffer_renderable.set_styled_text text_buffer_renderable content
        with
       | Error error ->
           Text_buffer_renderable.destroy text_buffer_renderable;
@@ -72,10 +70,12 @@ let children text = text.children
 let get_text_children text = Text_children.children text.children
 let content text = text.content
 
+let selected_text text =
+  Text_buffer_renderable.selected_text text.text_buffer_renderable
+
 let set_content text content =
   match
-    Text_buffer_renderable.set_text text.text_buffer_renderable
-      (Lib.Styled_text.plain_text content)
+    Text_buffer_renderable.set_styled_text text.text_buffer_renderable content
   with
   | Error error -> Error error
   | Ok () ->

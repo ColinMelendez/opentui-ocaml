@@ -18,6 +18,7 @@ val text_node : t -> Text_node.t
 val children : t -> Text_children.t
 val get_text_children : t -> Text_node.t list
 val content : t -> Lib.Styled_text.t
+val selected_text : t -> (string, Error.t) result
 val set_content : t -> Lib.Styled_text.t -> (unit, Error.t) result
 
 val add :
