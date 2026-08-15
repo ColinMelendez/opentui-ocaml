@@ -62,8 +62,9 @@ event fact and must be defined for each action.
 The renderer derives `over`, `out`, `drag-end`, and `drop` behavior, tracks the
 captured target, updates hover state after input and committed frames, and
 uses left-button pointer events for focus. A resize releases pointer capture.
-Selection remains a separate renderer-owned feature because the retained
-selection model is not implemented by this package boundary.
+Selectable text renderables also receive the renderer-owned global selection
+updates and translate them into native local-selection coordinates; selection
+text ownership remains with the individual text/editor renderable.
 
 The retained renderable tree owns tree routing and node-local lifecycle. The renderer/runtime
 owns capture, hover transitions, focus and selection defaults, and any terminal
@@ -90,10 +91,13 @@ hover transitions, drag capture, drop delivery, focus-on-down, resize cleanup,
 stationary-pointer hover recheck, and handler-error reporting are implemented
 in `Renderable.t` and `Renderer.t`.
 
-Selection default actions and native scissor-aware hit-grid writes remain
-separate correspondence work. The current hit grid is OCaml-owned and follows
-the reference current/next semantics; replacing its storage with the native
-renderer grid requires an explicit raw ABI seam.
+Native scissor-aware hit-grid writes remain separate correspondence work. The
+current hit grid is OCaml-owned and follows the reference current/next
+semantics; replacing its storage with the native renderer grid requires an
+explicit raw ABI seam. Pointer selection is implemented for the active
+`TextBufferRenderable` and `EditBufferRenderable` paths, while selection
+auto-scroll at a scroll-box edge remains deferred until the renderer has a
+clock/update seam for it.
 
 ## Acceptance criteria
 

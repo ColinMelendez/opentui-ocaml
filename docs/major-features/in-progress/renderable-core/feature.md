@@ -23,19 +23,27 @@ owns the retained objects those systems dispatch through.
 | Reference source | OCaml port location | Responsibility |
 | --- | --- | --- |
 | `vendor/opentui/packages/core/src/Renderable.ts` | `packages/opentui-core/src/renderable.ml` and `packages/opentui-core/src/layout_children.ml` | Common retained identity, physical parent/child ownership, layout state, dirty state, lifecycle, focus state, and render traversal. |
-| `vendor/opentui/packages/core/src/types.ts` (`RenderContext`) | `packages/opentui-core/src/render_context.ml` and shared types | Capabilities supplied to renderables, including dimensions, frame identity, render requests, focus, hit-grid access, and the renderer event source. |
+| `vendor/opentui/packages/core/src/types.ts` (`RenderContext`) | `packages/opentui-core/src/render_context.ml` and `packages/opentui-core/src/terminal_capabilities.ml` | Capabilities supplied to renderables, including dimensions, frame identity, copied terminal capability state, render requests, focus, hit-grid access, and the renderer event source. |
 | `vendor/opentui/packages/core/src/renderer.ts` (`CliRenderer`) | `packages/opentui-core/src/renderer.ml` | Renderer ownership, root construction, frame scheduling, layout passes, input integration, output presentation, resize, and shutdown. |
 | `vendor/opentui/packages/core/src/buffer.ts` (`OptimizedBuffer`) | `packages/opentui-core/src/buffer.ml`; ABI operations remain in `packages/opentui-raw/buffer.ml` | Renderable-facing drawing operations over renderer-owned native buffers. |
 | `vendor/opentui/packages/core/src/yoga.ts` | `packages/opentui-core/src/yoga.ml` | Layout-tree operations used privately by retained renderables. |
 | `vendor/opentui/packages/core/src/lib/yoga.options.ts` and `lib/renderable.validations.ts` | `packages/opentui-core/src/yoga.ml` and renderable option validation | Layout-option parsing, clamping, and constructor validation used by retained renderables. |
 | `vendor/opentui/packages/core/src/renderables/Box.ts` | `packages/opentui-core/src/renderables/box.ml` | Box properties, border and fill rendering, border insets, and box-specific layout options. |
 | `vendor/opentui/packages/core/src/renderables/Text.ts` | `packages/opentui-core/src/renderables/text.ml` and `packages/opentui-core/src/renderables/text_children.ml` | Text content, text style, text-buffer integration, text-composition children, layout participation, and text rendering. |
-| `vendor/opentui/packages/core/src/text-buffer.ts` | `packages/opentui-core/src/text_buffer.ml` | Styled text storage, line measurement, and text-buffer mutation used by text renderables. |
-| `vendor/opentui/packages/core/src/text-buffer-view.ts` | `packages/opentui-core/src/text_buffer_view.ml` | Viewport, wrapping, truncation, and visible-line calculations over a text buffer. |
+| `vendor/opentui/packages/core/src/text-buffer.ts` | `packages/opentui-core/src/text_buffer.ml` | Native text storage plus Core metadata for styled text, defaults, syntax style, tab width, highlights, and text queries. |
+| `vendor/opentui/packages/core/src/text-buffer-view.ts` | `packages/opentui-core/src/text_buffer_view.ml` and `packages/opentui-raw/text_buffer_view.ml` | Viewport, wrapping, native selection/local-selection, selected text, truncation, tab indicators, and visible-line calculations over a text buffer. |
 | `vendor/opentui/packages/core/src/renderables/TextBufferRenderable.ts` | `packages/opentui-core/src/renderables/text_buffer_renderable.ml` | Common renderable state and drawing path for text backed by a text buffer. |
 | `vendor/opentui/packages/core/src/renderables/TextNode.ts` | `packages/opentui-core/src/renderables/text_node.ml` | Styled text-node composition used by `TextRenderable`. |
 | `vendor/opentui/packages/core/src/lib/styled-text.ts` | `packages/opentui-core/src/lib/styled_text.ml` | Styled text chunks and conversion from plain strings. |
-| `vendor/opentui/packages/core/src/syntax-style.ts` | Deferred; see the [core source mirror](../core-source-mirror/feature.md) | Syntax-style state is a separate core dependency and has no OCaml module in this slice. |
+| `vendor/opentui/packages/core/src/syntax-style.ts` | `packages/opentui-core/src/syntax_style.ml` | Syntax-style registration, theme resolution, merging, base-name lookup, caching, and destruction. |
+| `vendor/opentui/packages/core/src/edit-buffer.ts` | `packages/opentui-core/src/edit_buffer.ml` | Pure editing state, cursor movement, history, highlights, change callbacks, syntax-style ownership, and extmark adjustment. |
+| `vendor/opentui/packages/core/src/editor-view.ts` | `packages/opentui-core/src/editor_view.ml` | Visual-line calculations, wrapping, cursor/selection conversion, and the shared edit-buffer extmark owner. |
+| `vendor/opentui/packages/core/src/lib/extmarks.ts` and `extmarks-history.ts` | `packages/opentui-core/src/lib/extmarks.ml` and `extmarks_history.ml` | Offset-stable marks, virtual marks, metadata, snapshots, undo, and redo. |
+| `vendor/opentui/packages/core/src/renderables/Slider.ts` | `packages/opentui-core/src/renderables/slider.ml` | Independent track/thumb rendering, clamped value state, keyboard/pointer input, focusability, and change events. |
+| `vendor/opentui/packages/core/src/renderables/EditBufferRenderable.ts` | `packages/opentui-core/src/renderables/edit_buffer_renderable.ml` | Edit-buffer/editor-view composition, cursor/viewport synchronization, keyboard editing, selection, paste, pointer selection, and native text rendering. |
+| `vendor/opentui/packages/core/src/renderables/Textarea.ts` and `Input.ts` | `packages/opentui-core/src/renderables/textarea.ml` and `input.ml` | Placeholder/focus styling, constrained single-line input, editing, paste, submit, and typed change events. |
+| `vendor/opentui/packages/core/src/renderables/ScrollBox.ts` and `ScrollBar.ts` | `packages/opentui-core/src/renderables/scroll_box.ml` and `scroll_bar.ml` | Composed scrolling subtree, culling, sticky positions, acceleration, scrollbar range state, arrows, and slider integration. |
+| `vendor/opentui/packages/core/src/renderables/Select.ts` and `TabSelect.ts` | `packages/opentui-core/src/renderables/select.ml` and `tab_select.ml` | Typed option navigation, descriptions, indicators, tabs, wrapping, pointer translation, and selection/item events. |
 
 The low-level `opentui-raw` modules remain ABI bindings. They do not replace
 the core `Buffer`, `Renderable`, or `CliRenderer` counterparts.
@@ -183,8 +191,9 @@ this pass; Box does not.
 `selection`, `key_press`, and `paste` are local handler slots on the retained
 object. This slice stores them and invokes them at the reference lifecycle
 points that the retained object owns. Keyboard routing, pointer routing, and
-renderer-driven selection updates are the keyboard-dispatch and
-pointer-dispatch records.
+renderer-driven selection ownership are supplied by the keyboard-dispatch and
+pointer-dispatch records; selectable text renderables provide the local
+translation hooks those routes consume.
 
 This behavior record is the OCaml counterpart of virtual and overridden
 `Renderable` methods. It is not a closed `Box | Text` variant, a dynamic event
@@ -243,7 +252,10 @@ services. The supported slice includes:
   lifecycle;
 - live-render reference counting, including auto-start from idle and the
   distinction between auto-started and explicitly started renderers;
-- hit-grid writes during command execution; and
+- hit-grid writes during command execution;
+- the initial typed terminal-capability snapshot, synchronous capability-response
+  processing, shared capability notifications, and one-shot forced repaint
+  invalidation; and
 - Eio-owned terminal input, output, clocks, cancellation, and resource scopes
   at the runtime boundary.
 
@@ -262,7 +274,12 @@ services:
   (`keyboard-dispatch`);
 - pointer hit-testing, bubbling, capture, hover, and renderer default actions
   (`pointer-dispatch`);
-- renderer-driven text selection updates from pointer input;
+- pointer selection routing and renderer-driven selection ownership for
+  selectable text/editor renderables (their local translation hooks are
+  connected here);
+- terminal setup, output writing, and asynchronous query scheduling; Core now
+  supplies transport-neutral query strings, palette parsing/normalization,
+  pixel resolution, and render geometry;
 - scrollback surfaces, console rendering, split footers, post-processing
   effects, animation services, feed-idle retries, and isolated snapshot
   contexts;
@@ -376,8 +393,9 @@ returns no error. A destroyed renderable remains a queryable value for `id`,
 - Concrete overrides preserve their own reference cleanup order around the
   common operation. `Text` clears its text-node children and releases its
   native renderable, text-buffer-view, and text-buffer resources before it
-  invokes common renderable destruction. Syntax-style state is a separate
-  deferred core dependency.
+  invokes common renderable destruction. Syntax-style state is owned by the
+  separate `Syntax_style` domain module and is not part of the renderable
+  lifecycle.
 - `destroy_recursively` explicitly destroys descendants before destroying the
   receiver. The ordinary `destroy` operation never silently changes into
   recursive destruction.
@@ -607,7 +625,10 @@ includes:
 - an abstract renderer-owner identity;
 - terminal and viewport dimensions;
 - a monotonic frame identifier;
-- width-method and terminal-capability state;
+- the current copied terminal-capability snapshot, updated by recognized
+  responses and published through the shared renderer event source;
+- palette state, pixel resolution, screen mode, footer height, and computed
+  render geometry;
 - render-request and lifecycle-pass registration;
 - hit-grid construction and scissor state;
 - focus ownership;
@@ -616,13 +637,12 @@ includes:
 
 Cursor presentation, pointer presentation, selection ownership, and the
 keyboard dispatcher capability are seams on the same context object because
-the reference `RenderContext` carries them. This slice does not implement
-keyboard dispatch, pointer routing, or renderer-driven selection. Those
-fields exist so later features share the same context identity rather than
-growing a second capability object. Until those features land, the seams are
-present and unused by this slice's executable path except for the focus
-lifecycle's registration points, which call into the keyboard-dispatch seam
-when that dispatcher exists.
+the reference `RenderContext` carries them. This slice does not implement the
+keyboard dispatcher, pointer hit-testing, or pointer capture. Native
+text-view selection and selectable-renderable coordinate translation are
+implemented behind those seams, so programmatic Core selection and captured
+pointer selection reach native drawing while route ownership remains in the
+dedicated pointer-dispatch feature.
 
 The context does not create a second renderer, event source, layout tree, or
 input queue. A renderable receives the capabilities of its owning renderer.
@@ -630,8 +650,12 @@ Dimensions, frame identity, terminal capabilities, focus, and other values
 that change during renderer lifetime are observed through shared renderer
 state; they are not copied into a stale context record at construction. The
 renderer/context pair shares identity-bearing capability sources, not only
-initially equal values. The renderer/context owns lifecycle pass registration
-state, and the root executes the registered passes at frame start.
+initially equal values. The capability snapshot itself is a copied immutable
+value from the raw binding; each recognized response replaces that value and
+emits one synchronous notification. Terminal query/setup remains an outer
+runtime concern until its Eio output boundary is ported. The renderer/context
+owns lifecycle pass registration state, and the root executes the registered
+passes at frame start.
 
 ## Frame and layout contract
 
@@ -701,9 +725,11 @@ buffer, text-buffer view, text-node, and styled-text layers. A plain string is
 a valid convenience input, but the core type does not reduce the reference
 text model to a permanent single-string drawing helper. Text mutation
 invalidates the retained node and updates the text-buffer state used by layout
-and native text-view rendering. Local selection methods on the text-buffer
-renderable exist as retained state; renderer-driven selection from pointer
-input is not part of this slice.
+and native text-view rendering. Global and local selection methods on the
+text-buffer renderable update both Core metadata and the native text view;
+renderer-driven selection from pointer input is connected for the selectable
+text-buffer and editor renderables. Edge auto-scroll during a drag remains a
+future scheduler/update seam.
 
 `TextNode.t` is a separate text-composition tree. It has no Yoga node and does
 not participate in the retained layout tree. `Text.t` owns a root text node;
@@ -777,10 +803,11 @@ The implementation follows the reference dependency order:
 5. establish the internal physical layout-child operations and the public
    `Layout_children.t` capability, then port the reference Box behavior onto
    the common renderable;
-6. add the native-measure ABI used by text-buffer renderables, then port the
-   text-buffer, text-buffer-view, styled-text, and text-buffer-renderable
-   dependencies;
-7. port syntax-style state as a separate core dependency;
+6. add the native-measure and text-view ABI used by text-buffer renderables,
+   then port the text-buffer, text-buffer-view, styled-text, and
+   text-buffer-renderable dependencies;
+7. establish the independent syntax-style, edit-buffer, editor-view, extmark,
+   palette, geometry, and selection foundations;
 8. port the TextNode tree and Text behavior, including lifecycle-pass
    synchronization into the text buffer; and
 9. connect the dedicated keyboard and pointer dispatch systems to the
@@ -842,6 +869,9 @@ The feature satisfies these criteria when:
   with their renderer, and their dimensions remain current after resize;
 - renderer and render-context tests prove shared capability and event-source
   ownership;
+- capability tests prove upstream response recognition, bounded pixel parsing,
+  copied terminal strings, synchronous shared notifications, response
+  consumption, and repaint invalidation;
 - a small Eio-native application creates a renderer, attaches Box and Text
   through `Renderer.children`, renders, mutates Text in place, resizes,
   destroys a child, and shuts down;
@@ -852,8 +882,10 @@ The feature satisfies these criteria when:
   by this feature.
 
 Keyboard delivery and pointer bubbling are accepted by their own feature
-records. Renderer-driven selection remains a separate feature because the
-retained selection model is not part of this port slice.
+records. Programmatic text-view selection is part of the current native view
+contract, and renderer-driven pointer selection is connected for the active
+selectable text/editor renderables. Pointer ownership, capture, and drag-edge
+auto-scroll remain responsibilities of the pointer-dispatch feature.
 
 The feature record moves to
 `docs/major-features/implemented/renderable-core/` when these criteria are
