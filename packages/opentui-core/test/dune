@@ -90,3 +90,8 @@
  (name test_pointer_dispatch)
  (modules test_pointer_dispatch)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_interactive_controls)
+ (modules test_interactive_controls)
+ (libraries opentui-core windtrap))
