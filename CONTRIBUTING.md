@@ -75,7 +75,7 @@ The package boundary is not a reason to lose source correspondence. It is the
 explicit exception for the native seam: a reader following the reference
 renderer into Zig should arrive at <code>opentui-raw</code>, while a reader
 following a core renderable, parser, or platform module should arrive at the
-analogous <code>opentui-core/src</code> path.
+analogous <code>packages/opentui-core/src</code> path.
 
 ## Major architectural translations
 
@@ -84,23 +84,23 @@ the [source correspondence map](docs/upstream-map.md).
 
 | Reference feature | OCaml feature | Contract that must remain stable |
 | --- | --- | --- |
-| <code>core/src/Renderable.ts</code> | <code>docs/major-features/in-progress/renderable-core/feature.md</code>; target <code>opentui-core/src/renderable.ml</code> and <code>src/renderables/</code> | Nodes have stable identity, parent/child order, dirty state, layout participation, and explicit, idempotent destruction. Public child operations are typed capabilities, not a universal <code>Renderable.add</code>. |
-| <code>core/src/renderer.ts</code> | <code>docs/major-features/in-progress/renderable-core/feature.md</code>; target <code>opentui-core/src/renderer.ml</code> and <code>src/platform/</code> | Keep invalidation, frame-request scheduling, and presentation distinct. Preserve frame timing, coalescing, continuous/immediate scheduling, output backpressure, and render-status ordering; Eio may replace the scheduling mechanism. |
-| <code>core/src/types.ts</code> <code>RenderContext.requestRender</code> and renderer scheduling | <code>opentui-core/src/render_context.ml</code> and renderer-owned coalesced scheduling | A mutation marks the retained tree dirty and requests a coalesced future frame. An explicit frame/presentation operation is a separate immediate boundary, not the semantic replacement for <code>requestRender()</code>. |
-| <code>core/src/yoga.ts</code> | <code>opentui-core/src/yoga.ml</code> and <code>opentui-raw</code> Yoga bindings | Each retained renderable owns a private Yoga node. Parent insert/remove do not free the child; destruction frees that one node. Layout is calculated before readback. |
-| <code>core/src/buffer.ts</code> | <code>opentui-core/src/buffer.ml</code> over <code>opentui-raw/buffer.ml</code> | Native cell storage stays native. The public OCaml layer does not invent a second cell grid with different copying or lifetime rules. Renderer current/next buffers are borrowed views. |
-| <code>core/src/lib/border.ts</code> | <code>opentui-core/src/lib/border.ml</code> | Border styles, side normalization, border code-point arrays, and packed draw flags remain one core-owned vocabulary above the raw buffer ABI. |
-| <code>core/src/NativeSpanFeed.ts</code> | <code>opentui-raw/span_feed.ml</code> | Borrowed native spans are never exposed without a lifetime proof. The OCaml boundary copies drained payloads and makes release, reservation, commit, and cancel explicit. |
-| <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/stdin_parser.ml</code> | The parser frames arbitrary input chunks and emits typed key, mouse, paste, and response events with owned byte payloads. |
-| <code>core/src/lib/parse.keypress.ts</code> | <code>opentui-core/src/lib/key_decoder.ml</code> | The helper recognizes complete key frames for <code>Stdin_parser</code>; unsupported or malformed frames remain responses. |
-| <code>core/src/lib/parse.mouse.ts</code> | <code>opentui-core/src/lib/mouse_decoder.ml</code> | The helper recognizes SGR and X10 frames; <code>Stdin_parser</code> owns mouse-button state and emits coordinates, modifiers, and move/drag classification. |
-| <code>core/src/lib/queue.ts</code> | <code>opentui-core/src/lib/queue.ml</code> (deferred) | The reference <code>ProcessQueue</code> is an unbounded FIFO microtask work queue. It is not the parser byte queue or the OCaml event handoff. |
-| Private <code>ByteQueue</code> in <code>core/src/lib/stdin-parser.ts</code> | <code>opentui-core/src/lib/byte_queue.ml</code> | The parser's pending-prefix storage keeps its bounded capacity, growth, compaction, and copy semantics. |
-| OCaml input handoff with no direct reference file | <code>opentui-core/src/lib/input_coordinator.ml</code> and <code>event_queue.ml</code> | These adapters receive typed events from <code>Stdin_parser</code>, retain the claimed event order, and never turn backpressure into loss. |
-| <code>core/src/lib/KeyHandler.ts</code> (<code>KeyHandler</code> and <code>InternalKeyHandler</code>) | <code>docs/major-features/in-progress/keyboard-dispatch/feature.md</code> (implementation deferred) | No keyboard-dispatch module is exposed. Its OCaml translation replaces <code>EventEmitter</code> mechanics while preserving event priority: global-before-local dispatch, prevention, propagation, and cleanup remain explicit. |
-| Reference renderable and renderer pointer dispatch | <code>docs/major-features/in-progress/pointer-dispatch/feature.md</code> and the renderable-core hit-grid seam | Pointer bubbling and renderer pointer policy are separate from ordinary event channels; the feature record tracks the current subset and deferred reference lifecycle. |
-| <code>core/src/platform/*</code> | <code>opentui-core/src/platform</code> | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into <code>eio_runtime</code> and <code>eio_unix_runtime</code>; the map records this as an OCaml-specific boundary rather than inventing reference subdirectories. |
-| <code>core/src/testing</code>, <code>core/src/tests</code>, and <code>core/src/benchmark</code> | <code>opentui-core/test</code>, <code>reference</code>, and <code>bench</code> | Behavior checks, reference comparisons, and performance workloads remain package-local and discoverable beside the implementation. |
+| <code>core/src/Renderable.ts</code> | <code>docs/major-features/in-progress/renderable-core/feature.md</code>; target <code>packages/opentui-core/src/renderable.ml</code> and <code>packages/opentui-core/src/renderables/</code> | Nodes have stable identity, parent/child order, dirty state, layout participation, and explicit, idempotent destruction. Public child operations are typed capabilities, not a universal <code>Renderable.add</code>. |
+| <code>core/src/renderer.ts</code> | <code>docs/major-features/in-progress/renderable-core/feature.md</code>; target <code>packages/opentui-core/src/renderer.ml</code> and <code>packages/opentui-core/src/platform/</code> | Keep invalidation, frame requests, explicit rendering, presentation, and any scheduler or output-backpressure policy distinct. Eio may replace the scheduling mechanism, but an explicit render boundary must not be described as the reference scheduler itself. |
+| <code>core/src/types.ts</code> <code>RenderContext.requestRender</code> and renderer scheduling | <code>packages/opentui-core/src/render_context.ml</code> and renderer-owned coalesced request state | A mutation marks the retained tree dirty and records a coalesced future-frame request. An explicit frame/presentation operation is a separate immediate boundary, not the semantic replacement for <code>requestRender()</code>. The higher-level scheduler that consumes the request is still a separate integration boundary. |
+| <code>core/src/yoga.ts</code> | <code>packages/opentui-core/src/yoga.ml</code> and <code>opentui-raw</code> Yoga bindings | Each retained renderable owns a private Yoga node. Parent insert/remove do not free the child; destruction frees that one node. Layout is calculated before readback. |
+| <code>core/src/buffer.ts</code> | <code>packages/opentui-core/src/buffer.ml</code> over <code>packages/opentui-raw/buffer.ml</code> | Native cell storage stays native. The public OCaml layer does not invent a second cell grid with different copying or lifetime rules. Renderer current/next buffers are borrowed views. |
+| <code>core/src/lib/border.ts</code> | <code>packages/opentui-core/src/lib/border.ml</code> | Border styles, side normalization, border code-point arrays, and packed draw flags remain one core-owned vocabulary above the raw buffer ABI. |
+| <code>core/src/NativeSpanFeed.ts</code> | <code>packages/opentui-raw/span_feed.ml</code> | Borrowed native spans are never exposed without a lifetime proof. The OCaml boundary copies drained payloads and makes release, reservation, commit, and cancel explicit. |
+| <code>core/src/lib/stdin-parser.ts</code> | <code>packages/opentui-core/src/lib/stdin_parser.ml</code> | The parser frames arbitrary input chunks and emits typed key, mouse, paste, and response events with owned byte payloads. |
+| <code>core/src/lib/parse.keypress.ts</code> | <code>packages/opentui-core/src/lib/key_decoder.ml</code> | The helper recognizes complete key frames for <code>Stdin_parser</code>; unsupported or malformed frames remain responses. |
+| <code>core/src/lib/parse.mouse.ts</code> | <code>packages/opentui-core/src/lib/mouse_decoder.ml</code> | The helper recognizes SGR and X10 frames; <code>Stdin_parser</code> owns mouse-button state and emits coordinates, modifiers, and move/drag classification. |
+| <code>core/src/lib/queue.ts</code> | <code>deferred</code> | The reference <code>ProcessQueue</code> is an unbounded FIFO microtask work queue. It is not the parser byte queue or the OCaml event handoff; do not add a placeholder module while its port is deferred. |
+| Private <code>ByteQueue</code> in <code>core/src/lib/stdin-parser.ts</code> | <code>packages/opentui-core/src/lib/byte_queue.ml</code> | The parser's pending-prefix storage keeps its bounded capacity, growth, compaction, and copy semantics. |
+| OCaml input handoff with no direct reference file | <code>packages/opentui-core/src/lib/input_coordinator.ml</code> and <code>packages/opentui-core/src/lib/event_queue.ml</code> | These adapters receive typed events from <code>Stdin_parser</code>, retain the claimed event order, and never turn backpressure into loss. |
+| <code>core/src/lib/KeyHandler.ts</code> (<code>KeyHandler</code> and <code>InternalKeyHandler</code>) | <code>docs/major-features/in-progress/keyboard-dispatch/feature.md</code>; <code>packages/opentui-core/src/lib/key_handler.ml</code> | <code>Lib.Key_handler</code> replaces <code>EventEmitter</code> mechanics while preserving global-before-local dispatch, prevention, propagation, snapshot iteration, cleanup, and handler-error reporting. Parser support for Kitty press/repeat/release distinctions remains deferred. |
+| Reference renderable and renderer pointer dispatch | <code>docs/major-features/in-progress/pointer-dispatch/feature.md</code>; <code>packages/opentui-core/src/renderer.ml</code>, <code>packages/opentui-core/src/render_context.ml</code>, and <code>packages/opentui-core/src/renderable.ml</code> | <code>Renderer.handle_input</code> uses the committed layout hit grid and routes typed mouse events through the retained tree. Hover, capture, derived drag/drop, focus-on-down, and handler-error policy are renderer-owned; selection and native scissor-aware hit-grid storage remain separate work. |
+| <code>core/src/platform/*</code> | <code>packages/opentui-core/src/platform</code> | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into <code>eio_runtime</code> and <code>eio_unix_runtime</code>; the map records this as an OCaml-specific boundary rather than inventing reference subdirectories. |
+| <code>core/src/testing</code>, <code>core/src/tests</code>, and <code>core/src/benchmark</code> | <code>packages/opentui-core/test</code>, <code>packages/opentui-core/reference</code>, and <code>packages/opentui-core/bench</code> | Behavior checks, reference comparisons, and performance workloads remain package-local and discoverable beside the implementation. |
 | <code>packages/react</code> and <code>packages/solid</code> | No OCaml package selected | Any future reactive bridge must update the existing retained tree. It must not introduce a second required render tree or change the imperative core contract. |
 
 The reference <code>StdinParser</code> is the typed-event boundary. The OCaml
@@ -152,10 +152,12 @@ Each stage has one job:
   is 64; pending resize and mouse-motion events may replace an event of the same
   coalescing class. Keys, paste, responses, button events, and scroll events are
   not coalesced and report <code>Full</code> instead of being dropped.
-- Pointer routing hit-tests using the latest layout and bubbles from the
-  target toward the root. <code>Stop</code> ends propagation; <code>Continue</code>
-  preserves the route. The current minimal route and the planned renderer
-  integration are in the pointer-dispatch feature record.
+- Pointer input decoded by <code>Stdin_parser</code> reaches
+  <code>Renderer.handle_input</code>, which hit-tests the committed layout grid
+  and routes typed mouse events from the target toward the root. A handler may
+  stop that route; otherwise dispatch continues. Hover, capture, focus-on-down,
+  and derived drag/drop policy belong to the renderer, while selection and
+  native scissor-aware hit-grid storage remain separate feature work.
 - <code>Renderer</code> frame and presentation operations do not start fibers.
   The application may choose when to drain events and when to present a frame.
   Do not describe that explicit presentation as the equivalent of reference
@@ -368,8 +370,8 @@ answer is not known, leave the feature deferred rather than inventing a policy.
 Use the reference directory as the default location. Keep pure protocol or
 rendering logic independent of Eio. Put Eio resource acquisition, blocking
 reads/writes, clocks, cancellation, and terminal setup under
-<code>src/platform/eio_runtime</code> or
-<code>src/platform/eio_unix_runtime</code>.
+<code>packages/opentui-core/src/platform/eio_runtime</code> or
+<code>packages/opentui-core/src/platform/eio_unix_runtime</code>.
 
 Put ABI calls and native lifetime code in <code>opentui-raw</code>. Do not make
 <code>opentui-core</code> know about C pointers, packed native handle bits, or
