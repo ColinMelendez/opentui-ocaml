@@ -85,10 +85,14 @@ let render_self box renderable buffer _delta_time =
       ~border_chars:(Border.Private.to_native border_chars)
       ~packed_options:
         (Border.Private.pack_draw_options ~border:box.border
-           ~should_fill:box.should_fill ~title_alignment:box.title_alignment
+           ~should_fill:box.should_fill
+           ~title_alignment:box.title_alignment
            ~bottom_title_alignment:box.bottom_title_alignment)
-      ~border_color ~background_color:box.background_color ~title_color
-      ~title:box.title ~bottom_title:box.bottom_title
+      ~border_color
+      ~background_color:box.background_color
+      ~title_color
+      ~title:box.title
+      ~bottom_title:box.bottom_title
 
 let create context ?id ?background_color ?border_style ?border ?border_color
     ?custom_border_chars ?should_fill ?title ?title_color ?title_alignment
