@@ -43,3 +43,16 @@ val close : t -> unit
 
 val is_entered : t -> bool
 (** [is_entered session] is [true] only while raw mode is active. *)
+
+type query = Capabilities | Palette | Theme | Pixel_resolution
+
+val setup_output :
+  t -> screen:Lib.Terminal_modes.screen -> bracketed_paste:bool -> (unit, error) result
+(** [setup_output] applies the explicit output modes owned by the session. *)
+
+val schedule_query : t -> query -> (unit, error) result
+(** [schedule_query] writes one bounded terminal query through the session's
+    output owner and records it until the caller acknowledges the response. *)
+
+val pending_queries : t -> query list
+val acknowledge_query : t -> query -> unit

@@ -47,6 +47,8 @@ and behavior = {
   key_release : (t -> Lib.Key_handler.key_event -> unit) option;
   paste : (t -> Lib.Key_handler.paste_event -> unit) option;
   mouse_event : (t -> mouse_event -> unit) option;
+  selection_changed : (t -> Lib.Selection.t option -> unit) option;
+  should_start_selection : (t -> x:int -> y:int -> bool) option;
   render_before : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
   render_self : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
   render_after : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
@@ -207,6 +209,8 @@ let default_behavior =
     key_release = None;
     paste = None;
     mouse_event = None;
+    selection_changed = None;
+    should_start_selection = None;
     render_before = None;
     render_self = None;
     render_after = None;
@@ -220,8 +224,9 @@ let default_behavior =
   }
 
 let make_behavior ?on_update ?on_resize ?on_remove ?lifecycle_pass ?key_press
-    ?key_release ?paste ?mouse_event ?render_before ?render_self ?render_after
-    ?render_replacement ?scissor_rect ?visible_children ?destroy_self
+    ?key_release ?paste ?mouse_event ?selection_changed ?should_start_selection
+    ?render_before ?render_self ?render_after ?render_replacement ?scissor_rect
+    ?visible_children ?destroy_self
     ?(updates_each_frame = false) ?(custom_scissor = false)
     ?(filters_children = false) () =
   {
@@ -233,6 +238,8 @@ let make_behavior ?on_update ?on_resize ?on_remove ?lifecycle_pass ?key_press
     key_release;
     paste;
     mouse_event;
+    selection_changed;
+    should_start_selection;
     render_before;
     render_self;
     render_after;
@@ -775,8 +782,15 @@ let can_reuse_renderable renderable =
   && not renderable.behavior.filters_children
 
 let execute_render_command buffer ~delta_time = function
-  | Push_opacity _ | Pop_opacity | Push_scissor _ | Pop_scissor ->
-      Error Error.Unsupported
+  | Push_opacity opacity -> Buffer.push_opacity buffer opacity
+  | Pop_opacity -> Buffer.pop_opacity buffer
+  | Push_scissor rect ->
+      let x = Int32.of_float (Float.floor rect.x) in
+      let y = Int32.of_float (Float.floor rect.y) in
+      let width = Int32.of_float (Float.max 0.0 (Float.floor rect.width)) in
+      let height = Int32.of_float (Float.max 0.0 (Float.floor rect.height)) in
+      Buffer.push_scissor_rect buffer ~x ~y ~width ~height
+  | Pop_scissor -> Buffer.pop_scissor_rect buffer
   | Render renderable ->
       if renderable.destroyed then Ok ()
       else
@@ -1544,6 +1558,31 @@ module Private = struct
 
   let set_behavior = set_behavior
   let with_yoga_node = with_node
+
+  let set_measure_func renderable callback =
+    match ensure_open renderable with
+    | Error error -> Error error
+    | Ok () ->
+        with_node renderable (fun node ->
+            match Measure_callback.attach node callback with
+            | Ok () ->
+                invalidate_layout_cache renderable;
+                request_render_internal renderable;
+                Ok ()
+            | Error error -> Error (map_native_error error))
+
+  let clear_measure_func renderable =
+    if not (Render_context.Private.is_open renderable.context) then
+      Error Error.Closed
+    else
+      with_node renderable (fun node ->
+          match Measure_callback.detach node with
+          | Ok () ->
+              invalidate_layout_cache renderable;
+              request_render_internal renderable;
+              Ok ()
+          | Error error -> Error (map_native_error error))
+
   let mark_yoga_dirty = mark_yoga_dirty
   let attach = attach_internal
   let insert_before = insert_before_internal
@@ -1551,6 +1590,15 @@ module Private = struct
   let find_by_num = find_by_num
   let make_mouse_event = make_mouse_event
   let process_mouse_event = process_mouse_event
+  let should_start_selection renderable ~x ~y =
+    match renderable.behavior.should_start_selection with
+    | None -> false
+    | Some callback -> callback renderable ~x ~y
+
+  let selection_changed renderable selection =
+    Option.iter
+      (fun callback -> callback renderable selection)
+      renderable.behavior.selection_changed
 
   let resize_root root ~width ~height =
     match ensure_open root with

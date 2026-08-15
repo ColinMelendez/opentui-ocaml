@@ -173,5 +173,12 @@ module Node : sig
     (** Internal access used by the native measurement adapter. *)
     val attach_native_renderable :
       t -> Opentui_raw.Native_renderable.t -> (unit, Native.Error.t) result
+    val set_measure_func : t -> bool -> (unit, Native.Error.t) result
+    val unset_measure_func : t -> (unit, Native.Error.t) result
+    val has_measure_func : t -> (bool, Native.Error.t) result
+    val native_pointer : t -> (Nativeint.t, Native.Error.t) result
+  val set_measure_callback :
+    (Nativeint.t * float * int32 * float * int32 -> float * float) -> unit
+    val clear_measure_callback : unit -> unit
   end
 end

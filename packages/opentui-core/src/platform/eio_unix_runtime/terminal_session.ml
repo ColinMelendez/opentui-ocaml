@@ -7,6 +7,7 @@ type error =
   | Closed
 
 type lifecycle = Ready | Entered | Restored
+type query = Capabilities | Palette | Theme | Pixel_resolution
 
 type t = {
   fd : Eio_unix.Fd.t;
@@ -15,6 +16,7 @@ type t = {
   mutable lifecycle : lifecycle;
   mutable output_restored : bool;
   mutable terminal_restored : bool;
+  mutable pending_queries : query list;
 }
 
 let unix_message error operation argument =
@@ -91,10 +93,21 @@ let restore session =
   match session.lifecycle with
   | Restored -> Ok ()
   | Ready ->
-      session.lifecycle <- Restored;
-      session.output_restored <- true;
-      session.terminal_restored <- true;
-      Ok ()
+      Eio.Cancel.protect (fun () ->
+          let output_result =
+            if session.output_restored then Ok ()
+            else
+              match Output.reset session.output with
+              | Ok () as result ->
+                  session.output_restored <- true;
+                  result
+              | Error _ as result -> result
+          in
+          session.terminal_restored <- true;
+          if session.output_restored then session.lifecycle <- Restored;
+          match output_result with
+          | Ok () -> Ok ()
+          | Error error -> Error (Output_error error))
   | Entered ->
       Eio.Cancel.protect (fun () ->
           let output_result =
@@ -135,6 +148,39 @@ let is_entered session =
   | Entered -> true
   | Ready | Restored -> false
 
+let setup_output session ~screen ~bracketed_paste =
+  match session.lifecycle with
+  | Restored -> Error Closed
+  | Ready | Entered ->
+      (match Output.set_screen session.output screen with
+      | Error error -> Error (Output_error error)
+      | Ok () ->
+          (match Output.set_bracketed_paste session.output bracketed_paste with
+          | Ok () -> Ok ()
+          | Error error -> Error (Output_error error)))
+
+let query_bytes = function
+  | Capabilities -> Bytes.of_string "\027[>c"
+  | Palette -> Bytes.of_string (Lib.Terminal_palette.special_query ())
+  | Theme -> Bytes.of_string Renderer_theme_mode.query_sequence
+  | Pixel_resolution -> Bytes.of_string (Lib.Terminal_capability_detection.pixel_resolution_query ())
+
+let schedule_query session query =
+  match session.lifecycle with
+  | Restored -> Error Closed
+  | Ready | Entered ->
+      (match Output.write session.output (query_bytes query) with
+      | Error error -> Error (Output_error error)
+      | Ok () ->
+          if not (List.exists (fun current -> match current, query with Capabilities, Capabilities | Palette, Palette | Theme, Theme | Pixel_resolution, Pixel_resolution -> true | _ -> false) session.pending_queries) then
+            session.pending_queries <- session.pending_queries @ [ query ];
+          Ok ())
+
+let pending_queries session = session.pending_queries
+
+let acknowledge_query session query =
+  session.pending_queries <- List.filter (fun current -> match current, query with Capabilities, Capabilities | Palette, Palette | Theme, Theme | Pixel_resolution, Pixel_resolution -> false | _ -> true) session.pending_queries
+
 let create ~sw ~fd ~output =
   try
     let original = Eio_unix.Pty.Tc.getattr fd in
@@ -146,6 +192,7 @@ let create ~sw ~fd ~output =
         lifecycle = Ready;
         output_restored = false;
         terminal_restored = false;
+        pending_queries = [];
       }
     in
     Eio.Switch.on_release sw (fun () -> close session);

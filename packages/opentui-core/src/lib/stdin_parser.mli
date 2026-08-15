@@ -14,6 +14,7 @@ type event =
       raw : bytes;
       key : Key_decoder.key;
       modifiers : Key_decoder.modifiers;
+      metadata : Key_decoder.metadata;
     }
   | Mouse of {
       raw : bytes;
@@ -25,10 +26,22 @@ type event =
 (** A typed key, mouse event, paste body, or opaque terminal response. All
     byte payloads are owned by the parser. *)
 
+type protocol_context = {
+  kitty_keyboard_enabled : bool;
+  private_capability_replies_active : bool;
+  pixel_resolution_query_active : bool;
+  explicit_width_cpr_active : bool;
+  startup_cursor_cpr_active : bool;
+}
+(** Protocols whose incomplete CSI prefixes must remain opaque until the
+    application has either received or cancelled the corresponding query. *)
+
+val default_protocol_context : protocol_context
+
 type t
 (** Mutable incremental parser state. *)
 
-type error = Invalid_timeout | Queue_error of Byte_queue.error
+type error = Invalid_timeout | Queue_error of Byte_queue.error | Destroyed
 (** Parser construction or backing-queue errors. *)
 
 val message : error -> string
@@ -41,6 +54,11 @@ val create :
   ?initial_capacity:int ->
   ?max_pending_bytes:int ->
   ?timeout_ms:int ->
+  ?kitty_keyboard:bool ->
+  ?arm_timeouts:bool ->
+  ?on_timeout_flush:(unit -> unit) ->
+  ?clock:Clock.t ->
+  ?protocol_context:protocol_context ->
   unit ->
   (t, error) result
 (** [create ...] creates a parser with bounded pending-prefix storage. *)
@@ -53,6 +71,13 @@ val pending_bytes : t -> int
 
 val buffer_capacity : t -> int
 (** [buffer_capacity parser] is the current backing capacity. *)
+
+val protocol_context : t -> protocol_context
+val update_protocol_context : t -> protocol_context -> unit
+val has_pending_pixel_resolution_response : t -> bool
+val pause_pending_timeout : t -> unit
+val resume_pending_timeout : t -> unit
+val reset_mouse_state : t -> unit
 
 val push :
   t -> source:Byte_queue.buffer -> off:int -> len:int -> (unit, error) result
@@ -86,3 +111,7 @@ val flush_timeout : t -> unit
 
 val reset : t -> unit
 (** [reset parser] discards pending bytes, emitted events, and protocol state. *)
+
+val abort_pending_startup_cursor_cpr : t -> unit
+val destroy : t -> unit
+val is_destroyed : t -> bool

@@ -92,7 +92,7 @@ let sgr_event decoder ~button_code ~x ~y ~press =
     let kind = if press then Down else Up in
     if press then (
       if Int.compare button 3 < 0 then decoder.pressed.(button) <- true)
-    else reset decoder;
+    else if Int.compare button 3 < 0 then Array.fill decoder.pressed 0 3 false;
     Some (mouse_event ~kind ~button:(button_value button) ~x ~y ~modifiers ())
 
 let byte_is bytes index value = Int.equal (Bytes.get_uint8 bytes index) value
@@ -146,8 +146,6 @@ let parse_sgr bytes =
         parse_sgr_parameters bytes ~start:3 ~end_exclusive:(length - 1)
       with
       | None -> None
-      | Some values when Int.compare values.(1) 1 < 0 -> None
-      | Some values when Int.compare values.(2) 1 < 0 -> None
       | Some values ->
           Some
             ( values.(0),
@@ -166,11 +164,7 @@ let parse_x10 bytes =
     let button_wire = Bytes.get_uint8 bytes 3 in
     let x_wire = Bytes.get_uint8 bytes 4 in
     let y_wire = Bytes.get_uint8 bytes 5 in
-    if Int.compare button_wire 0x20 < 0
-       || Int.compare x_wire 0x21 < 0
-       || Int.compare y_wire 0x21 < 0
-    then None
-    else Some (button_wire - 0x20, x_wire - 0x21, y_wire - 0x21)
+    Some (button_wire - 0x20, x_wire - 0x21, y_wire - 0x21)
 
 let decode_x10 ~button_code ~x ~y =
   let button = button_code land 3 in
@@ -178,8 +172,7 @@ let decode_x10 ~button_code ~x ~y =
   if bit_set button_code 32 then
     Some
       (mouse_event ~kind:Move
-         ~button:(if Int.equal button 3 then -1 else button)
-         ~x ~y ~modifiers ())
+         ~button:(if Int.equal button 3 then -1 else button) ~x ~y ~modifiers ())
   else if bit_set button_code 64 then
     Some
       (mouse_event ~kind:Scroll ~button:0 ~x ~y ~modifiers
@@ -206,3 +199,43 @@ let decode decoder bytes =
           | Some event -> Some { encoding = X10; event }
           | None -> None)
       | None -> None)
+
+let decode_all decoder bytes =
+  let length = Bytes.length bytes in
+  let found = ref [] in
+  let index = ref 0 in
+  let decoded_at offset =
+    if Int.compare (length - offset) 6 >= 0
+       && byte_is bytes offset 0x1b
+       && byte_is bytes (offset + 1) 0x5b
+       && byte_is bytes (offset + 2) 0x4d
+    then
+      let frame = Bytes.sub bytes offset 6 in
+      Option.map (fun value -> value, offset + 6) (decode decoder frame)
+    else if Int.compare (length - offset) 4 >= 0
+            && byte_is bytes offset 0x1b
+            && byte_is bytes (offset + 1) 0x5b
+            && byte_is bytes (offset + 2) 0x3c
+    then
+      let end_index = ref (offset + 3) in
+      let complete = ref false in
+      while Int.compare !end_index length < 0 && not !complete do
+        let value = Bytes.get_uint8 bytes !end_index in
+        if Int.equal value (Char.code 'M') || Int.equal value (Char.code 'm')
+        then complete := true
+        else incr end_index
+      done;
+      if not !complete then None
+      else
+        let frame = Bytes.sub bytes offset (!end_index - offset + 1) in
+        Option.map (fun value -> value, !end_index + 1) (decode decoder frame)
+    else None
+  in
+  while Int.compare !index length < 0 do
+    match decoded_at !index with
+    | Some (value, next_index) ->
+        found := value :: !found;
+        index := next_index
+    | None -> index := length
+  done;
+  List.rev !found

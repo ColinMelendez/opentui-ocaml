@@ -41,6 +41,7 @@ let queue_contents queue =
   done;
   result
 
+module Lib = Opentui_core.Lib
 module Parser = Opentui_core.Lib.Stdin_parser
 module Decoder = Opentui_core.Lib.Key_decoder
 module Mouse = Opentui_core.Lib.Mouse_decoder
@@ -258,6 +259,7 @@ let () =
                    raw = Bytes.empty;
                    key = Decoder.Named Decoder.Return;
                    modifiers;
+                   metadata = Decoder.raw_metadata;
                  })
           in
           let first_size =
@@ -311,7 +313,10 @@ let () =
             { Decoder.shift = false; meta = false; ctrl = false }
           in
           let key key =
-            Events.Input (Input.Key { raw = Bytes.empty; key; modifiers })
+            Events.Input
+              (Input.Key
+                 { raw = Bytes.empty; key; modifiers;
+                   metadata = Decoder.raw_metadata })
           in
           (match Events.push queue (key (Decoder.Named Decoder.Return)) with
           | Ok () -> ()
@@ -445,7 +450,8 @@ let () =
           let key named =
             Events.Input
               (Input.Key
-                 { raw = Bytes.empty; key = Decoder.Named named; modifiers })
+                 { raw = Bytes.empty; key = Decoder.Named named; modifiers;
+                   metadata = Decoder.raw_metadata })
           in
           equal int 2 (Events.capacity queue);
           (match Events.push queue (key Decoder.Return) with
@@ -633,8 +639,15 @@ let () =
           expect_named (read_parser_event parser) "up" ~shift:false ~meta:true
             ~ctrl:false;
           push_string parser "\x1b[1;9A";
-          expect_decoded_sequence (read_parser_event parser) Parser.Csi
-            "\x1b[1;9A");
+          (match read_parser_event parser with
+          | Parser.Key
+              { key = Decoder.Named Decoder.Up; modifiers; metadata; _ } ->
+              expect_modifiers ~shift:false ~meta:false ~ctrl:false modifiers;
+              equal bool true metadata.super
+          | Parser.Key _ -> fail "expected a decoded super-modified arrow"
+          | Parser.Response _ -> fail "expected a decoded super-modified arrow"
+          | Parser.Mouse _ -> fail "expected a decoded super-modified arrow"
+          | Parser.Paste _ -> fail "expected a decoded super-modified arrow"));
       test "stdin parsing preserves owned response and paste payloads"
         (fun () ->
           let parser = parser_create () in
@@ -655,6 +668,124 @@ let () =
           Bytes.set_uint8 paste 0 0;
           push_string parser "\x1b[201~";
           expect_paste parser "paste");
+      test "stdin protocol context suspends pixel replies and lifecycle is explicit"
+        (fun () ->
+          let context =
+            { Parser.default_protocol_context with
+              pixel_resolution_query_active = true }
+          in
+          let parser =
+            match Parser.create ~protocol_context:context () with
+            | Ok parser -> parser
+            | Error error -> fail (Parser.message error)
+          in
+          push_string parser "\x1b[4;1080";
+          equal bool true (Parser.has_pending_pixel_resolution_response parser);
+          Parser.flush_timeout parser;
+          expect_no_event parser;
+          Parser.update_protocol_context parser Parser.default_protocol_context;
+          expect_sequence parser Parser.Unknown "\x1b[4;1080";
+          Parser.destroy parser;
+          equal bool true (Parser.is_destroyed parser);
+          match Parser.push_bytes parser ~source:(Bytes.of_string "A") ~off:0 ~len:1 with
+          | Error Parser.Destroyed -> ()
+          | Error error -> fail (Parser.message error)
+          | Ok () -> fail "destroyed parser accepted input");
+      test "stdin protocol context enables Kitty decoding"
+        (fun () ->
+          let context =
+            { Parser.default_protocol_context with kitty_keyboard_enabled = true }
+          in
+          let parser =
+            match
+              Parser.create ~kitty_keyboard:false ~protocol_context:context ()
+            with
+            | Ok parser -> parser
+            | Error error -> fail (Parser.message error)
+          in
+          push_string parser "\x1b[97;1u";
+          match read_parser_event parser with
+          | Parser.Key
+              { key = Decoder.Character text; metadata; modifiers; _ } ->
+              equal string "a" (Bytes.to_string text);
+              expect_modifiers ~shift:false ~meta:false ~ctrl:false modifiers;
+              (match metadata.source, metadata.code with
+              | Decoder.Kitty, Some 97 -> ()
+              | _ -> fail "protocol context did not select Kitty metadata")
+          | Parser.Key _ -> fail "expected a Kitty character key"
+          | Parser.Mouse _ -> fail "expected a key, got mouse"
+          | Parser.Response _ -> fail "Kitty key was left as a response"
+          | Parser.Paste _ -> fail "expected a key, got paste");
+      test "stdin protocol context preserves deferred query prefixes"
+        (fun () ->
+          let private_context =
+            { Parser.default_protocol_context with
+              private_capability_replies_active = true }
+          in
+          let private_parser =
+            match Parser.create ~protocol_context:private_context () with
+            | Ok parser -> parser
+            | Error error -> fail (Parser.message error)
+          in
+          push_string private_parser "\x1b[?1";
+          Parser.flush_timeout private_parser;
+          (match Parser.read private_parser with
+          | None -> ()
+          | Some _ -> fail "private capability prefix flushed unexpectedly");
+          push_string private_parser "c";
+          expect_sequence private_parser Parser.Csi "\x1b[?1c";
+          let startup_context =
+            { Parser.default_protocol_context with startup_cursor_cpr_active = true }
+          in
+          let startup_parser =
+            match Parser.create ~protocol_context:startup_context () with
+            | Ok parser -> parser
+            | Error error -> fail (Parser.message error)
+          in
+          push_string startup_parser "\x1b[1;";
+          Parser.flush_timeout startup_parser;
+          (match Parser.read startup_parser with
+          | None -> ()
+          | Some _ -> fail "startup CPR prefix flushed unexpectedly");
+          Parser.abort_pending_startup_cursor_cpr startup_parser;
+          (match Parser.read startup_parser with
+          | None -> ()
+          | Some _ -> fail "startup CPR abort emitted an event"));
+      test "stdin parser reset cancels owned timers and clears lifecycle state"
+        (fun () ->
+          let manual = Lib.Clock.manual () in
+          let timeout_callbacks = ref 0 in
+          let parser =
+            match
+              Parser.create ~arm_timeouts:true
+                ~on_timeout_flush:(fun () -> incr timeout_callbacks)
+                ~clock:(Lib.Clock.manual_clock manual) ()
+            with
+            | Ok parser -> parser
+            | Error error -> fail (Parser.message error)
+          in
+          push_string parser "\x1b";
+          Parser.reset parser;
+          Lib.Clock.advance manual 0.021;
+          expect_no_event parser;
+          equal int 0 !timeout_callbacks);
+      test "stdin parser can own a clock-backed timeout"
+        (fun () ->
+          let manual = Lib.Clock.manual () in
+          let timeout_callbacks = ref 0 in
+          let parser =
+            match
+              Parser.create ~arm_timeouts:true
+                ~on_timeout_flush:(fun () -> incr timeout_callbacks)
+                ~clock:(Lib.Clock.manual_clock manual) ()
+            with
+            | Ok parser -> parser
+            | Error error -> fail (Parser.message error)
+          in
+          push_string parser "\x1b";
+          Lib.Clock.advance manual 0.021;
+          expect_key parser "\x1b";
+          equal int 1 !timeout_callbacks);
       test "stdin framing recognizes split opaque responses" (fun () ->
           let parser = parser_create () in
           push_string parser "\x1b]title";

@@ -54,3 +54,7 @@ val reset : t -> unit
 (** [decode decoder bytes] returns [Some decoded] for a complete SGR or X10
     mouse frame and [None] for other byte sequences. *)
 val decode : t -> bytes -> decoded option
+
+(** [decode_all decoder bytes] decodes every complete mouse frame in a byte
+    sequence and ignores non-mouse bytes. State is shared across frames. *)
+val decode_all : t -> bytes -> decoded list

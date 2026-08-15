@@ -17,9 +17,10 @@ let message = function
 
 let pp formatter error = Format.pp_print_string formatter (message error)
 
-let create ?initial_capacity ?max_pending_bytes ?timeout_ms () =
+let create ?initial_capacity ?max_pending_bytes ?timeout_ms ?kitty_keyboard () =
   match
-    Stdin_parser.create ?initial_capacity ?max_pending_bytes ?timeout_ms ()
+    Stdin_parser.create ?initial_capacity ?max_pending_bytes ?timeout_ms
+      ?kitty_keyboard ()
   with
   | Error error -> Error (Parser_error error)
   | Ok parser ->

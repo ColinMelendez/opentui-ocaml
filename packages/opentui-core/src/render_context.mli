@@ -15,6 +15,20 @@ type frame_event = Renderer_events.frame_event = {
   frame_id : int64;
 }
 
+type capabilities_event = Renderer_events.capabilities_event
+type palette_event = Renderer_events.palette_event
+type theme_mode = Renderer_theme_mode.mode
+type theme_mode_event = Renderer_events.theme_mode_event
+type selection_event = Renderer_events.selection_event
+type focus_event = Renderer_events.focus_event
+
+type pixel_resolution = {
+  width : int32;
+  height : int32;
+}
+
+type render_geometry = Lib.Render_geometry.t
+
 type handler_source = Renderer_events.handler_source = Keyboard | Pointer
 type handler_scope = Renderer_events.handler_scope = Global | Renderable
 type handler_kind = Renderer_events.handler_kind = Keypress | Keyrelease | Paste | Mouse
@@ -33,12 +47,22 @@ val same_owner : t -> t -> bool
 
 (** The current renderer width. *)
 val width : t -> (int32, Error.t) result
+val terminal_width : t -> (int32, Error.t) result
 
 (** The current renderer height. *)
 val height : t -> (int32, Error.t) result
+val terminal_height : t -> (int32, Error.t) result
 
 (** The monotonically increasing frame identifier. *)
 val frame_id : t -> (int64, Error.t) result
+
+(** The latest copied terminal capability snapshot, when one is available. *)
+val capabilities : t -> (Terminal_capabilities.t option, Error.t) result
+val width_method : t -> (Terminal_capabilities.unicode, Error.t) result
+val palette : t -> (Lib.Terminal_palette.normalized option, Error.t) result
+val theme_mode : t -> (theme_mode option, Error.t) result
+val pixel_resolution : t -> (pixel_resolution option, Error.t) result
+val render_geometry : t -> (render_geometry, Error.t) result
 
 (** The layout generation used to validate cached layout-dependent traversal. *)
 val layout_generation : t -> (int64, Error.t) result
@@ -56,6 +80,9 @@ val request_render : t -> (unit, Error.t) result
 (** [has_pending_render context] reports whether a coalesced render request is
     waiting for the renderer scheduler. *)
 val has_pending_render : t -> (bool, Error.t) result
+val request_live : t -> (unit, Error.t) result
+val drop_live : t -> (unit, Error.t) result
+val live_request_count : t -> (int, Error.t) result
 
 (** Register for renderer resize notifications. *)
 val on_resize :
@@ -80,6 +107,51 @@ val once_frame :
 
 val prepend_frame :
   t -> (frame_event -> unit) -> (Event_subscription.t, Error.t) result
+
+val on_capabilities :
+  t -> (capabilities_event -> unit) -> (Event_subscription.t, Error.t) result
+
+val once_capabilities :
+  t -> (capabilities_event -> unit) -> (Event_subscription.t, Error.t) result
+
+val prepend_capabilities :
+  t -> (capabilities_event -> unit) -> (Event_subscription.t, Error.t) result
+val on_palette :
+  t -> (palette_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_palette :
+  t -> (palette_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_palette :
+  t -> (palette_event -> unit) -> (Event_subscription.t, Error.t) result
+val on_theme_mode :
+  t -> (theme_mode_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_theme_mode :
+  t -> (theme_mode_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_theme_mode :
+  t -> (theme_mode_event -> unit) -> (Event_subscription.t, Error.t) result
+
+val on_selection :
+  t -> (selection_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_selection :
+  t -> (selection_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_selection :
+  t -> (selection_event -> unit) -> (Event_subscription.t, Error.t) result
+val on_focus :
+  t -> (focus_event -> unit) -> (Event_subscription.t, Error.t) result
+val once_focus :
+  t -> (focus_event -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_focus :
+  t -> (focus_event -> unit) -> (Event_subscription.t, Error.t) result
+val on_destroy :
+  t -> (unit -> unit) -> (Event_subscription.t, Error.t) result
+val once_destroy :
+  t -> (unit -> unit) -> (Event_subscription.t, Error.t) result
+val prepend_destroy :
+  t -> (unit -> unit) -> (Event_subscription.t, Error.t) result
+
+val register_lifecycle_pass :
+  t -> id:int -> (unit -> unit) -> (unit, Error.t) result
+val unregister_lifecycle_pass : t -> id:int -> (unit, Error.t) result
+val lifecycle_pass_count : t -> (int, Error.t) result
 
 val on_handler_error :
   t -> (handler_error -> unit) -> (Event_subscription.t, Error.t) result
@@ -121,7 +193,15 @@ val prepend_paste :
 module Private : sig
   (** Construction and mutation used by {!Renderer}. *)
   val new_owner : unit -> owner
-  val create : owner:owner -> width:int32 -> height:int32 -> t
+  val create :
+    owner:owner -> width:int32 -> height:int32 ->
+    capabilities:Terminal_capabilities.t option -> t
+  val set_capabilities : t -> Terminal_capabilities.t -> unit
+  val set_palette : t -> Lib.Terminal_palette.normalized -> unit
+  val set_theme_mode : t -> theme_mode -> unit
+  val set_pixel_resolution : t -> pixel_resolution option -> unit
+  val set_render_geometry :
+    t -> Lib.Render_geometry.screen_mode -> footer_height:int -> unit
   val resize : t -> width:int32 -> height:int32 -> unit
   val advance_frame : t -> int64
   val bump_layout_generation : t -> int64

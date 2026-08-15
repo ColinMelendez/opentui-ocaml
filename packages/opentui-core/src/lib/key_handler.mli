@@ -31,6 +31,7 @@ val create : ?on_error:(handler_error -> unit) -> unit -> t
 val key_raw : key_event -> bytes
 val key : key_event -> Key_decoder.key
 val key_modifiers : key_event -> Key_decoder.modifiers
+val key_metadata : key_event -> Key_decoder.metadata
 val key_event_kind : key_event -> event_kind
 
 val paste_raw : paste_event -> bytes
@@ -68,10 +69,12 @@ val on_internal_paste :
   t -> owner_num:int -> (paste_event -> unit) -> Event_subscription.t
 
 val process_key :
-  t -> raw:bytes -> key:Key_decoder.key -> modifiers:Key_decoder.modifiers -> bool
+  t -> raw:bytes -> key:Key_decoder.key -> modifiers:Key_decoder.modifiers ->
+  ?metadata:Key_decoder.metadata -> unit -> bool
 
 val process_keyrelease :
-  t -> raw:bytes -> key:Key_decoder.key -> modifiers:Key_decoder.modifiers -> bool
+  t -> raw:bytes -> key:Key_decoder.key -> modifiers:Key_decoder.modifiers ->
+  ?metadata:Key_decoder.metadata -> unit -> bool
 
 val process_paste : t -> bytes -> bool
 

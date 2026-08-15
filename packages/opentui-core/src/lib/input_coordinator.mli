@@ -35,6 +35,7 @@ val create :
   ?initial_capacity:int ->
   ?max_pending_bytes:int ->
   ?timeout_ms:int ->
+  ?kitty_keyboard:bool ->
   unit ->
   (t, error) result
 (** [create ...] creates a coordinator with bounded incomplete-protocol

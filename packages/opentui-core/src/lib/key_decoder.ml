@@ -28,7 +28,39 @@ type named_key =
   | F10
   | F11
   | F12
+  | F13 | F14 | F15 | F16 | F17 | F18 | F19 | F20
+  | F21 | F22 | F23 | F24 | F25 | F26 | F27 | F28 | F29 | F30
+  | F31 | F32 | F33 | F34 | F35
   | Menu
+  | Capslock | Scrolllock | Numlock | Printscreen | Pause
+  | Kp0 | Kp1 | Kp2 | Kp3 | Kp4 | Kp5 | Kp6 | Kp7 | Kp8 | Kp9
+  | Kpdecimal | Kpdivide | Kpmultiply | Kpminus | Kpplus | Kpenter
+  | Kpequal | Kpseparator | Kpleft | Kpright | Kpup | Kpdown
+  | Kppageup | Kppagedown | Kphome | Kpend | Kpinsert | Kpdelete
+  | Mediaplay | Mediapause | Mediaplaypause | Mediareverse | Mediastop
+  | Mediafastforward | Mediarewind | Medianext | Mediaprev | Mediarecord
+  | Volumedown | Volumeup | Mute
+  | Leftshift | Leftctrl | Leftalt | Leftsuper | Lefthyper | Leftmeta
+  | Rightshift | Rightctrl | Rightalt | Rightsuper | Righthyper | Rightmeta
+  | Iso_level3_shift | Iso_level5_shift
+
+type event_type = Press | Repeat | Release
+type source = Raw | Kitty
+
+type metadata = {
+  event_type : event_type;
+  source : source;
+  repeated : bool;
+  option : bool;
+  super : bool;
+  hyper : bool;
+  caps_lock : bool;
+  num_lock : bool;
+  number : bool;
+  code : int option;
+  base_code : int option;
+  text : string option;
+}
 
 type modifiers = {
   shift : bool;
@@ -41,6 +73,7 @@ type key = Character of bytes | Named of named_key
 type decoded = {
   key : key;
   modifiers : modifiers;
+  metadata : metadata;
 }
 
 type parse_result = Key of decoded
@@ -75,9 +108,139 @@ let named_key_name = function
   | F10 -> "f10"
   | F11 -> "f11"
   | F12 -> "f12"
+  | F13 -> "f13"
+  | F14 -> "f14"
+  | F15 -> "f15"
+  | F16 -> "f16"
+  | F17 -> "f17"
+  | F18 -> "f18"
+  | F19 -> "f19"
+  | F20 -> "f20"
+  | F21 -> "f21"
+  | F22 -> "f22"
+  | F23 -> "f23"
+  | F24 -> "f24"
+  | F25 -> "f25"
+  | F26 -> "f26"
+  | F27 -> "f27"
+  | F28 -> "f28"
+  | F29 -> "f29"
+  | F30 -> "f30"
+  | F31 -> "f31"
+  | F32 -> "f32"
+  | F33 -> "f33"
+  | F34 -> "f34"
+  | F35 -> "f35"
   | Menu -> "menu"
+  | Capslock -> "capslock"
+  | Scrolllock -> "scrolllock"
+  | Numlock -> "numlock"
+  | Printscreen -> "printscreen"
+  | Pause -> "pause"
+  | Kp0 -> "kp0"
+  | Kp1 -> "kp1"
+  | Kp2 -> "kp2"
+  | Kp3 -> "kp3"
+  | Kp4 -> "kp4"
+  | Kp5 -> "kp5"
+  | Kp6 -> "kp6"
+  | Kp7 -> "kp7"
+  | Kp8 -> "kp8"
+  | Kp9 -> "kp9"
+  | Kpdecimal -> "kpdecimal"
+  | Kpdivide -> "kpdivide"
+  | Kpmultiply -> "kpmultiply"
+  | Kpminus -> "kpminus"
+  | Kpplus -> "kpplus"
+  | Kpenter -> "kpenter"
+  | Kpequal -> "kpequal"
+  | Kpseparator -> "kpseparator"
+  | Kpleft -> "kpleft"
+  | Kpright -> "kpright"
+  | Kpup -> "kpup"
+  | Kpdown -> "kpdown"
+  | Kppageup -> "kppageup"
+  | Kppagedown -> "kppagedown"
+  | Kphome -> "kphome"
+  | Kpend -> "kpend"
+  | Kpinsert -> "kpinsert"
+  | Kpdelete -> "kpdelete"
+  | Mediaplay -> "mediaplay"
+  | Mediapause -> "mediapause"
+  | Mediaplaypause -> "mediaplaypause"
+  | Mediareverse -> "mediareverse"
+  | Mediastop -> "mediastop"
+  | Mediafastforward -> "mediafastforward"
+  | Mediarewind -> "mediarewind"
+  | Medianext -> "medianext"
+  | Mediaprev -> "mediaprev"
+  | Mediarecord -> "mediarecord"
+  | Volumedown -> "volumedown"
+  | Volumeup -> "volumeup"
+  | Mute -> "mute"
+  | Leftshift -> "leftshift"
+  | Leftctrl -> "leftctrl"
+  | Leftalt -> "leftalt"
+  | Leftsuper -> "leftsuper"
+  | Lefthyper -> "lefthyper"
+  | Leftmeta -> "leftmeta"
+  | Rightshift -> "rightshift"
+  | Rightctrl -> "rightctrl"
+  | Rightalt -> "rightalt"
+  | Rightsuper -> "rightsuper"
+  | Righthyper -> "righthyper"
+  | Rightmeta -> "rightmeta"
+  | Iso_level3_shift -> "iso_level3_shift"
+  | Iso_level5_shift -> "iso_level5_shift"
 
 let no_modifiers = { shift = false; meta = false; ctrl = false }
+
+let raw_metadata =
+  {
+    event_type = Press;
+    source = Raw;
+    repeated = false;
+    option = false;
+    super = false;
+    hyper = false;
+    caps_lock = false;
+    num_lock = false;
+    number = false;
+    code = None;
+    base_code = None;
+    text = None;
+  }
+
+let kitty_metadata ~event_type ?(repeated = false) ?(option = false)
+    ?(super = false) ?(hyper = false) ?(caps_lock = false) ?(num_lock = false)
+    ?(number = false) ?code ?base_code ?text () =
+  {
+    event_type;
+    source = Kitty;
+    repeated;
+    option;
+    super;
+    hyper;
+    caps_lock;
+    num_lock;
+    number;
+    code;
+    base_code;
+    text;
+  }
+
+let raw_metadata_for_wire value =
+  if Int.compare value 1 < 0 then raw_metadata
+  else
+    let bits = value - 1 in
+    {
+      raw_metadata with
+      option = not (Int.equal (bits land 2) 0);
+      super = not (Int.equal (bits land 8) 0);
+      hyper = not (Int.equal (bits land 16) 0);
+      caps_lock = not (Int.equal (bits land 32) 0);
+      num_lock = not (Int.equal (bits land 64) 0);
+    }
 
 let modifiers_of_wire value =
   if Int.compare value 0 <= 0 then no_modifiers
@@ -91,7 +254,7 @@ let modifiers_of_wire value =
 
 let wire_modifier_supported value =
   if Int.compare value 1 < 0 then true
-  else Int.equal ((value - 1) land lnot 7) 0
+  else Int.equal ((value - 1) land lnot 0x7f) 0
 
 let combine_modifiers left right =
   {
@@ -100,7 +263,16 @@ let combine_modifiers left right =
     ctrl = left.ctrl || right.ctrl;
   }
 
-let key_event key modifiers = Key { key; modifiers }
+let key_event ?(metadata = raw_metadata) key modifiers =
+  let metadata =
+    match metadata.source, key with
+    | Raw, Character bytes when Bytes.length bytes = 1
+                         && Bytes.get_uint8 bytes 0 >= Char.code '0'
+                         && Bytes.get_uint8 bytes 0 <= Char.code '9' ->
+        { metadata with number = true }
+    | _ -> metadata
+  in
+  Key { key; modifiers; metadata }
 
 let named_event named modifiers = key_event (Named named) modifiers
 
@@ -267,6 +439,7 @@ let modify_other_key params count =
   if Int.compare count 3 < 0 then None
   else
     let modifier = modifiers_of_wire params.(1) in
+    let metadata = raw_metadata_for_wire params.(1) in
     let char_code = params.(2) in
     if not (wire_modifier_supported params.(1))
        || Int.compare char_code 0 < 0
@@ -274,13 +447,15 @@ let modify_other_key params count =
     then None
     else
       match char_code with
-      | 8 | 127 -> Some (named_event Backspace modifier)
-      | 9 -> Some (named_event Tab modifier)
-      | 13 -> Some (named_event Return modifier)
-      | 27 -> Some (named_event Escape modifier)
-      | 32 -> Some (named_event Space modifier)
+      | 8 | 127 -> Some (key_event ~metadata (Named Backspace) modifier)
+      | 9 -> Some (key_event ~metadata (Named Tab) modifier)
+      | 13 -> Some (key_event ~metadata (Named Return) modifier)
+      | 27 -> Some (key_event ~metadata (Named Escape) modifier)
+      | 32 -> Some (key_event ~metadata (Named Space) modifier)
       | char_code ->
-          Some (character_event (Bytes.make 1 (Char.chr char_code)) modifier)
+          Some
+            (key_event ~metadata
+               (Character (Bytes.make 1 (Char.chr char_code))) modifier)
 
 let csi_key_from_params final params count =
   let modifier_wire =
@@ -291,24 +466,31 @@ let csi_key_from_params final params count =
   if not (wire_modifier_supported modifier_wire) then None
   else
     let modifier = modifiers_of_wire modifier_wire in
+    let metadata = raw_metadata_for_wire modifier_wire in
     if Int.equal final (Char.code '~') then
       if Int.equal count 0 then None
       else if Int.equal params.(0) 27 then modify_other_key params count
       else
         (match numeric_key params.(0) with
-        | Some named -> Some (named_event named modifier)
+        | Some named -> Some (key_event ~metadata (Named named) modifier)
         | None -> None)
     else if Int.equal final (Char.code '$') then
       if Int.equal count 0 then None
       else
         (match rxvt_key params.(0) with
-        | Some named -> Some (named_event named (combine_modifiers modifier { no_modifiers with shift = true }))
+        | Some named ->
+            Some
+              (key_event ~metadata (Named named)
+                 (combine_modifiers modifier { no_modifiers with shift = true }))
         | None -> None)
     else if Int.equal final (Char.code '^') then
       if Int.equal count 0 then None
       else
         (match rxvt_key params.(0) with
-        | Some named -> Some (named_event named (combine_modifiers modifier { no_modifiers with ctrl = true }))
+        | Some named ->
+            Some
+              (key_event ~metadata (Named named)
+                 (combine_modifiers modifier { no_modifiers with ctrl = true }))
         | None -> None)
     else
       match final_key final with
@@ -320,7 +502,8 @@ let csi_key_from_params final params count =
             else no_modifiers
           in
           Some
-            (named_event named (combine_modifiers modifier final_modifier))
+            (key_event ~metadata (Named named)
+               (combine_modifiers modifier final_modifier))
       | None -> None
 
 let csi_key_core bytes =
@@ -374,12 +557,13 @@ let csi_key bytes =
   then
     let normalized = normalize_leading_escapes bytes leading_escapes in
     (match csi_key_core normalized with
-    | Some (Key { key; modifiers }) ->
+    | Some (Key { key; modifiers; metadata }) ->
         Some
           (Key
              {
                key;
                modifiers = { modifiers with meta = true };
+               metadata = { metadata with option = true };
              })
     | None -> None)
   else None
@@ -449,12 +633,13 @@ let ss3_key bytes =
   then
     let normalized = normalize_leading_escapes bytes leading_escapes in
     match ss3_key_core normalized with
-    | Some (Key { key; modifiers }) ->
+    | Some (Key { key; modifiers; metadata }) ->
         Some
           (Key
              {
                key;
                modifiers = { modifiers with meta = true };
+               metadata = { metadata with option = true };
              })
     | None -> None
   else None

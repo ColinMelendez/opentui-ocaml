@@ -16,7 +16,7 @@ let modifiers = { Decoder.shift = false; meta = false; ctrl = false }
 let key_input () =
   Core.Lib.Stdin_parser.Key
     { raw = Bytes.of_string "a"; key = Decoder.Character (Bytes.of_string "a");
-      modifiers }
+      modifiers; metadata = Decoder.raw_metadata }
 
 let () =
   run "opentui-core-key-handler"
@@ -33,13 +33,13 @@ let () =
           in
           ignore
             (Key_handler.process_key handler ~raw:(Bytes.of_string "a")
-               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers);
+               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers ());
           equal string "global,local" (String.concat "," (List.rev !calls));
           Core.Event_subscription.cancel local;
           calls := [];
           ignore
             (Key_handler.process_key handler ~raw:(Bytes.of_string "b")
-               ~key:(Decoder.Character (Bytes.of_string "b")) ~modifiers);
+               ~key:(Decoder.Character (Bytes.of_string "b")) ~modifiers ());
           equal string "global" (String.concat "," (List.rev !calls)));
       test "prevention and propagation preserve the two dispatch phases" (fun () ->
           let handler = Key_handler.create () in
@@ -55,7 +55,7 @@ let () =
                 calls := "local" :: !calls));
           ignore
             (Key_handler.process_key handler ~raw:(Bytes.of_string "a")
-               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers);
+               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers ());
           equal string "first,second" (String.concat "," (List.rev !calls));
           let stopped = Key_handler.create () in
           let stopped_calls = ref [] in
@@ -71,7 +71,7 @@ let () =
                 stopped_calls := "local" :: !stopped_calls));
           ignore
             (Key_handler.process_key stopped ~raw:(Bytes.of_string "a")
-               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers);
+               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers ());
           equal string "first" (String.concat "," (List.rev !stopped_calls)));
       test "keyboard callback failures are reported and do not abort dispatch" (fun () ->
           let failures = ref [] in
@@ -92,7 +92,7 @@ let () =
             (Key_handler.on_keypress handler (fun _ -> calls := "second" :: !calls));
           ignore
             (Key_handler.process_key handler ~raw:(Bytes.of_string "a")
-               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers);
+               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers ());
           equal string "second" (String.concat "," (List.rev !calls));
           equal string "global" (String.concat "," (List.rev !failures)));
       test "keypress, key-release, and paste are distinct dispatch families" (fun () ->
@@ -119,10 +119,10 @@ let () =
                  calls := Bytes.to_string (Key_handler.paste_raw event) :: !calls));
           ignore
             (Key_handler.process_key handler ~raw:(Bytes.of_string "a")
-               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers);
+               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers ());
           ignore
             (Key_handler.process_keyrelease handler ~raw:(Bytes.of_string "a")
-               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers);
+               ~key:(Decoder.Character (Bytes.of_string "a")) ~modifiers ());
           ignore (Key_handler.process_paste handler (Bytes.of_string "paste"));
           equal string "keypress,keyrelease,paste"
             (String.concat "," (List.rev !calls)));

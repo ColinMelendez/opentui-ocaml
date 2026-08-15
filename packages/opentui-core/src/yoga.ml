@@ -297,5 +297,24 @@ module Node = struct
     let attach_native_renderable node renderable =
       map_result
         (Opentui_raw.Native_renderable.attach_yoga_node renderable node)
+
+    let set_measure_func node enabled =
+      map_result
+        (Opentui_raw.Yoga.Node.Private.set_measure_func node enabled)
+
+    let unset_measure_func node =
+      map_result (Opentui_raw.Yoga.Node.Private.unset_measure_func node)
+
+    let has_measure_func node =
+      map_result (Opentui_raw.Yoga.Node.Private.has_measure_func node)
+
+    let native_pointer node =
+      map_result (Opentui_raw.Yoga.Node.Private.native_pointer node)
+
+    let set_measure_callback callback =
+      Opentui_raw.Yoga.Node.Private.set_measure_callback callback
+
+    let clear_measure_callback () =
+      Opentui_raw.Yoga.Node.Private.clear_measure_callback ()
   end
 end

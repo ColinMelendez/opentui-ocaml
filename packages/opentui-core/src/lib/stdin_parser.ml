@@ -5,6 +5,7 @@ type event =
       raw : bytes;
       key : Key_decoder.key;
       modifiers : Key_decoder.modifiers;
+      metadata : Key_decoder.metadata;
     }
   | Mouse of {
       raw : bytes;
@@ -14,7 +15,24 @@ type event =
   | Paste of bytes
   | Response of { protocol : protocol; bytes : bytes }
 
-type error = Invalid_timeout | Queue_error of Byte_queue.error
+type protocol_context = {
+  kitty_keyboard_enabled : bool;
+  private_capability_replies_active : bool;
+  pixel_resolution_query_active : bool;
+  explicit_width_cpr_active : bool;
+  startup_cursor_cpr_active : bool;
+}
+
+let default_protocol_context =
+  {
+    kitty_keyboard_enabled = false;
+    private_capability_replies_active = false;
+    pixel_resolution_query_active = false;
+    explicit_width_cpr_active = false;
+    startup_cursor_cpr_active = false;
+  }
+
+type error = Invalid_timeout | Queue_error of Byte_queue.error | Destroyed
 
 type state =
   | Ground
@@ -33,7 +51,7 @@ type t = {
   pending : Byte_queue.t;
   max_pending_bytes : int;
   timeout_ms : int;
-  events : event Queue.t;
+  events : event Stdlib.Queue.t;
   mouse : Mouse_decoder.t;
   mutable state : state;
   mutable cursor : int;
@@ -50,6 +68,14 @@ type t = {
   mutable paste_chunk_length : int;
   paste_tail : int array;
   mutable paste_tail_length : int;
+  kitty_keyboard : bool;
+  mutable protocol_context : protocol_context;
+  arm_timeouts : bool;
+  on_timeout_flush : (unit -> unit) option;
+  clock : Clock.t option;
+  mutable timeout_timer : Clock.timer option;
+  mutable pending_timeout_paused : bool;
+  mutable destroyed : bool;
 }
 
 let default_max_pending_bytes = 64 * 1024
@@ -65,13 +91,16 @@ let bracketed_paste_end = [| escape; 0x5b; 0x32; 0x30; 0x31; 0x7e |]
 let message = function
   | Invalid_timeout -> "stdin parser timeout must be positive"
   | Queue_error error -> "stdin parser queue: " ^ Byte_queue.message error
+  | Destroyed -> "stdin parser is destroyed"
 
 let pp formatter error = Format.pp_print_string formatter (message error)
 
 let queue_error error = Error (Queue_error error)
 
 let create ?initial_capacity ?(max_pending_bytes = default_max_pending_bytes)
-    ?(timeout_ms = default_timeout_ms) () =
+    ?(timeout_ms = default_timeout_ms) ?(kitty_keyboard = true)
+    ?(arm_timeouts = false) ?on_timeout_flush ?clock
+    ?(protocol_context = default_protocol_context) () =
   if Int.compare timeout_ms 0 <= 0 then Error Invalid_timeout
   else
     match
@@ -84,7 +113,7 @@ let create ?initial_capacity ?(max_pending_bytes = default_max_pending_bytes)
             pending;
             max_pending_bytes = Byte_queue.max_capacity pending;
             timeout_ms;
-            events = Queue.create ();
+            events = Stdlib.Queue.create ();
             mouse = Mouse_decoder.create ();
             state = Ground;
             cursor = 0;
@@ -101,11 +130,20 @@ let create ?initial_capacity ?(max_pending_bytes = default_max_pending_bytes)
             paste_chunk_length = 0;
             paste_tail = Array.make (Array.length bracketed_paste_end) 0;
             paste_tail_length = 0;
+            kitty_keyboard;
+            protocol_context;
+            arm_timeouts;
+            on_timeout_flush;
+            clock;
+            timeout_timer = None;
+            pending_timeout_paused = false;
+            destroyed = false;
           }
 
 let timeout_ms parser = parser.timeout_ms
 let pending_bytes parser = Byte_queue.length parser.pending
 let buffer_capacity parser = Byte_queue.capacity parser.pending
+let is_destroyed parser = parser.destroyed
 
 let valid_range ~size ~off ~len =
   Int.compare off 0 >= 0
@@ -166,11 +204,21 @@ let set_ground parser =
   parser.state <- Ground;
   parser.saw_esc <- false
 
+let decode_key parser raw =
+  let decoded =
+    if parser.kitty_keyboard || parser.protocol_context.kitty_keyboard_enabled then
+      match Kitty_keypress.parse raw with
+      | Some value -> Some value
+      | None -> Key_decoder.decode raw
+    else Key_decoder.decode raw
+  in
+  decoded
+
 let emit_key_bytes parser raw =
-  match Key_decoder.decode raw with
-  | Some { key; modifiers } ->
-      Queue.add (Key { raw; key; modifiers }) parser.events
-  | None -> Queue.add (Response { protocol = Unknown; bytes = raw }) parser.events
+  match decode_key parser raw with
+  | Some { key; modifiers; metadata } ->
+      Stdlib.Queue.add (Key { raw; key; modifiers; metadata }) parser.events
+  | None -> Stdlib.Queue.add (Response { protocol = Unknown; bytes = raw }) parser.events
 
 let emit_key parser ~start ~end_exclusive =
   emit_key_bytes parser (copy_range parser ~start ~end_exclusive)
@@ -181,23 +229,23 @@ let emit_sequence parser protocol ~start ~end_exclusive =
   let raw = copy_range parser ~start ~end_exclusive in
   match Mouse_decoder.decode parser.mouse raw with
   | Some { encoding; event } ->
-      Queue.add (Mouse { raw; encoding; event }) parser.events
+      Stdlib.Queue.add (Mouse { raw; encoding; event }) parser.events
   | None ->
-      (match Key_decoder.decode raw with
-      | Some { key; modifiers } ->
-          Queue.add (Key { raw; key; modifiers }) parser.events
-      | None -> Queue.add (Response { protocol; bytes = raw }) parser.events)
+      (match decode_key parser raw with
+      | Some { key; modifiers; metadata } ->
+          Stdlib.Queue.add (Key { raw; key; modifiers; metadata }) parser.events
+      | None -> Stdlib.Queue.add (Response { protocol; bytes = raw }) parser.events)
 
 let emit_sequence_with_escape parser protocol ~start ~end_exclusive =
   let raw = copy_range_with_escape parser ~start ~end_exclusive in
   match Mouse_decoder.decode parser.mouse raw with
   | Some { encoding; event } ->
-      Queue.add (Mouse { raw; encoding; event }) parser.events
+      Stdlib.Queue.add (Mouse { raw; encoding; event }) parser.events
   | None ->
-      (match Key_decoder.decode raw with
-      | Some { key; modifiers } ->
-          Queue.add (Key { raw; key; modifiers }) parser.events
-      | None -> Queue.add (Response { protocol; bytes = raw }) parser.events)
+      (match decode_key parser raw with
+      | Some { key; modifiers; metadata } ->
+          Stdlib.Queue.add (Key { raw; key; modifiers; metadata }) parser.events
+      | None -> Stdlib.Queue.add (Response { protocol; bytes = raw }) parser.events)
 
 let clear_paste_storage parser =
   parser.paste_parts <- [];
@@ -240,7 +288,7 @@ let finish_paste parser =
     (List.rev parser.paste_parts);
   if Int.compare parser.paste_chunk_length 0 > 0 then
     Bytes.blit parser.paste_chunk 0 result !offset parser.paste_chunk_length;
-  Queue.add (Paste result) parser.events;
+  Stdlib.Queue.add (Paste result) parser.events;
   parser.paste_active <- false;
   parser.force_flush <- false;
   clear_paste_storage parser
@@ -610,8 +658,251 @@ let pump_pending parser =
       if not parser.paste_active then pumping := false)
   done
 
+let cancel_timeout parser =
+  match parser.clock, parser.timeout_timer with
+  | Some clock, Some timer ->
+      Clock.cancel clock timer;
+      parser.timeout_timer <- None
+  | Some _, None | None, _ -> parser.timeout_timer <- None
+
+let pixel_prefix bytes =
+  let length = Bytes.length bytes in
+  let prefix_matches index value =
+    Int.compare index length < 0 && Int.equal (Bytes.get_uint8 bytes index) value
+  in
+  if Int.equal length 0 then false
+  else if not (prefix_matches 0 escape) then false
+  else if Int.equal length 1 then true
+  else if not (prefix_matches 1 0x5b) then false
+  else if Int.equal length 2 then true
+  else if not (prefix_matches 2 0x34) then false
+  else if Int.equal length 3 then true
+  else if not (prefix_matches 3 0x3b) then false
+  else if Int.equal length 4 then true
+  else
+    let cursor = ref 4 in
+    let first_digits = ref false in
+    while !cursor < length
+          && Int.compare (Bytes.get_uint8 bytes !cursor) 0x30 >= 0
+          && Int.compare (Bytes.get_uint8 bytes !cursor) 0x39 <= 0 do
+      first_digits := true;
+      incr cursor
+    done;
+    if not !first_digits then false
+    else if Int.equal !cursor length then true
+    else if not (Int.equal (Bytes.get_uint8 bytes !cursor) 0x3b) then false
+    else begin
+      incr cursor;
+      if Int.equal !cursor length then true
+      else
+        let second_digits = ref false in
+        while !cursor < length
+              && Int.compare (Bytes.get_uint8 bytes !cursor) 0x30 >= 0
+              && Int.compare (Bytes.get_uint8 bytes !cursor) 0x39 <= 0 do
+          second_digits := true;
+          incr cursor
+        done;
+        if not !second_digits then false
+        else if Int.equal !cursor length then true
+        else Int.equal !cursor (length - 1)
+             && Int.equal (Bytes.get_uint8 bytes !cursor) (Char.code 't')
+    end
+
+let pixel_response_complete bytes =
+  let length = Bytes.length bytes in
+  length > 0 && Int.equal (Bytes.get_uint8 bytes (length - 1)) (Char.code 't')
+  && pixel_prefix bytes
+
+let pending_pixel_prefix parser =
+  let length = Byte_queue.length parser.pending in
+  if Int.equal length 0 then false
+  else
+    let bytes = copy_range parser ~start:0 ~end_exclusive:length in
+    pixel_prefix bytes && not (pixel_response_complete bytes)
+
+let is_ascii_digit value =
+  Int.compare value (Char.code '0') >= 0
+  && Int.compare value (Char.code '9') <= 0
+
+(* Returns the number of semicolon-separated fields and the numeric prefix of
+   the first field. A pending CSI with this shape may still become a Kitty
+   Unicode key, a special key, or one of the renderer's CPR replies. *)
+let parametric_prefix bytes =
+  let length = Bytes.length bytes in
+  if length <= 2
+     || not (Int.equal (Bytes.get_uint8 bytes 0) escape)
+     || not (Int.equal (Bytes.get_uint8 bytes 1) 0x5b)
+  then None
+  else
+    let valid = ref true in
+    let semicolons = ref 0 in
+    let field_has_digit = ref false in
+    let first_field = ref true in
+    let first_component = ref true in
+    let first_has_digit = ref false in
+    let first_value = ref 0 in
+    for index = 2 to length - 1 do
+      let value = Bytes.get_uint8 bytes index in
+      if is_ascii_digit value then begin
+        field_has_digit := true;
+        if !first_field then begin
+          first_has_digit := true;
+          if !first_component then ()
+          else first_value := (!first_value * 10) + (value - Char.code '0')
+        end
+      end
+      else if Int.equal value 0x3a then begin
+        if not !field_has_digit then valid := false;
+        field_has_digit := false;
+        first_component := false
+      end
+      else if Int.equal value 0x3b then begin
+        if not !field_has_digit || Int.compare !semicolons 2 >= 0 then valid := false;
+        semicolons := !semicolons + 1;
+        first_field := false;
+        first_component := true;
+        field_has_digit := false
+      end
+      else valid := false
+    done;
+    if !valid && !first_has_digit && Int.compare !semicolons 0 > 0 then
+      Some (!semicolons, Some !first_value)
+    else None
+
+let private_reply_prefix bytes =
+  let length = Bytes.length bytes in
+  if length < 3
+     || not (Int.equal (Bytes.get_uint8 bytes 0) escape)
+     || not (Int.equal (Bytes.get_uint8 bytes 1) 0x5b)
+     || not (Int.equal (Bytes.get_uint8 bytes 2) 0x3f)
+  then false
+  else
+    let valid = ref true in
+    for index = 3 to length - 1 do
+      let value = Bytes.get_uint8 bytes index in
+      if not (is_ascii_digit value || Int.equal value 0x3b || Int.equal value 0x24)
+      then valid := false
+    done;
+    !valid
+
+let pending_protocol_is_deferred parser =
+  let length = Byte_queue.length parser.pending in
+  if Int.equal length 0 then false
+  else
+    let bytes = copy_range parser ~start:0 ~end_exclusive:length in
+    if parser.protocol_context.pixel_resolution_query_active
+       && pending_pixel_prefix parser
+    then true
+    else if parser.protocol_context.private_capability_replies_active
+            && private_reply_prefix bytes
+    then true
+    else
+      match parametric_prefix bytes with
+      | None -> false
+      | Some (semicolons, first_value) ->
+          (parser.protocol_context.kitty_keyboard_enabled
+           && Int.compare semicolons 0 > 0)
+          || (parser.protocol_context.explicit_width_cpr_active
+             && Int.equal semicolons 1
+             && Option.equal Int.equal first_value (Some 1))
+          || (parser.protocol_context.startup_cursor_cpr_active
+             && Int.equal semicolons 1)
+
+let force_flush_pending parser =
+  if not parser.paste_active
+     && Int.compare (Byte_queue.length parser.pending) 0 > 0
+     && not (pending_protocol_is_deferred parser)
+  then begin
+    parser.force_flush <- true;
+    pump_pending parser;
+    parser.force_flush <- false
+  end
+
+let cancel_and_arm_timeout parser =
+  cancel_timeout parser;
+  match parser.clock with
+  | Some clock
+    when parser.arm_timeouts
+         && not parser.pending_timeout_paused
+         && not parser.destroyed
+         && not parser.paste_active
+         && Int.compare (Byte_queue.length parser.pending) 0 > 0 ->
+      let delay = float_of_int parser.timeout_ms /. 1000.0 in
+      parser.timeout_timer <-
+        Some
+          (Clock.schedule clock ~delay (fun () ->
+               parser.timeout_timer <- None;
+               if not parser.destroyed && not parser.pending_timeout_paused then begin
+                 if not (pending_protocol_is_deferred parser)
+                 then force_flush_pending parser;
+                 Option.iter (fun callback -> callback ()) parser.on_timeout_flush
+               end))
+  | Some _ | None -> ()
+
+let protocol_context parser = parser.protocol_context
+
+let update_protocol_context parser value =
+  if not parser.destroyed then begin
+    parser.protocol_context <- value;
+    if Int.compare (Byte_queue.length parser.pending) 0 > 0
+       && not (pending_protocol_is_deferred parser)
+    then force_flush_pending parser;
+    cancel_and_arm_timeout parser
+  end
+
+let has_pending_pixel_resolution_response parser =
+  not parser.destroyed
+  && parser.protocol_context.pixel_resolution_query_active
+  && pending_pixel_prefix parser
+
+let pause_pending_timeout parser =
+  if not parser.destroyed then begin
+    parser.pending_timeout_paused <- true;
+    cancel_timeout parser
+  end
+
+let resume_pending_timeout parser =
+  if not parser.destroyed then begin
+    parser.pending_timeout_paused <- false;
+    cancel_and_arm_timeout parser
+  end
+
+let reset_mouse_state parser =
+  if not parser.destroyed then Mouse_decoder.reset parser.mouse
+
+let looks_like_cursor_cpr bytes =
+  let length = Bytes.length bytes in
+  if length < 3 || not (Int.equal (Bytes.get_uint8 bytes 0) escape)
+     || not (Int.equal (Bytes.get_uint8 bytes 1) 0x5b)
+  then false
+  else
+    let valid = ref true in
+    for index = 2 to length - 1 do
+      let value = Bytes.get_uint8 bytes index in
+      if not ((Int.compare value 0x30 >= 0 && Int.compare value 0x39 <= 0)
+              || Int.equal value 0x3b || Int.equal value (Char.code 'R'))
+      then valid := false
+    done;
+    !valid
+
+let abort_pending_startup_cursor_cpr parser =
+  if not parser.destroyed && parser.protocol_context.startup_cursor_cpr_active then begin
+    let length = Byte_queue.length parser.pending in
+    if Int.compare length 0 > 0 then begin
+      let bytes = copy_range parser ~start:0 ~end_exclusive:length in
+      if looks_like_cursor_cpr bytes then begin
+        Byte_queue.clear parser.pending;
+        parser.state <- Ground;
+        parser.just_flushed_esc <- false;
+        reset_unit parser
+      end
+    end;
+    cancel_and_arm_timeout parser
+  end
+
 let push_with parser ~source_size ~get ~append ~off ~len =
-  if not (valid_range ~size:source_size ~off ~len) then
+  if parser.destroyed then Error Destroyed
+  else if not (valid_range ~size:source_size ~off ~len) then
     queue_error Byte_queue.Invalid_range
   else if Int.equal len 0 then (
     emit_empty_key parser;
@@ -641,6 +932,7 @@ let push_with parser ~source_size ~get ~append ~off ~len =
               position := !position + take;
               pump_pending parser
     done;
+    cancel_and_arm_timeout parser;
     match !failure with
     | None -> Ok ()
     | Some error -> queue_error error
@@ -665,25 +957,46 @@ let push_bytes parser ~source ~off ~len =
     ~off ~len
 
 let read parser =
-  if Queue.is_empty parser.events then None else Some (Queue.take parser.events)
+  if parser.destroyed || Stdlib.Queue.is_empty parser.events then None
+  else Some (Stdlib.Queue.take parser.events)
 
 let drain parser callback =
-  while not (Queue.is_empty parser.events) do
-    callback (Queue.take parser.events)
+  while not parser.destroyed && not (Stdlib.Queue.is_empty parser.events) do
+    callback (Stdlib.Queue.take parser.events)
   done
 
 let flush_timeout parser =
-  if not parser.paste_active && Int.compare (Byte_queue.length parser.pending) 0 > 0 then (
-    parser.force_flush <- true;
-    pump_pending parser;
-    parser.force_flush <- false)
+  if not parser.destroyed && not parser.pending_timeout_paused
+     && not (pending_protocol_is_deferred parser)
+  then begin
+    cancel_timeout parser;
+    force_flush_pending parser
+  end
 
 let reset parser =
-  Byte_queue.clear parser.pending;
-  Queue.clear parser.events;
-  parser.state <- Ground;
-  parser.just_flushed_esc <- false;
-  parser.paste_active <- false;
-  Mouse_decoder.reset parser.mouse;
-  clear_paste_storage parser;
-  reset_unit parser
+  if not parser.destroyed then begin
+    cancel_timeout parser;
+    Byte_queue.clear parser.pending;
+    Stdlib.Queue.clear parser.events;
+    parser.state <- Ground;
+    parser.just_flushed_esc <- false;
+    parser.paste_active <- false;
+    parser.pending_timeout_paused <- false;
+    Mouse_decoder.reset parser.mouse;
+    clear_paste_storage parser;
+    reset_unit parser
+  end
+
+let destroy parser =
+  if not parser.destroyed then begin
+    cancel_timeout parser;
+    parser.destroyed <- true;
+    Byte_queue.clear parser.pending;
+    Stdlib.Queue.clear parser.events;
+    parser.state <- Ground;
+    parser.just_flushed_esc <- false;
+    parser.paste_active <- false;
+    Mouse_decoder.reset parser.mouse;
+    clear_paste_storage parser;
+    reset_unit parser
+  end

@@ -322,7 +322,7 @@ let () =
             | None -> false);
           equal bool false !rendered;
           Renderer.destroy renderer);
-      test "unsupported drawing commands fail instead of being dropped"
+      test "opacity and scissor drawing commands execute through native buffers"
         (fun () ->
           let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
           let child = make_child (Renderer.context renderer) () in
@@ -331,7 +331,7 @@ let () =
             (expect_ok
                (Renderable.Private.attach ~parent:(Renderer.root renderer)
                   ~child ~index:0));
-          expect_error Core.Error.Unsupported (Renderer.render renderer ~force:true);
+          ignore (expect_ok (Renderer.render renderer ~force:true));
           Renderer.destroy renderer);
       test "focus, visibility, detach, and destruction preserve reference lifecycle order"
         (fun () ->

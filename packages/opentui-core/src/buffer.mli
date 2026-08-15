@@ -66,8 +66,97 @@ val draw_text_buffer :
   y:int32 ->
   (unit, Error.t) result
 
+val draw_frame_buffer :
+  t ->
+  source:Owned_buffer.t ->
+  x:int32 ->
+  y:int32 ->
+  ?source_x:int32 ->
+  ?source_y:int32 ->
+  ?source_width:int32 ->
+  ?source_height:int32 ->
+  unit ->
+  (unit, Error.t) result
+
+val draw_grid :
+  t ->
+  border_chars:int32 array ->
+  border_foreground:Color.t ->
+  border_background:Color.t ->
+  column_offsets:int32 array ->
+  row_offsets:int32 array ->
+  draw_inner:bool ->
+  draw_outer:bool ->
+  (unit, Error.t) result
+
+val set_cell_with_alpha_blending :
+  t ->
+  x:int32 ->
+  y:int32 ->
+  character:int32 ->
+  foreground:Color.t ->
+  background:Color.t ->
+  attributes:int32 ->
+  (unit, Error.t) result
+
+val fill_rect :
+  t ->
+  x:int32 ->
+  y:int32 ->
+  width:int32 ->
+  height:int32 ->
+  background:Color.t ->
+  (unit, Error.t) result
+
 (** [write_resolved_chars buffer ~output ~add_line_breaks] writes the
     resolved native output into caller-owned [output]. The returned count is
     the defined prefix length; insufficient capacity is a structured error. *)
 val write_resolved_chars :
   t -> output:bytes -> add_line_breaks:bool -> (int32, Error.t) result
+
+val draw_image :
+  t ->
+  image:Image.t ->
+  x:int32 ->
+  y:int32 ->
+  width:int32 ->
+  height:int32 ->
+  pixel_width:int32 ->
+  pixel_height:int32 ->
+  ?source_x:int32 ->
+  ?source_y:int32 ->
+  ?source_width:int32 ->
+  ?source_height:int32 ->
+  ?protocol:Image.protocol ->
+  unit -> (unit, Error.t) result
+
+type color_target = Foreground | Background | Both
+
+val color_matrix :
+  t -> matrix:floatarray -> cell_mask:floatarray -> strength:float ->
+  target:color_target -> (unit, Error.t) result
+
+val color_matrix_uniform :
+  t -> matrix:floatarray -> strength:float -> target:color_target ->
+  (unit, Error.t) result
+
+val push_scissor_rect :
+  t -> x:int32 -> y:int32 -> width:int32 -> height:int32 -> (unit, Error.t) result
+val pop_scissor_rect : t -> (unit, Error.t) result
+val clear_scissor_rects : t -> (unit, Error.t) result
+val push_opacity : t -> float -> (unit, Error.t) result
+val pop_opacity : t -> (unit, Error.t) result
+val current_opacity : t -> (float, Error.t) result
+val clear_opacity : t -> (unit, Error.t) result
+
+type snapshot = int32 array * int32 array * int32 array * int32 array
+val snapshot : t -> (snapshot, Error.t) result
+val restore : t -> snapshot -> (unit, Error.t) result
+
+type cell_snapshot = {
+  width : int32;
+  height : int32;
+  cells : snapshot;
+}
+
+val cell_snapshot : t -> (cell_snapshot, Error.t) result

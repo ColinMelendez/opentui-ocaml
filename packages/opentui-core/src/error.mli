@@ -3,10 +3,12 @@
 type t =
   | Closed
   | Destroyed
+  | Invalid_argument
   | Owner_mismatch
   | Not_child
   | Invalid_anchor
   | Unsupported
+  | Io of string
   | Native of Native.Error.t
 
 (** [message error] is a diagnostic string for [error]. *)

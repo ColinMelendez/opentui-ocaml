@@ -4,6 +4,7 @@ type key_event = {
   raw : bytes;
   key : Key_decoder.key;
   modifiers : Key_decoder.modifiers;
+  metadata : Key_decoder.metadata;
   kind : event_kind;
   mutable default_prevented : bool;
   mutable propagation_stopped : bool;
@@ -111,6 +112,7 @@ let create ?(on_error = fun _ -> ()) () =
 let key_raw (event : key_event) = event.raw
 let key (event : key_event) = event.key
 let key_modifiers (event : key_event) = event.modifiers
+let key_metadata (event : key_event) = event.metadata
 let key_event_kind (event : key_event) = event.kind
 let paste_raw (event : paste_event) = event.raw
 
@@ -254,15 +256,15 @@ let process_key_event handler (event : key_event) (channel : key_event channel)
     emit_internal_key handler ~kind:event.kind internal event ~stop;
   true
 
-let process_key handler ~raw ~key ~modifiers =
+let process_key handler ~raw ~key ~modifiers ?(metadata = Key_decoder.raw_metadata) () =
   process_key_event handler
-    { raw; key; modifiers; kind = Keypress; default_prevented = false;
+    { raw; key; modifiers; metadata; kind = Keypress; default_prevented = false;
       propagation_stopped = false }
     handler.keypress handler.internal_keypress
 
-let process_keyrelease handler ~raw ~key ~modifiers =
+let process_keyrelease handler ~raw ~key ~modifiers ?(metadata = Key_decoder.raw_metadata) () =
   process_key_event handler
-    { raw; key; modifiers; kind = Keyrelease; default_prevented = false;
+    { raw; key; modifiers; metadata; kind = Keyrelease; default_prevented = false;
       propagation_stopped = false }
     handler.keyrelease handler.internal_keyrelease
 

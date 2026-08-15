@@ -186,6 +186,8 @@ module Private : sig
     ?key_release:(t -> Lib.Key_handler.key_event -> unit) ->
     ?paste:(t -> Lib.Key_handler.paste_event -> unit) ->
     ?mouse_event:(t -> mouse_event -> unit) ->
+    ?selection_changed:(t -> Lib.Selection.t option -> unit) ->
+    ?should_start_selection:(t -> x:int -> y:int -> bool) ->
     ?render_before:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
     ?render_self:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
     ?render_after:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
@@ -222,6 +224,10 @@ module Private : sig
   val with_yoga_node :
     t -> (Yoga.Node.t -> ('a, Error.t) result) -> ('a, Error.t) result
 
+  val set_measure_func :
+    t -> Measure_callback.callback -> (unit, Error.t) result
+  val clear_measure_func : t -> (unit, Error.t) result
+
   val mark_yoga_dirty : t -> (unit, Error.t) result
 
   val attach :
@@ -245,6 +251,9 @@ module Private : sig
     mouse_event
 
   val process_mouse_event : t -> mouse_event -> unit
+
+  val should_start_selection : t -> x:int -> y:int -> bool
+  val selection_changed : t -> Lib.Selection.t option -> unit
 
   val resize_root : t -> width:int32 -> height:int32 -> (unit, Error.t) result
   val render_root :

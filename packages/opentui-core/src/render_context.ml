@@ -9,6 +9,20 @@ type frame_event = Renderer_events.frame_event = {
   frame_id : int64;
 }
 
+type capabilities_event = Renderer_events.capabilities_event
+type palette_event = Renderer_events.palette_event
+type theme_mode = Renderer_theme_mode.mode
+type theme_mode_event = Renderer_events.theme_mode_event
+type selection_event = Renderer_events.selection_event
+type focus_event = Renderer_events.focus_event
+
+type pixel_resolution = {
+  width : int32;
+  height : int32;
+}
+
+type render_geometry = Lib.Render_geometry.t
+
 type handler_source = Renderer_events.handler_source = Keyboard | Pointer
 type handler_scope = Renderer_events.handler_scope = Global | Renderable
 type handler_kind = Renderer_events.handler_kind = Keypress | Keyrelease | Paste | Mouse
@@ -38,6 +52,13 @@ type t = {
   mutable width : int32;
   mutable height : int32;
   mutable frame_id : int64;
+  mutable capabilities : Terminal_capabilities.t option;
+  mutable palette : Lib.Terminal_palette.normalized option;
+  mutable theme_mode : theme_mode option;
+  mutable pixel_resolution : pixel_resolution option;
+  mutable render_geometry : render_geometry;
+  mutable screen_mode : Lib.Render_geometry.screen_mode;
+  mutable footer_height : int;
   mutable layout_generation : int64;
   mutable render_list_revision : int64;
   mutable render_requested : bool;
@@ -65,15 +86,50 @@ let width context =
   | Error error -> Error error
   | Ok () -> Ok context.width
 
+let terminal_width context = width context
+
 let height context =
   match ensure_open context with
   | Error error -> Error error
   | Ok () -> Ok context.height
 
+let terminal_height context = height context
+
 let frame_id context =
   match ensure_open context with
   | Error error -> Error error
   | Ok () -> Ok context.frame_id
+
+let capabilities context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok context.capabilities
+
+let width_method context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () ->
+      (match context.capabilities with
+      | None -> Error Error.Unsupported
+      | Some capabilities -> Ok capabilities.unicode)
+
+let palette context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok context.palette
+
+let theme_mode context =
+  match ensure_open context with Error error -> Error error | Ok () -> Ok context.theme_mode
+
+let pixel_resolution context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok context.pixel_resolution
+
+let render_geometry context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok context.render_geometry
 
 let layout_generation context =
   match ensure_open context with
@@ -132,6 +188,117 @@ let prepend_frame context callback =
   match ensure_open context with
   | Error error -> Error error
   | Ok () -> Ok (Renderer_events.prepend_frame context.events callback)
+
+let on_capabilities context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.on_capabilities context.events callback)
+
+let once_capabilities context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.once_capabilities context.events callback)
+
+let prepend_capabilities context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.prepend_capabilities context.events callback)
+
+let on_palette context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.on_palette context.events callback)
+
+let once_palette context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.once_palette context.events callback)
+
+let prepend_palette context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.prepend_palette context.events callback)
+
+let on_theme_mode context callback =
+  match ensure_open context with Error error -> Error error | Ok () -> Ok (Renderer_events.on_theme_mode context.events callback)
+
+let once_theme_mode context callback =
+  match ensure_open context with Error error -> Error error | Ok () -> Ok (Renderer_events.once_theme_mode context.events callback)
+
+let prepend_theme_mode context callback =
+  match ensure_open context with Error error -> Error error | Ok () -> Ok (Renderer_events.prepend_theme_mode context.events callback)
+
+let on_selection context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.on_selection context.events callback)
+
+let once_selection context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.once_selection context.events callback)
+
+let prepend_selection context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.prepend_selection context.events callback)
+
+let on_focus context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.on_focus context.events callback)
+
+let once_focus context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.once_focus context.events callback)
+
+let prepend_focus context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.prepend_focus context.events callback)
+
+let on_destroy context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.on_destroy context.events callback)
+
+let once_destroy context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.once_destroy context.events callback)
+
+let prepend_destroy context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.prepend_destroy context.events callback)
+
+let register_lifecycle_pass context ~id callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () ->
+      let entry = { id; callback } in
+      context.lifecycle_passes <-
+        entry
+        :: List.filter
+             (fun (current : lifecycle_pass) -> not (Int.equal current.id id))
+             context.lifecycle_passes;
+      Ok ()
+
+let unregister_lifecycle_pass context ~id =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () ->
+      context.lifecycle_passes <-
+        List.filter
+          (fun (current : lifecycle_pass) -> not (Int.equal current.id id))
+          context.lifecycle_passes;
+      Ok ()
+
+let lifecycle_pass_count context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (List.length context.lifecycle_passes)
 
 let on_handler_error context callback =
   match ensure_open context with
@@ -219,7 +386,7 @@ module Private = struct
     { source = Keyboard; scope; kind; owner_num = error.owner_num;
       exception_value = error.exception_value }
 
-  let create ~owner ~width ~height =
+  let create ~owner ~width ~height ~capabilities =
     let events = Renderer_events.Private.create () in
     let key_handler =
       Lib.Key_handler.create ~on_error:(fun error ->
@@ -232,6 +399,16 @@ module Private = struct
       width;
       height;
       frame_id = 0L;
+      capabilities;
+      palette = None;
+      theme_mode = None;
+      pixel_resolution = None;
+      render_geometry =
+        Lib.Render_geometry.calculate Lib.Render_geometry.Alternate_screen
+          ~terminal_width:(Int32.to_int width)
+          ~terminal_height:(Int32.to_int height) ~footer_height:0;
+      screen_mode = Lib.Render_geometry.Alternate_screen;
+      footer_height = 0;
       layout_generation = 0L;
       render_list_revision = 0L;
       render_requested = false;
@@ -249,9 +426,36 @@ module Private = struct
       key_handler;
     }
 
+  let set_capabilities context capabilities =
+    context.capabilities <- Some capabilities
+
+  let set_palette context palette = context.palette <- Some palette
+
+  let set_theme_mode context mode =
+    context.theme_mode <- Some mode;
+    ignore (Renderer_events.Private.emit_theme_mode context.events mode)
+
+  let set_pixel_resolution context resolution =
+    context.pixel_resolution <- resolution
+
+  let set_render_geometry context screen_mode ~footer_height =
+    let geometry =
+      Lib.Render_geometry.calculate screen_mode
+        ~terminal_width:(Int32.to_int context.width)
+        ~terminal_height:(Int32.to_int context.height) ~footer_height
+    in
+    context.screen_mode <- screen_mode;
+    context.footer_height <- max 0 footer_height;
+    context.render_geometry <- geometry
+
   let resize context ~width ~height =
     context.width <- width;
     context.height <- height;
+    context.render_geometry <-
+      Lib.Render_geometry.calculate context.screen_mode
+        ~terminal_width:(Int32.to_int width)
+        ~terminal_height:(Int32.to_int height)
+        ~footer_height:context.footer_height;
     context.hit_grid_width <- Int32.to_int width;
     context.hit_grid_height <- Int32.to_int height;
     context.current_hit_grid <- create_hit_grid ~width ~height;
@@ -303,11 +507,19 @@ module Private = struct
     | Some current when Int.equal current.id id -> ()
     | previous ->
         context.focused <- Some { id; blur };
-        Option.iter (fun current -> current.blur ()) previous
+        Option.iter (fun current -> current.blur ()) previous;
+        ignore
+          (Renderer_events.Private.emit_focus context.events
+             { Renderer_events.current = Some id;
+               previous = Option.map (fun current -> current.id) previous })
 
   let blur_renderable context ~id =
     match context.focused with
-    | Some current when Int.equal current.id id -> context.focused <- None
+    | Some current when Int.equal current.id id ->
+        context.focused <- None;
+        ignore
+          (Renderer_events.Private.emit_focus context.events
+             { Renderer_events.current = None; previous = Some id })
     | Some _ | None -> ()
 
   let focused_num context =
@@ -376,6 +588,10 @@ module Private = struct
     if not context.closed then begin
       context.closed <- true;
       context.render_requested <- false;
+      context.capabilities <- None;
+      context.palette <- None;
+      context.theme_mode <- None;
+      context.pixel_resolution <- None;
       context.lifecycle_passes <- [];
       context.focused <- None;
       context.live_request_count <- 0;
@@ -393,3 +609,18 @@ module Private = struct
   let events context = context.events
   let key_handler context = context.key_handler
 end
+
+let request_live context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Private.request_live context; Ok ()
+
+let drop_live context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Private.drop_live context; Ok ()
+
+let live_request_count context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Private.live_request_count context)
