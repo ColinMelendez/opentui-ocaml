@@ -200,12 +200,12 @@ let create context ?id ?(value = "") ?placeholder ?placeholder_color
           (Renderable.on_focused (Textarea.as_renderable textarea) (fun () ->
                match current_value input with
                | Ok value -> input.last_committed <- value
-               | Error _ -> ()));
+               | Error _ -> ()))
         ignore
           (Renderable.on_blurred (Textarea.as_renderable textarea) (fun () ->
                match current_value input with
                | Ok value -> commit_changed input value
-               | Error _ -> ()));
+               | Error _ -> ()))
         Option.iter
           (fun callback -> ignore (Event_kernel.on input.input_events callback))
           on_input;

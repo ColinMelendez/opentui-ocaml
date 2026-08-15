@@ -95,3 +95,8 @@
  (name test_interactive_controls)
  (modules test_interactive_controls)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_renderable_batch)
+ (modules test_renderable_batch)
+ (libraries opentui-core windtrap))
