@@ -105,3 +105,8 @@
  (name test_parser_content)
  (modules test_parser_content)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_visual_runtime)
+ (modules test_visual_runtime)
+ (libraries opentui-core eio_main windtrap))
