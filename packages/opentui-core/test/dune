@@ -100,3 +100,8 @@
  (name test_renderable_batch)
  (modules test_renderable_batch)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_parser_content)
+ (modules test_parser_content)
+ (libraries opentui-core windtrap))
