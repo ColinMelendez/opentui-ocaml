@@ -69,7 +69,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | `lib/ascii.font.ts` | No OCaml module | Deferred |
 | `lib/bunfs.ts` | No OCaml module | Deferred Bun embedded-file path handling; the Eio-native package has no Bun filesystem boundary |
 | `lib/fonts/*.json` | No OCaml module | Deferred support data for the ASCII-font feature |
-| `lib/clipboard.ts` | No OCaml module | Deferred |
+| `lib/clipboard.ts`, `lib/host-clipboard.internal.ts`, `lib/host-clipboard.native.ts` | No OCaml module | Deferred; clipboard policy and host backends remain outside the current OCaml scope |
 | `lib/clock.ts` | Eio `Clock` capability supplied at `packages/opentui-core/src/platform/eio_runtime` | Translated Eio clock boundary; no standalone clock module mirrors the Bun/Node helper |
 | `lib/data-paths.ts`, `env.ts`, `validate-dir-name.ts` | No OCaml module | Deferred |
 | `lib/debounce.ts` | No OCaml module | Deferred |

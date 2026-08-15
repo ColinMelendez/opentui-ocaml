@@ -12,7 +12,6 @@
   build-opentui-native.sh
   opentui_abi.h
   span_feed_exports.patch
-  text-buffer-negative-origin.patch
   (source_tree ../../../vendor/opentui/packages/core/src/zig))
  (action
   (run sh %{project_root}/packages/opentui-raw/native/build-opentui-native.sh %{targets})))

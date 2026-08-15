@@ -40,7 +40,7 @@ if [ "$span_feed_hash" != "a41a8228e920a9250b44f9812240844ccfbcca4f803ebd29e2002
   printf '%s\n' "pinned native-span-feed.zig does not match the audited source" >&2
   exit 1
 fi
-if [ "$buffer_hash" != "25db0f331d257cab16317c5a652aadaa5f593187a8d4cb8a7aa483fa8b187059" ]; then
+if [ "$buffer_hash" != "d702afe1c741d10d5d6e0cde52572454395f581d581c509809e654cc9e0a1c68" ]; then
   printf '%s\n' "pinned buffer.zig does not match the audited source" >&2
   exit 1
 fi
@@ -92,7 +92,6 @@ if ! command -v patch >/dev/null 2>&1; then
 fi
 chmod u+w "$patched_source_dir/native-span-feed.zig" "$patched_source_dir/buffer.zig"
 (CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/span_feed_exports.patch")
-(CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/text-buffer-negative-origin.patch")
 (CDPATH= cd -- "$patched_source_dir" && zig build -Doptimize=ReleaseSafe --prefix "$zig_prefix")
 
 artifact="$output_dir/lib/$target_name/$library_name"

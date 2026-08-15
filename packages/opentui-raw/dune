@@ -10,7 +10,6 @@
   (extra_deps
    raw_status.h
    native/span_feed_exports.patch
-   native/text-buffer-negative-origin.patch
    native/opentui-native.stamp
    native/libopentui.dylib
    native/libopentui.so))
