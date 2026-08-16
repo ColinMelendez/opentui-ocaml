@@ -296,6 +296,17 @@ The specialized dispatch contracts are recorded separately in the
 and the
 [pointer-dispatch feature record](major-features/in-progress/pointer-dispatch/feature.md).
 
+The [background feature record](major-features/in-progress/background/feature.md)
+defines the planned application-owned Eio executor pool used for selected
+CPU-heavy work. Its completion handlers return to the submitting domain and
+reuse existing renderer/event flows; it does not make retained or native state
+concurrently mutable.
+
+The [scheduler feature record](major-features/in-progress/scheduler/feature.md)
+defines the separate renderer-owned Eio clock, timer, render-request wakeup,
+and paced frame loop. Scheduler callbacks remain on the renderer domain and do
+not use the background executor pool.
+
 ## Contribution workflow
 
 The detailed translation rules, semantic decision checklist, and feature-porting

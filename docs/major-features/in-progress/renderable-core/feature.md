@@ -256,15 +256,19 @@ services. The supported slice includes:
 - the initial typed terminal-capability snapshot, synchronous capability-response
   processing, shared capability notifications, and one-shot forced repaint
   invalidation; and
-- Eio-owned terminal input, output, clocks, cancellation, and resource scopes
-  at the runtime boundary.
+- Eio-backed terminal input/output adapters and Unix terminal resource scopes
+  at the runtime boundary. `Lib.Clock` remains an injected capability with a
+  deterministic manual implementation; an Eio system-clock adapter and a
+  renderer-owned scheduler are specified by the separate
+  [`scheduler` feature record](../scheduler/feature.md) but are not yet
+  included.
 
-The retained core represents opacity and clipping in its command list. This
-slice exposes no Buffer operations for those stack operations, so the
-retained executor returns `Error Unsupported` instead of silently dropping a
-command. `Buffer.t` includes the reference native text-buffer-view and box
-drawing operations used by the retained renderables. Opacity and clipping
-stack operations remain separate drawing-surface boundaries.
+The retained core represents opacity and clipping as scoped command-list
+operations. `Buffer.t` exposes typed push/pop operations for the native
+opacity and scissor stacks, and the retained executor applies those commands
+around child traversal while propagating native failures as structured Core
+errors. The same buffer boundary includes the reference native
+text-buffer-view and box drawing operations used by retained renderables.
 
 The following remain outside this slice. This feature provides the retained
 objects and seams they require; it does not implement their dispatch or

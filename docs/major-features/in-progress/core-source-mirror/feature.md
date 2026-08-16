@@ -77,7 +77,7 @@ reference concept closely enough for the name to be truthful.
 | Reference path | OCaml path | Status | Boundary |
 | --- | --- | --- | --- |
 | `Renderable.ts` | `src/renderable.ml`, `src/layout_children.ml` | Active slice | Heterogeneous retained nodes, typed child capabilities, layout state, lifecycle, focus, keyboard slots, and pointer routing. |
-| `renderer.ts` | `src/renderer.ml` | Active translated owner | Renderer ownership, frames, borrowed buffers, retained-tree rendering, hit-grid routing, focus, input dispatch, capability/palette response processing, renderer geometry, forced repaint invalidation, post-process callbacks, console ownership, and terminal-session hooks exist. Terminal setup/output is supplied by the Eio/Unix session boundary; unsupported native scissor reports `Error.Unsupported`. |
+| `renderer.ts` | `src/renderer.ml`; [`scheduler` feature record](../scheduler/feature.md) | Active translated owner | Renderer ownership, explicit frames, borrowed buffers, retained-tree rendering, scoped native opacity/scissor execution, hit-grid routing, focus, input dispatch, capability/palette response processing, renderer geometry, forced repaint invalidation, post-process callbacks, console ownership, and terminal-session hooks exist. Terminal setup/output is supplied by the Eio/Unix session boundary; the renderer-owned Eio scheduler is designed but not implemented. |
 | `types.ts` (`RenderContext`) | `src/render_context.ml`, with internal `src/renderer_events.ml` | Active translated capability owner | Renderer-owned dimensions, copied terminal capabilities, typed owner-local event sources, lifecycle, focus, input, and render-request state are composed through the context. |
 | `types.ts` (`TerminalCapabilities`) | `src/terminal_capabilities.ml`, populated by `src/renderer.ml` from `opentui-raw` | Active slice | Immutable typed snapshots, copied terminal strings, and renderer/context sharing are implemented. |
 | `yoga.ts` | `src/yoga.ml` | Active slice | Independent node ownership, non-destructive detach, explicit free, style operations, and layout readback exist. |
@@ -140,7 +140,7 @@ reference concept closely enough for the name to be truthful.
 | `post/effects.ts` | `src/post/effects.ml`, `src/renderer.ml` | Active translated slice | Stateful distortion, vignette, cloud, flame, CRT, rainbow, and bloom effects preserve reference configuration/update contracts without retaining a buffer or hiding a scheduler; renderer post-process callbacks use owner-local IDs and explicit frame deltas. |
 | `console.ts` | `src/console.ml`, integrated by `src/renderer.ml` | Active translated slice | Explicit log append/level storage, wrapping, scrolling, pointer selection/copy, position/size, visibility/focus, overlay drawing, resize, and destruction are renderer-owned. Process-global console capture, Node inspection, file saving, and stdin listener mutation are intentionally absent. |
 | `lib/tree-sitter-styled-text.ts`, `lib/tree-sitter/{client,default-parsers,index,parsers-config,resolve-ft,types}.ts` | `src/tree_sitter_styled_text.ml`; `src/lib/tree_sitter_client.ml`, `tree_sitter_types.ml`, `tree_sitter_resolve_filetype.ml` | Active typed boundary | An injectable parser registry, filetype resolver, generation-ordered synchronous requests, highlight metadata, UTF-8 codepoint ranges, conceal/injection styling, and fallback errors replace the reference JS/WASM worker boundary. |
-| `lib/tree-sitter/{assets,download-utils,parser.worker,update-assets,default-parser-assets.bun}.ts`; `platform/runtime-assets.*.ts` | No OCaml module | Translated/non-applicable platform mechanisms | Bundled JS/WASM assets, workers, download/update tooling, and Bun/Node asset loaders do not belong in the Eio-native runtime; applications inject parser implementations. |
+| `lib/tree-sitter/{assets,download-utils,parser.worker,update-assets,default-parser-assets.bun}.ts`; `platform/runtime-assets.*.ts` | [`background` feature record](../background/feature.md); no OCaml module yet | Translated platform boundary | Bundled JS/WASM assets, download/update tooling, and Bun/Node loaders remain non-applicable. Worker CPU isolation is planned as an application-owned Eio executor pool around injected parser implementations. |
 | `lib/detect-links.ts`, `lib/hast-styled-text.ts` | `src/detect_links.ml`, `src/hast_styled_text.ml` | Active supporting utilities | Plain/syntax link ranges and typed HAST-to-styled-text conversion are used by content renderables; host parsers and JavaScript HAST loading remain outside Core. |
 
 ### Explicitly excluded runtime areas
@@ -180,9 +180,11 @@ details rather than missing Core APIs:
   Eio runtime equivalent.
 - `lib/fonts/*.json` is checked in as generated typed data for the active
   ASCII-font feature.
-- tree-sitter JS/WASM assets, workers, download/update scripts, and default Bun
-  parser assets are not runtime mechanisms in the Eio port; parser clients are
-  injected as typed OCaml functions.
+- tree-sitter JS/WASM assets, download/update scripts, and default Bun parser
+  assets are not runtime mechanisms in the Eio port; parser clients are
+  injected as typed OCaml functions, while the reference worker's CPU
+  isolation role is covered by the [`background` feature
+  record](../background/feature.md).
 - `node-assets.ts`, `node-asset-target.ts`, and Node/Bun runtime asset loaders
   have no Eio runtime equivalent.
 

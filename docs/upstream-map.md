@@ -37,7 +37,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | Reference path | Repository-relative OCaml path | Status |
 | --- | --- | --- |
 | `Renderable.ts` | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); `packages/opentui-core/src/renderable.ml` and `layout_children.ml` | Active slice |
-| `renderer.ts` (`CliRenderer`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); `packages/opentui-core/src/renderer.ml` | Active translated core owner; terminal setup/output is the Eio session boundary |
+| `renderer.ts` (`CliRenderer`) | [`renderable-core` feature record](major-features/in-progress/renderable-core/feature.md); [`scheduler` feature record](major-features/in-progress/scheduler/feature.md); `packages/opentui-core/src/renderer.ml` | Active translated core owner; terminal setup/output is the Eio session boundary, while the Eio frame scheduler is designed but not implemented |
 | `types.ts` (`RenderContext`) | `packages/opentui-core/src/render_context.ml`; internal `renderer_events.ml` is surfaced through `Render_context` and `Renderer` | Active translated owner-local capability view |
 | `types.ts` (`TerminalCapabilities`) | `packages/opentui-core/src/terminal_capabilities.ml`; snapshot conversion remains in `renderer.ml` below the raw binding | Active slice |
 | `yoga.ts` | `packages/opentui-core/src/yoga.ml`; native ownership remains in `opentui-raw` | Active slice |
@@ -51,7 +51,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | `index.ts` | `packages/opentui-core/src` Dune library boundary | Translated package boundary; no literal barrel module is introduced |
 | `node-assets.ts`, `node-asset-target.ts` | No OCaml module | Translated/non-applicable Node native and parser-asset discovery; the Eio-native package has no Node asset manifest |
 | `platform/assets.ts`, `platform/ffi.ts`, `platform/runtime.ts` | `packages/opentui-core/src/platform` and `packages/opentui-raw` | Translated Eio/Unix runtime and native boundary |
-| `platform/runtime-assets.node.ts`, `platform/runtime-assets.bun.ts`, `platform/worker*.ts` | No OCaml module | Translated/non-applicable Node/Bun asset loaders and worker entry points |
+| `platform/runtime-assets.node.ts`, `platform/runtime-assets.bun.ts`, `platform/worker*.ts` | [background feature record](major-features/in-progress/background/feature.md); no OCaml module yet | Node/Bun asset loaders and worker entry points are non-applicable; their CPU-isolation role is planned as an application-owned Eio executor pool |
 
 ### Input and library modules
 
@@ -73,7 +73,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | `lib/bunfs.ts` | No OCaml module | Translated/non-applicable Bun embedded-file path handling; the Eio-native package has no Bun filesystem boundary |
 | `lib/fonts/*.json` | Generated into `packages/opentui-core/src/lib/ascii_font_data.ml` | Translated support data; the JSON asset boundary is replaced by a checked-in typed OCaml data module |
 | `lib/clipboard.ts`, `lib/host-clipboard.internal.ts`, `lib/host-clipboard.native.ts` | `packages/opentui-core/src/lib/clipboard.ml` | Active translated clipboard policy/OSC52 service with injected host/terminal backends |
-| `lib/clock.ts` | `packages/opentui-core/src/lib/clock.ml`; Eio clock adapters under `packages/opentui-core/src/platform/eio_runtime` | Active translated one-shot clock/cancellation capability; Eio owns the system implementation |
+| `lib/clock.ts` | `packages/opentui-core/src/lib/clock.ml`; [`scheduler` feature record](major-features/in-progress/scheduler/feature.md) | Active translated one-shot clock/cancellation capability with a manual implementation for deterministic use; the Eio clock adapter and renderer scheduler are designed but not implemented |
 | `lib/terminal-capability-detection.ts` | `packages/opentui-core/src/lib/terminal_capability_detection.ml` | Active slice; response recognition and bounded pixel-resolution parsing feed `Renderer.handle_input` |
 | `lib/data-paths.ts`, `env.ts`, `validate-dir-name.ts` | `packages/opentui-core/src/lib/data_paths.ml`, `env.ml`, `validate_dir_name.ml` | Active translated owner-local path, environment, and validation services |
 | `lib/debounce.ts` | `packages/opentui-core/src/lib/debounce.ml` | Active translated one-shot debounce over `Lib.Clock` |
@@ -89,7 +89,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | `lib/selection.ts` | `packages/opentui-core/src/lib/selection.ml` | Active slice; generic selection geometry and text grouping |
 | `lib/singleton.ts` | Owner composition in `Renderer.t`, `Render_context.t`, `Data_paths.t`, `Env.t`, and injected services | Translated/non-applicable; no process-global singleton is introduced |
 | `lib/terminal-palette.ts` | `packages/opentui-core/src/lib/terminal_palette.ml`; renderer feed/query helpers in `src/renderer.ml` | Active slice; transport-neutral session seam |
-| `lib/tree-sitter-styled-text.ts`, `tree-sitter/*` | `packages/opentui-core/src/tree_sitter_styled_text.ml`; `packages/opentui-core/src/lib/tree_sitter_client.ml`, `tree_sitter_types.ml`, `tree_sitter_resolve_filetype.ml` | Active typed seam; parser registration/injection is synchronous and OCaml-owned, with no JS/WASM asset loader |
+| `lib/tree-sitter-styled-text.ts`, `tree-sitter/*` | `packages/opentui-core/src/tree_sitter_styled_text.ml`; `packages/opentui-core/src/lib/tree_sitter_client.ml`, `tree_sitter_types.ml`, `tree_sitter_resolve_filetype.ml`; [background feature record](major-features/in-progress/background/feature.md) | Active typed synchronous seam; background highlighting through an application-owned Eio executor pool is designed but not implemented, and no JS/WASM asset loader is claimed |
 | `lib/yoga.options.ts` | `packages/opentui-core/src/lib/yoga_options.ml` and `yoga.ml` | Active typed option parsers; invalid runtime strings return structured errors rather than silently defaulting |
 
 ### Text and renderables

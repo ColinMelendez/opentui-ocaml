@@ -95,10 +95,10 @@ selection events and directional key bindings.
 Pointer selection reaches selectable text controls through the renderer's
 captured selection route and the native local-selection feed. The controls
 keep scheduler-dependent behavior explicit: scrollbar arrow repeat and
-selection auto-scroll are application-owned clock/update policies. Retained scissor
-execution is also still a renderer limitation, so a `Scroll_box` render that
-reaches the unsupported scissor command reports `Error.Unsupported` rather
-than silently dropping clipping.
+selection auto-scroll are application-owned clock/update policies. Retained
+opacity and scissor commands execute through the typed native buffer stacks,
+so `Scroll_box` clipping composes with nested retained content and propagates
+native failures as structured Core errors.
 
 These modules use composition and explicit owner boundaries rather than
 inheritance-shaped compatibility wrappers. `Frame_buffer` and `Ascii_font`
