@@ -90,7 +90,8 @@ synchronization over a native `Text_buffer_renderable`; `Textarea` adds
 placeholder and focus colors, while `Input` adds single-line constraints and
 commit/submit events. `Scroll_box` owns a wrapper/viewport/content subtree and
 composes `Scroll_bar` and `Slider`; `Select` and `Tab_select` expose typed
-selection events and directional key bindings.
+selection events and directional key bindings, and `Select` can rasterize
+option labels with the shared ASCII-font data.
 
 Pointer selection reaches selectable text controls through the renderer's
 captured selection route and the native local-selection feed. The controls
@@ -107,7 +108,8 @@ table identity plus native cell views. `Line_number` composes an internal
 gutter with a caller-provided line-info target, and
 `Time_to_first_draw` records the first monotonic draw. The composition
 namespace provides inert typed VNodes that instantiate ordinary retained
-identities; it does not introduce a second runtime tree. Animation,
+identities, including `Code` descriptions and typed styled-text convenience
+constructors; it does not introduce a second runtime tree. Animation,
 audio/audio-stream, plugins/runtime-plugin, and dynamic JavaScript proxy
 behavior are explicit exclusions in the source map.
 
@@ -122,6 +124,9 @@ allocation deterministic; and `Text_table` uses native text-buffer views for
 measurement, wrapping, drawing, updates, and selection/copy. The line-number
 gutter consumes visual line sources from text-buffer/editor targets, including
 signs, colors, custom numbers, hiding, and scroll offsets.
+
+`Text_table` accepts typed per-column left, center, and right alignment, and
+Markdown pipe-table alignment markers are carried into that rendering policy.
 
 The ASCII helper intentionally indexes OCaml Unicode code points instead of
 the reference JavaScript UTF-16 code units. Proportional allocation uses
@@ -142,7 +147,8 @@ plain-text fallback for missing or failing parsers.
 line-number gutters in unified or split layout. `Renderables.Markdown` uses a
 typed block/inline parser and retains unchanged stable-prefix blocks across
 content updates; it renders headings, paragraphs, lists, blockquotes, fenced
-code, tables, links, HTML text, borders, and selection aggregation.
+code, tables with parsed column alignment, links, HTML text, borders, and
+selection aggregation.
 `Detect_links` and `Hast_styled_text` are typed supporting conversions.
 
 The OCaml boundary intentionally does not load the reference JavaScript

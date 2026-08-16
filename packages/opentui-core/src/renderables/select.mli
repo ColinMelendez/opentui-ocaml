@@ -24,6 +24,7 @@ val create :
   ?selected_text_color:Color.t ->
   ?description_color:Color.t ->
   ?selected_description_color:Color.t ->
+  ?font:Ascii_font_spec.name ->
   ?show_scroll_indicator:bool ->
   ?wrap_selection:bool ->
   ?show_description:bool ->
@@ -58,6 +59,8 @@ val description_color : t -> Color.t
 val set_description_color : t -> Color.t -> (unit, Error.t) result
 val selected_description_color : t -> Color.t
 val set_selected_description_color : t -> Color.t -> (unit, Error.t) result
+val font : t -> Ascii_font_spec.name option
+val set_font : t -> Ascii_font_spec.name option -> (unit, Error.t) result
 val move_up : t -> ?steps:int -> unit -> (unit, Error.t) result
 val move_down : t -> ?steps:int -> unit -> (unit, Error.t) result
 val select_current : t -> (unit, Error.t) result

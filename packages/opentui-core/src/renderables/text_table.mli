@@ -2,6 +2,7 @@
 
 type cell_content = Empty | Text of string | Styled of Lib.Styled_text.t
 type content = cell_content list list
+type alignment = Default | Left | Center | Right
 type column_width_mode = Content | Full
 type column_fitter = Proportional | Balanced
 
@@ -11,6 +12,7 @@ val create :
   Render_context.t ->
   ?id:string ->
   ?content:content ->
+  ?column_alignments:alignment list ->
   ?width_method:Text_buffer.width_method ->
   ?wrap_mode:Text_buffer_view.wrap_mode ->
   ?column_width_mode:column_width_mode ->
@@ -40,6 +42,8 @@ val create :
 val as_renderable : t -> Renderable.t
 val content : t -> content
 val set_content : t -> content -> (unit, Error.t) result
+val column_alignments : t -> alignment list
+val set_column_alignments : t -> alignment list -> (unit, Error.t) result
 val wrap_mode : t -> Text_buffer_view.wrap_mode
 val set_wrap_mode : t -> Text_buffer_view.wrap_mode -> (unit, Error.t) result
 val column_width_mode : t -> column_width_mode

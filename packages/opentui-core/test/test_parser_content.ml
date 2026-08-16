@@ -27,6 +27,14 @@ let frame renderer =
   in
   Bytes.sub_string output 0 (Int32.to_int written)
 
+let lines_of_frame ~width value =
+  let line_count = String.length value / width in
+  let lines = ref [] in
+  for index = line_count - 1 downto 0 do
+    lines := String.sub value (index * width) width :: !lines
+  done;
+  !lines
+
 let () =
   run "opentui-core-parser-content"
     [
@@ -247,6 +255,42 @@ let () =
           ignore (expect_ok (Renderer.render renderer ~force:true));
           equal int 2 (Renderables.Markdown.block_count markdown);
           if not (String.contains (frame renderer) 'N') then fail "updated Markdown was not rendered";
+          Renderables.Markdown.destroy markdown;
+          Renderer.destroy renderer);
+      test "Markdown table alignment markers affect rendered cell origins" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:36l ~height:8l) in
+          let markdown =
+            expect_ok
+              (Renderables.Markdown.create (Renderer.context renderer)
+                 ~content:"|L|C|R|\n|:---|:---:|---:|\n|A|B|C|"
+                 ~table_options:
+                   {
+                     show_borders = false;
+                     outer_border = false;
+                     cell_padding_x = 0;
+                     cell_padding_y = 0;
+                   }
+                 ())
+          in
+          attach renderer (Renderables.Markdown.as_renderable markdown);
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let lines = lines_of_frame ~width:36 (frame renderer) in
+          let data_line =
+            List.find_opt
+              (fun line ->
+                String.contains line 'A' && String.contains line 'B'
+                && String.contains line 'C')
+              lines
+          in
+          (match data_line with
+          | None -> fail "aligned Markdown table data row was not rendered"
+          | Some line ->
+              let left = String.index line 'A' in
+              let center = String.index line 'B' in
+              let right = String.index line 'C' in
+              equal int 0 left;
+              equal int 18 center;
+              equal int 35 right);
           Renderables.Markdown.destroy markdown;
           Renderer.destroy renderer);
       test "Diff parses unified and split views and updates" (fun () ->

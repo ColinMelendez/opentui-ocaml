@@ -27,6 +27,7 @@ type t = {
   mutable selected_text_color : Color.t;
   mutable description_color : Color.t;
   mutable selected_description_color : Color.t;
+  mutable font : Ascii_font_spec.name option;
   keymap : action Lib.Keybinding.t;
   selection_events : selection_change Event_kernel.t;
   item_events : selection_change Event_kernel.t;
@@ -63,7 +64,12 @@ let selected_option select =
 let change select = { index = select.selected_index; option = selected_option select }
 
 let lines_per_item select =
-  (if select.show_description then 2 else 1) + select.item_spacing
+  (match select.font with
+  | None -> if select.show_description then 2 else 1
+  | Some font ->
+      (Ascii_font_spec.definition font).lines
+      + if select.show_description then 1 else 0)
+  + select.item_spacing
 
 let max_visible_items select =
   let line_height = max 1 (lines_per_item select) in
@@ -108,6 +114,14 @@ let draw_text buffer ~text ~x ~y ~foreground ~background =
   ignore
     (Buffer.draw_text buffer ~text ~x:(Int32.of_int x) ~y:(Int32.of_int y)
        ~foreground ~background ~attributes:0l)
+
+let draw_font select buffer ~text ~x ~y ~foreground ~background =
+  match select.font with
+  | None -> ()
+  | Some font ->
+      ignore
+        (Ascii_font_spec.render_to_buffer buffer ~text ~x ~y
+           ~colors:[ foreground ] ~background_color:background ~font ())
 
 let truncate text width =
   if width <= 0 then ""
@@ -176,19 +190,32 @@ let render_self select renderable buffer _delta_time =
           else if Renderable.focused renderable then select.focused_text_color
           else select.text_color
         in
-        draw_text buffer ~text:(indicator ^ truncate option.name (width - 1 - indicator_width))
-          ~x:(x + 1) ~y:item_y ~foreground
-          ~background:(if selected then select.selected_background_color else background);
-        if select.show_description && content_height > 1 then
+        let item_background =
+          if selected then select.selected_background_color else background
+        in
+        (match select.font with
+        | None ->
+            draw_text buffer
+              ~text:(indicator ^ truncate option.name (width - 1 - indicator_width))
+              ~x:(x + 1) ~y:item_y ~foreground ~background:item_background
+        | Some _font ->
+            if indicator_width > 0 then
+              draw_text buffer ~text:indicator ~x:(x + 1) ~y:item_y ~foreground
+                ~background:item_background;
+            draw_font select buffer ~text:option.name
+              ~x:(x + 1 + indicator_width) ~y:item_y ~foreground
+              ~background:item_background);
+        if select.show_description && content_height > lines_per_item select - select.item_spacing - 1 then
           let description_color =
             if selected then select.selected_description_color
             else select.description_color
           in
           draw_text buffer
             ~text:(truncate option.description (width - 1 - indicator_width))
-            ~x:(x + 1 + indicator_width) ~y:(item_y + 1)
+            ~x:(x + 1 + indicator_width)
+            ~y:(item_y + (match select.font with None -> 1 | Some font -> (Ascii_font_spec.definition font).lines))
             ~foreground:description_color
-            ~background:(if selected then select.selected_background_color else background)
+            ~background:item_background
       end)
     visible_options;
   render_scroll_indicator select buffer ~x ~y ~width ~height ~background;
@@ -267,6 +294,7 @@ let create context ?id ?(options = []) ?(selected_index = 0)
     ?(selected_text_color = selected_text_default)
     ?(description_color = description_default)
     ?(selected_description_color = selected_description_default)
+    ?font
     ?(show_scroll_indicator = false) ?(wrap_selection = false)
     ?(show_description = true) ?(show_selection_indicator = true)
     ?(item_spacing = 0) ?(fast_scroll_step = 5) ?(key_bindings = []) ?width
@@ -300,6 +328,7 @@ let create context ?id ?(options = []) ?(selected_index = 0)
             selected_text_color;
             description_color;
             selected_description_color;
+            font;
             keymap = Lib.Keybinding.create (key_bindings @ default_bindings);
             selection_events = Event_kernel.create ();
             item_events = Event_kernel.create ();
@@ -414,6 +443,15 @@ let selected_description_color select = select.selected_description_color
 let set_selected_description_color select value =
   Result.bind (ensure_alive select) (fun () ->
       select.selected_description_color <- value;
+      request select;
+      Ok ())
+
+let font select = select.font
+
+let set_font select value =
+  Result.bind (ensure_alive select) (fun () ->
+      select.font <- value;
+      update_scroll_offset select;
       request select;
       Ok ())
 

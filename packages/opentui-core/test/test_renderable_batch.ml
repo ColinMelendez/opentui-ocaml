@@ -56,6 +56,16 @@ let frame renderer =
   in
   Bytes.sub_string output 0 (Int32.to_int written)
 
+let contains source needle =
+  let limit = String.length source - String.length needle in
+  let found = ref false in
+  if limit >= 0 then
+    for index = 0 to limit do
+      if String.equal (String.sub source index (String.length needle)) needle then
+        found := true
+    done;
+  !found
+
 let () =
   run "opentui-core-renderable-batch"
     [
@@ -131,6 +141,34 @@ let () =
           equal bool true (Renderables.Ascii_font.has_selection font);
           equal string "A" (Renderables.Ascii_font.selected_text font);
           Renderables.Ascii_font.destroy font;
+          Renderer.destroy renderer);
+      test "select renders ASCII-font labels without changing selection events" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:24l ~height:8l) in
+          let options =
+            [ { Renderables.Select.name = "A"; description = "first"; value = Some "a" };
+              { name = "B"; description = "second"; value = Some "b" } ]
+          in
+          let select =
+            expect_ok
+              (Renderables.Select.create (Renderer.context renderer) ~options
+                 ~font:Core.Ascii_font_spec.Tiny ~width:(Core.Yoga.Point 16.0)
+                 ~height:(Core.Yoga.Point 6.0) ())
+          in
+          let selected = ref [] in
+          ignore
+            (Renderables.Select.on_selection_changed select (fun change ->
+                 selected := change.index :: !selected));
+          attach renderer (Renderables.Select.as_renderable select);
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (option string) (Some "tiny")
+            (Option.map Core.Ascii_font_spec.string_of_name
+               (Renderables.Select.font select));
+          if not (contains (frame renderer) "▀") then
+            fail "Select did not rasterize its font label";
+          ignore (expect_ok (Renderables.Select.move_down select ()));
+          equal int 1 (Renderables.Select.selected_index select);
+          equal int 1 (List.length !selected);
+          Renderables.Select.destroy select;
           Renderer.destroy renderer);
       test "time-to-first-draw records once and resets" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:30l ~height:2l) in
@@ -263,5 +301,40 @@ let () =
           attach renderer mounted;
           ignore (expect_ok (Renderer.render renderer ~force:true));
           Renderable.destroy_recursively mounted;
+          Renderer.destroy renderer);
+      test "composition exposes Code and typed styled-text conveniences" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:24l ~height:6l) in
+          let styled =
+            Renderables.Composition.Constructs.Vstyles.bold
+              [ Core.Lib.Styled_text.Text "bold" ]
+          in
+          let text =
+            Renderables.Composition.Constructs.text ~content:styled []
+          in
+          let code =
+            Renderables.Composition.Constructs.code ~content:"code" []
+          in
+          let text_renderable =
+            expect_ok
+              (Renderables.Composition.Vnode.instantiate_one
+                 (Renderer.context renderer) text)
+          in
+          let code_renderable =
+            expect_ok
+              (Renderables.Composition.Vnode.instantiate_one
+                 (Renderer.context renderer) code)
+          in
+          attach renderer text_renderable;
+          attach renderer code_renderable;
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let rendered = frame renderer in
+          if not (String.contains rendered 'b' && String.contains rendered 'c') then
+            fail (Printf.sprintf "composition output omitted text or code: %S" rendered);
+          (match Core.Lib.Styled_text.chunks styled with
+          | [ chunk ] ->
+              equal int Core.Lib.Text_attributes.bold chunk.attributes
+          | _ -> fail "bold style did not produce one styled chunk");
+          Renderable.destroy_recursively text_renderable;
+          Renderable.destroy_recursively code_renderable;
           Renderer.destroy renderer);
     ]

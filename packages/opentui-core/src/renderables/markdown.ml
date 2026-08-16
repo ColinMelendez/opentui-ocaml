@@ -162,6 +162,12 @@ let rendered_text text =
 
 let map_text result = Result.map rendered_text result
 
+let table_alignment = function
+  | Parser.Align_left -> Text_table.Left
+  | Parser.Align_center -> Text_table.Center
+  | Parser.Align_right -> Text_table.Right
+  | Parser.Align_default -> Text_table.Default
+
 let render_token markdown token index =
   let id = Printf.sprintf "markdown-block-%d" index in
   match token with
@@ -221,7 +227,7 @@ let render_token markdown token index =
       in
       Text.create markdown.context ~id ~wrap_mode:markdown.wrap_mode ~content:(Styled.create chunks) ()
       |> map_text
-  | Parser.Table { headers; rows; _ } ->
+  | Parser.Table { headers; rows; alignments; _ } ->
       let cells values =
         List.map
           (fun value ->
@@ -232,6 +238,7 @@ let render_token markdown token index =
       in
       let table_content = cells headers :: List.map cells rows in
       Text_table.create markdown.context ~id ~content:table_content
+        ~column_alignments:(List.map table_alignment alignments)
         ~wrap_mode:markdown.wrap_mode ~show_borders:markdown.table_options.show_borders
         ~outer_border:markdown.table_options.outer_border
         ~cell_padding_x:markdown.table_options.cell_padding_x

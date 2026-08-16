@@ -30,3 +30,14 @@ val render_to_frame_buffer :
   ?font:name ->
   unit ->
   (measure, Error.t) result
+
+val render_to_buffer :
+  Buffer.t ->
+  ?text:string ->
+  ?x:int ->
+  ?y:int ->
+  ?colors:Color.t list ->
+  ?background_color:Color.t ->
+  ?font:name ->
+  unit ->
+  (measure, Error.t) result

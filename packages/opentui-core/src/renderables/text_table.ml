@@ -1,5 +1,6 @@
 type cell_content = Empty | Text of string | Styled of Lib.Styled_text.t
 type content = cell_content list list
+type alignment = Default | Left | Center | Right
 type column_width_mode = Content | Full
 type column_fitter = Proportional | Balanced
 
@@ -31,6 +32,7 @@ type t = {
   buffer : Owned_buffer.t;
   width_method : Text_buffer.width_method;
   mutable content : content;
+  mutable column_alignments : alignment list;
   mutable cells : cell_state array array;
   mutable wrap_mode : Text_buffer_view.wrap_mode;
   mutable column_width_mode : column_width_mode;
@@ -75,6 +77,32 @@ let styled_text_of_content = function
   | Empty -> Lib.Styled_text.of_string ""
   | Text value -> Lib.Styled_text.of_string value
   | Styled value -> value
+
+let alignment_for_column state column =
+  match List.nth_opt state.column_alignments column with
+  | Some alignment -> alignment
+  | None -> Default
+
+let cell_content_width state column =
+  max 1 (state.layout.column_widths.(column) - state.cell_padding_x * 2)
+
+let cell_alignment_offset state cell column =
+  let content_width = cell_content_width state column in
+  match alignment_for_column state column with
+  | Default | Left -> 0
+  | Center | Right ->
+      (match
+         Text_buffer_view.measure_for_dimensions cell.text_buffer_view
+           ~width:(Int32.of_int content_width) ~height:10000l
+       with
+      | Error _ -> 0
+      | Ok measure ->
+          let text_width = max 0 (Int32.to_int measure.width_cols_max) in
+          let remaining = max 0 (content_width - min content_width text_width) in
+          match alignment_for_column state column with
+          | Center -> remaining / 2
+          | Right -> remaining
+          | Default | Left -> 0)
 
 let close_cell cell =
   ignore (Text_buffer_view.close cell.text_buffer_view);
@@ -599,9 +627,16 @@ let apply_selection_to_cells state
           let content_height =
             max 1 (state.layout.row_heights.(row_index) - state.cell_padding_y * 2)
           in
-          let anchor_x = local_selection.anchor_x -. float_of_int cell_left in
+          let alignment_offset = cell_alignment_offset state row.(column) column in
+          let anchor_x =
+            local_selection.anchor_x -. float_of_int cell_left
+            -. float_of_int alignment_offset
+          in
           let anchor_y = local_selection.anchor_y -. float_of_int cell_top in
-          let focus_x = local_selection.focus_x -. float_of_int cell_left in
+          let focus_x =
+            local_selection.focus_x -. float_of_int cell_left
+            -. float_of_int alignment_offset
+          in
           let focus_y = local_selection.focus_y -. float_of_int cell_top in
           let anchor_x, anchor_y, focus_x, focus_y =
             if is_anchor
@@ -654,7 +689,10 @@ let render_cells state =
       match !result with
       | Error _ -> ()
       | Ok () ->
-          let x = line_start state.layout.column_offsets column + state.cell_padding_x in
+          let x =
+            line_start state.layout.column_offsets column + state.cell_padding_x
+            + cell_alignment_offset state row.(column) column
+          in
           let y = line_start state.layout.row_offsets row_index + state.cell_padding_y in
           result :=
             Owned_buffer.draw_text_buffer_view state.buffer
@@ -738,7 +776,8 @@ let destroy_resources state =
   state.destroyed <- true;
   Owned_buffer.close state.buffer
 
-let create context ?id ?(content = []) ?(width_method = Text_buffer.Wcwidth)
+let create context ?id ?(content = []) ?(column_alignments = [])
+    ?(width_method = Text_buffer.Wcwidth)
     ?(wrap_mode = Text_buffer_view.Word) ?(column_width_mode = Full)
     ?(column_fitter = Proportional) ?(cell_padding = 0) ?cell_padding_x
     ?cell_padding_y ?(column_gap = 0) ?(show_borders = true) ?(border = true)
@@ -763,6 +802,7 @@ let create context ?id ?(content = []) ?(width_method = Text_buffer.Wcwidth)
                 buffer;
                 width_method;
                 content = [];
+                column_alignments;
                 cells = [||];
                 wrap_mode;
                 column_width_mode;
@@ -835,6 +875,14 @@ let create context ?id ?(content = []) ?(width_method = Text_buffer.Wcwidth)
 
 let as_renderable (state : t) = state.renderable
 let content (state : t) = state.content
+
+let column_alignments (state : t) = state.column_alignments
+
+let set_column_alignments state value =
+  Result.bind (ensure_alive state) (fun () ->
+      state.column_alignments <- value;
+      invalidate_raster state;
+      Ok ())
 
 let set_content (state : t) value =
   Result.bind (ensure_alive state) (fun () ->
