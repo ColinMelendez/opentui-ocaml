@@ -9,6 +9,9 @@ type load_state =
   | Failed of Native_image.load_error
 type t
 
+(** [create context ...] binds the image owner to the calling domain. Path
+    sources additionally require [sw] to delimit their cooperative Eio read
+    lifetime. *)
 val create :
   Render_context.t ->
   ?id:string ->
@@ -27,6 +30,8 @@ val as_renderable : t -> Renderable.t
 val image : t -> Native_image.t option
 val source : t -> source option
 val fit : t -> fit
+(** Mutating operations return [Error.Wrong_domain] when called outside the
+    domain that created the image. *)
 val set_fit : t -> fit -> (unit, Error.t) result
 val protocol : t -> Native_image.protocol
 val set_protocol : t -> Native_image.protocol -> (unit, Error.t) result
@@ -42,4 +47,7 @@ val get_fitted_size :
 val resolve_protocol :
   Native_image.protocol -> Terminal_capabilities.t option ->
   has_resolution:bool -> Native_image.protocol
+(** [destroy image] must run on the owner domain. Calling it from another
+    domain raises [Invalid_argument], because the unit-returning operation
+    cannot represent [Error.Wrong_domain]. *)
 val destroy : t -> unit

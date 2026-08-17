@@ -15,6 +15,7 @@ exception Path_request_cancelled
 type path_lease = {
   switch : Eio.Switch.t option ref;
   mutable cancelled : bool;
+  mutable active : bool;
 }
 
 type t = {
@@ -27,6 +28,7 @@ type t = {
   mutable generation : int;
   mutable in_flight : path_lease option;
   path_switch : Eio.Switch.t option;
+  owner_domain : int;
   on_load : (Image.info -> unit) option;
   on_error : (Image.load_error -> unit) option;
   buffered : bool;
@@ -53,6 +55,12 @@ let load_error image =
   match image.load_state with Failed error -> Some error | Empty | Loading | Ready -> None
 let buffered image = image.buffered
 
+let current_domain_id () = (Domain.self () :> int)
+
+let ensure_owner image =
+  if Int.equal (current_domain_id ()) image.owner_domain then Ok ()
+  else Error Error.Wrong_domain
+
 let ensure_alive image =
   if image.destroyed || Renderable.is_destroyed image.renderable then
     Error Error.Destroyed
@@ -73,19 +81,23 @@ let next_generation image =
   else image.generation <- image.generation + 1;
   image.generation
 
+let switch_is_open switch = Option.is_none (Eio.Switch.get_error switch)
+
 let cancel_path_lease lease =
   if not lease.cancelled then begin
     lease.cancelled <- true;
-    match !(lease.switch) with
-    | None -> ()
-    | Some switch -> Eio.Switch.fail switch Path_request_cancelled
+    match lease.active, !(lease.switch) with
+    | true, Some switch when switch_is_open switch ->
+        Eio.Switch.fail switch Path_request_cancelled
+    | false, _ | true, None | true, Some _ -> ()
   end
 
 let cancel_in_flight image =
-  Option.iter cancel_path_lease image.in_flight;
-  image.in_flight <- None
-
-let switch_is_open switch = Option.is_none (Eio.Switch.get_error switch)
+  match image.in_flight with
+  | None -> ()
+  | Some lease ->
+      image.in_flight <- None;
+      cancel_path_lease lease
 
 let capabilities context =
   match Render_context.capabilities context with
@@ -241,8 +253,19 @@ let apply_load_result image ~generation result =
 let install_synchronous_source image ~generation source_value =
   apply_load_result image ~generation (Image.load source_value)
 
-let start_path_source image ~generation path =
-  let lease = { switch = ref None; cancelled = false } in
+let settled_load_state image =
+  match image.load_state with
+  | Loading -> (match image.image with Some _ -> Ready | None -> Empty)
+  | (Empty | Ready | Failed _) as state -> state
+
+let restore_path_state image ~generation previous_state =
+  if is_current image generation then
+    match image.load_state with
+    | Loading -> image.load_state <- previous_state
+    | Empty | Ready | Failed _ -> ()
+
+let start_path_source image ~generation ~previous_state path =
+  let lease = { switch = ref None; cancelled = false; active = false } in
   image.in_flight <- Some lease;
   match image.path_switch with
   | None ->
@@ -251,21 +274,33 @@ let start_path_source image ~generation path =
   | Some switch ->
       (try
          Eio.Fiber.fork ~sw:switch (fun () ->
-             try
-               Eio.Switch.run @@ fun request_switch ->
-               lease.switch := Some request_switch;
-               if lease.cancelled then raise Path_request_cancelled;
-               let result = Image.read_path path in
+             let release_lease () =
+               lease.active <- false;
                lease.switch := None;
-               clear_in_flight image lease;
-               match result with
-               | Error error ->
-                   deliver_error image ~generation (Image.Read error)
-               | Ok bytes ->
-                   if is_current image generation then
-                     apply_load_result image ~generation
-                       (Image.decode bytes
-                       |> Result.map_error (fun error -> Image.Decode error))
+               clear_in_flight image lease
+             in
+             let finalize () =
+               restore_path_state image ~generation previous_state;
+               release_lease ()
+             in
+             try
+               Fun.protect
+                 (fun () ->
+                   Eio.Switch.run @@ fun request_switch ->
+                   lease.switch := Some request_switch;
+                   lease.active <- true;
+                   if lease.cancelled then raise Path_request_cancelled;
+                   let result = Image.read_path path in
+                   release_lease ();
+                   match result with
+                   | Error error ->
+                       deliver_error image ~generation (Image.Read error)
+                   | Ok bytes ->
+                       if is_current image generation then
+                         apply_load_result image ~generation
+                           (Image.decode bytes
+                           |> Result.map_error (fun error -> Image.Decode error)))
+                 ~finally:finalize
              with
              | Path_request_cancelled -> ()
              | Eio.Cancel.Cancelled Path_request_cancelled -> ());
@@ -424,62 +459,69 @@ let resize_frame_buffer image ~width ~height =
 let cleanup image =
   if not image.destroyed then begin
     image.destroyed <- true;
-    cancel_in_flight image;
-    image.source <- None;
-    image.load_state <- Empty;
-    Option.iter Image.close image.image;
-    image.image <- None;
-    Option.iter Owned_buffer.close image.frame_buffer
+    Fun.protect
+      (fun () -> cancel_in_flight image)
+      ~finally:(fun () ->
+        image.source <- None;
+        image.load_state <- Empty;
+        Option.iter Image.close image.image;
+        image.image <- None;
+        Option.iter Owned_buffer.close image.frame_buffer)
   end
 
 let set_source image value =
-  match ensure_alive image with
+  match ensure_owner image with
   | Error error -> Error error
   | Ok () ->
-      let copied_value = Option.map copy_source value in
-      let requires_switch =
-        match copied_value with
-        | Some (Source (Image.Path _)) -> true
-        | None | Some (Native _) | Some (Source (Image.Encoded _))
-        | Some (Source (Image.Rgba _)) -> false
-      in
-      (match requires_switch, image.path_switch with
-      | true, None -> Error Error.Missing_async_lifetime
-      | true, Some switch when not (switch_is_open switch) -> Error Error.Closed
-      | false, _ | true, Some _ ->
-          let previous_source = image.source in
-          let previous_state = image.load_state in
-          let generation = next_generation image in
-          cancel_in_flight image;
-          image.source <- copied_value;
-          match copied_value with
-          | None ->
-              Option.iter Image.close image.image;
-              image.image <- None;
-              image.load_state <- Empty;
-              ignore (Renderable.request_render image.renderable);
-              Ok ()
-          | Some (Native value) ->
-              image.load_state <- Loading;
-              (match Image.retain value with
-              | Error error ->
-                  deliver_error image ~generation (Image.Native error);
+      (match ensure_alive image with
+      | Error error -> Error error
+      | Ok () ->
+          let copied_value = Option.map copy_source value in
+          let requires_switch =
+            match copied_value with
+            | Some (Source (Image.Path _)) -> true
+            | None | Some (Native _) | Some (Source (Image.Encoded _))
+            | Some (Source (Image.Rgba _)) -> false
+          in
+          (match requires_switch, image.path_switch with
+          | true, None -> Error Error.Missing_async_lifetime
+          | true, Some switch when not (switch_is_open switch) -> Error Error.Closed
+          | false, _ | true, Some _ ->
+              let previous_source = image.source in
+              let previous_state = settled_load_state image in
+              let generation = next_generation image in
+              cancel_in_flight image;
+              image.source <- copied_value;
+              match copied_value with
+              | None ->
+                  Option.iter Image.close image.image;
+                  image.image <- None;
+                  image.load_state <- Empty;
+                  ignore (Renderable.request_render image.renderable);
                   Ok ()
-              | Ok retained ->
-                  apply_loaded image ~generation retained;
-                  Ok ())
-          | Some (Source ((Image.Encoded _ | Image.Rgba _) as source_value)) ->
-              image.load_state <- Loading;
-              install_synchronous_source image ~generation source_value;
-              Ok ()
-          | Some (Source (Image.Path path)) ->
-              image.load_state <- Loading;
-              (match start_path_source image ~generation path with
-              | Ok () -> Ok ()
-              | Error error ->
-                  image.source <- previous_source;
-                  image.load_state <- previous_state;
-                  Error error))
+              | Some (Native value) ->
+                  image.load_state <- Loading;
+                  (match Image.retain value with
+                  | Error error ->
+                      deliver_error image ~generation (Image.Native error);
+                      Ok ()
+                  | Ok retained ->
+                      apply_loaded image ~generation retained;
+                      Ok ())
+              | Some (Source ((Image.Encoded _ | Image.Rgba _) as source_value)) ->
+                  image.load_state <- Loading;
+                  install_synchronous_source image ~generation source_value;
+                  Ok ()
+              | Some (Source (Image.Path path)) ->
+                  image.load_state <- Loading;
+                  (match
+                     start_path_source image ~generation ~previous_state path
+                   with
+                  | Ok () -> Ok ()
+                  | Error error ->
+                      image.source <- previous_source;
+                      image.load_state <- previous_state;
+                      Error error)))
 
 let create context ?id ?source ?(fit = Fit) ?(protocol = Image.Auto)
     ?sw ?(buffered = false) ?width ?height ?on_load ?on_error () =
@@ -530,6 +572,7 @@ let create context ?id ?source ?(fit = Fit) ?(protocol = Image.Auto)
                   generation = 0;
                   in_flight = None;
                   path_switch = sw;
+                  owner_domain = current_domain_id ();
                   on_load;
                   on_error;
                   buffered;
@@ -557,14 +600,22 @@ let create context ?id ?source ?(fit = Fit) ?(protocol = Image.Auto)
                       Error error))))
 
 let set_fit image value =
-  match ensure_alive image with
+  match ensure_owner image with
   | Error error -> Error error
-  | Ok () -> image.fit <- value; Renderable.request_render image.renderable
+  | Ok () ->
+      (match ensure_alive image with
+      | Error error -> Error error
+      | Ok () -> image.fit <- value; Renderable.request_render image.renderable)
 
 let set_protocol image value =
-  match ensure_alive image with
+  match ensure_owner image with
   | Error error -> Error error
-  | Ok () -> image.protocol <- value; Renderable.request_render image.renderable
+  | Ok () ->
+      (match ensure_alive image with
+      | Error error -> Error error
+      | Ok () ->
+          image.protocol <- value;
+          Renderable.request_render image.renderable)
 
 let effective_protocol image =
   resolve_protocol image.protocol (capabilities (Renderable.context image.renderable))
@@ -574,4 +625,7 @@ let cell_aspect_ratio image =
   context_cell_aspect_ratio (Renderable.context image.renderable)
 let get_fitted_size = fitted_size
 
-let destroy image = Renderable.destroy image.renderable
+let destroy image =
+  if Int.equal (current_domain_id ()) image.owner_domain then
+    Renderable.destroy image.renderable
+  else invalid_arg (Error.message Error.Wrong_domain)

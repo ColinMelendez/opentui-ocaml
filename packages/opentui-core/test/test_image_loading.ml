@@ -5,6 +5,9 @@ module Renderer = Core.Renderer
 module Renderable = Core.Renderable
 module Renderables = Core.Renderables
 
+exception Image_worker_no_failure
+exception Image_completion_failure
+
 let expect_ok result =
   match result with
   | Ok value -> value
@@ -397,6 +400,206 @@ let test_stale_success_and_reentrant_callbacks () =
   Renderer.destroy renderer;
   Eio.Path.unlink ~missing_ok:true path
 
+let test_path_cancellation_while_reading () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let root = Eio.Stdenv.cwd env in
+  let fifo_name = "__opentui_phase6_image_fifo" in
+  let fifo_path = child_path root fifo_name in
+  let fifo_native = Eio.Path.native_exn fifo_path in
+  Eio.Path.unlink ~missing_ok:true fifo_path;
+  Unix.mkfifo fifo_native 0o600;
+  let fifo_holder =
+    Unix.openfile fifo_native [ Unix.O_RDWR; Unix.O_NONBLOCK ] 0
+  in
+  Fun.protect
+    (fun () ->
+      let valid_path = child_path root "__opentui_phase6_cancelled_image.png" in
+      Eio.Path.save ~create:(`Or_truncate 0o600) valid_path
+        (Bytes.to_string (fixture_bytes ()));
+      let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+      let callbacks = ref 0 in
+      let image =
+        expect_ok
+          (Renderables.Image.create (Renderer.context renderer) ~sw
+             ~on_load:(fun _ -> incr callbacks)
+             ~on_error:(fun _ -> incr callbacks) ())
+      in
+      expect_ok
+        (Renderables.Image.set_source image
+           (Some (Renderables.Image.Source (Core.Image.Path fifo_path))));
+      Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) 0.01;
+      expect_ok (Renderables.Image.set_source image None);
+      expect_ok (Renderables.Image.set_source image None);
+      Eio.Fiber.yield ();
+      Eio.Fiber.yield ();
+      (match Renderables.Image.state image, Renderables.Image.image image with
+      | Renderables.Image.Empty, None -> ()
+      | _, _ -> fail "active path cancellation resurrected the image");
+      equal int 0 !callbacks;
+      expect_ok
+        (Renderables.Image.set_source image
+           (Some (Renderables.Image.Source (Core.Image.Path valid_path))));
+      await_until env (fun () ->
+          match Renderables.Image.state image with
+          | Renderables.Image.Ready -> true
+          | Renderables.Image.Empty | Renderables.Image.Loading
+          | Renderables.Image.Failed _ -> false);
+      Renderables.Image.destroy image;
+      Renderables.Image.destroy image;
+      Renderer.destroy renderer;
+      Eio.Path.unlink ~missing_ok:true valid_path)
+    ~finally:(fun () ->
+      Unix.close fifo_holder;
+      Eio.Path.unlink ~missing_ok:true fifo_path)
+
+let test_exceptional_worker_releases_lease () =
+  Eio_main.run @@ fun env ->
+  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let root = Eio.Stdenv.cwd env in
+  let closed_path =
+    Eio.Switch.run @@ fun path_sw ->
+    (Eio.Path.open_subtree ~sw:path_sw root :> Eio.Fs.dir_ty Eio.Path.t)
+  in
+  let image_ref = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let image =
+       expect_ok
+         (Renderables.Image.create (Renderer.context renderer) ~sw ())
+     in
+     image_ref := Some image;
+     expect_ok
+       (Renderables.Image.set_source image
+          (Some (Renderables.Image.Source (Core.Image.Path closed_path))));
+     Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) 0.05;
+     raise Image_worker_no_failure
+   with
+   | Invalid_argument _ -> ()
+   | Image_worker_no_failure ->
+       fail "closed path did not fail the owner switch"
+   | Eio.Exn.Multiple errors ->
+       fail
+         (Format.asprintf "unexpected exception shape: %a"
+            Eio.Exn.pp (Eio.Exn.Multiple errors)));
+  let image =
+    match !image_ref with
+    | Some image -> image
+    | None -> fail "image worker failure lost the image owner"
+  in
+  (match Renderables.Image.state image with
+  | Renderables.Image.Empty -> ()
+  | Renderables.Image.Loading | Renderables.Image.Ready
+  | Renderables.Image.Failed _ ->
+      fail "worker failure stranded the image in a loading state");
+  let pixels = Bytes.of_string "\255\000\000\255" in
+  expect_ok
+    (Renderables.Image.set_source image
+       (Some
+          (Renderables.Image.Source
+             (Core.Image.Rgba { pixels; width = 1; height = 1; stride = 4 }))));
+  (match Renderables.Image.state image, Renderables.Image.image image with
+  | Renderables.Image.Ready, Some _ -> ()
+  | _, _ -> fail "worker failure stranded the image lifecycle");
+  Renderables.Image.destroy image;
+  Renderer.destroy renderer
+
+let test_exceptional_completion_releases_lease () =
+  Eio_main.run @@ fun env ->
+  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let root = Eio.Stdenv.cwd env in
+  let path = child_path root "__opentui_phase6_completion_failure.png" in
+  Eio.Path.save ~create:(`Or_truncate 0o600) path
+    (Bytes.to_string (fixture_bytes ()));
+  let image_ref = ref None in
+  let completion_calls = ref 0 in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let image =
+       expect_ok
+         (Renderables.Image.create (Renderer.context renderer) ~sw
+            ~on_load:(fun _ ->
+              incr completion_calls;
+              if Int.equal !completion_calls 1 then raise Image_completion_failure)
+            ())
+     in
+     image_ref := Some image;
+     expect_ok
+       (Renderables.Image.set_source image
+          (Some (Renderables.Image.Source (Core.Image.Path path))));
+     Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) 0.05;
+     fail "completion callback did not fail the owner switch"
+   with
+   | Image_completion_failure -> ()
+   | Eio.Exn.Multiple errors ->
+       fail
+         (Format.asprintf "unexpected exception shape: %a"
+            Eio.Exn.pp (Eio.Exn.Multiple errors)));
+  let image =
+    match !image_ref with
+    | Some image -> image
+    | None -> fail "completion failure lost the image owner"
+  in
+  let pixels = Bytes.of_string "\000\255\000\255" in
+  expect_ok
+    (Renderables.Image.set_source image
+       (Some
+          (Renderables.Image.Source
+             (Core.Image.Rgba { pixels; width = 1; height = 1; stride = 4 }))));
+  (match Renderables.Image.state image with
+  | Renderables.Image.Ready -> ()
+  | Renderables.Image.Empty | Renderables.Image.Loading
+  | Renderables.Image.Failed _ ->
+      fail "completion failure stranded the image lifecycle");
+  Renderables.Image.destroy image;
+  Renderer.destroy renderer;
+  Eio.Path.unlink ~missing_ok:true path
+
+let require_multiple_domains () =
+  if Int.compare (Domain.recommended_domain_count ()) 2 < 0 then
+    skip ~reason:"requires at least one executor domain in addition to the owner" ()
+
+let test_owner_domain_affinity () =
+  require_multiple_domains ();
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let image = expect_ok (Renderables.Image.create (Renderer.context renderer) ~sw ()) in
+  let wrong_domain =
+    Eio.Domain_manager.run (Eio.Stdenv.domain_mgr env) (fun () ->
+        ( Renderables.Image.set_fit image Renderables.Image.Cover,
+          Renderables.Image.set_protocol image Core.Image.Kitty,
+          Renderables.Image.set_source image None ))
+  in
+  let expect_wrong_domain = function
+    | Error Core.Error.Wrong_domain -> ()
+    | Error error -> fail (Core.Error.message error)
+    | Ok () -> fail "image mutation escaped its owner domain"
+  in
+  let fit, protocol, source = wrong_domain in
+  expect_wrong_domain fit;
+  expect_wrong_domain protocol;
+  expect_wrong_domain source;
+  (match Renderables.Image.fit image with
+  | Renderables.Image.Fit -> ()
+  | Renderables.Image.Cover | Renderables.Image.Fill ->
+      fail "wrong-domain fit mutation changed the owner");
+  (match Renderables.Image.protocol image with
+  | Core.Image.Auto -> ()
+  | Core.Image.Kitty | Core.Image.Sixel | Core.Image.Blocks ->
+      fail "wrong-domain protocol mutation changed the owner");
+  let rejected_destroy =
+    Eio.Domain_manager.run (Eio.Stdenv.domain_mgr env) (fun () ->
+        try
+          Renderables.Image.destroy image;
+          false
+        with
+        | Invalid_argument _ -> true)
+  in
+  equal bool true rejected_destroy;
+  Renderables.Image.destroy image;
+  Renderer.destroy renderer
+
 let () =
   run "opentui-core-image-loading"
     [ test "Core image errors preserve native decode and read distinctions"
@@ -406,4 +609,12 @@ let () =
       test "bounded path reads and asynchronous replacement preserve displayed images"
         test_bounded_reads_and_async_replacement;
       test "stale path results and re-entrant callbacks remain inert"
-        test_stale_success_and_reentrant_callbacks ]
+        test_stale_success_and_reentrant_callbacks;
+      test "cancelling an active path read releases its lease"
+        test_path_cancellation_while_reading;
+      test "unexpected path-worker failures release their lease"
+        test_exceptional_worker_releases_lease;
+      test "completion callback failures release their lease"
+        test_exceptional_completion_releases_lease;
+      test "image mutations enforce owner-domain affinity"
+        test_owner_domain_affinity ]
