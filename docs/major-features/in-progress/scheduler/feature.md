@@ -15,16 +15,12 @@ a frame.
 
 ## Purpose
 
-The retained renderer currently records render requests and live counts, but
-does not own a loop that consumes them. `Lib.Clock` is injectable and has a
-manual implementation, but no Eio system adapter exists. Consequently,
-scheduler-dependent reference behavior is incomplete:
-
-- holding a scrollbar arrow performs only the initial scroll;
-- pointer selection cannot auto-scroll a ScrollBox at its edges;
-- live renderables and post effects require an application to drive frames;
-- theme-query timeouts require a caller-supplied clock implementation; and
-- the planned animation engine has no owner-domain pre-render driver.
+The retained renderer records coalesced render requests and aggregate live
+counts. The caller-run scheduler now consumes them through the Eio clock
+adapter. The scheduler-dependent reference behavior covered here includes
+scrollbar arrow repetition, ScrollBox edge auto-scroll, live-frame updates,
+theme-query timeouts, and ordered post/console rendering. Animation remains
+outside this feature and has no pre-render driver registry.
 
 The scheduler closes those gaps without making `Renderer.render` asynchronous
 or teaching pure renderables about Eio resources.
@@ -177,16 +173,15 @@ without allowing setter-heavy callbacks to create an unbounded render loop.
 
 The scheduler does not move work out of `Renderer.render`. The existing frame
 operation remains responsible for clearing the consumed request, lifecycle
-passes, layout, retained drawing, post processes, native presentation, and
-successful frame notification.
-
-A future animation engine attaches through one explicit pre-render callback or
-driver seam. For each attempt the ordering is:
+passes, layout, retained drawing, post processes, console rendering, native
+presentation, and successful frame notification. For each attempt the
+ordering is:
 
 ```text
 measure delta
--> pre-render drivers such as animation
--> retained render and post processes with the same delta
+-> retained render
+-> post processes with the same delta
+-> diagnostic console
 -> native presentation
 -> successful on_frame notification
 ```
@@ -285,27 +280,28 @@ This feature does not provide:
 
 ## Implementation sequence
 
-1. **Complete in this slice:** add the Eio-backed `Lib.Clock` adapter with
+1. **Complete:** add the Eio-backed `Lib.Clock` adapter with
    deterministic cancellation and owner-domain callback tests.
-2. **Complete in this slice:** add the scheduler revision/wakeup and private
+2. **Complete:** add the scheduler revision/wakeup and private
    render-context notification seam without changing terminal `Event_queue` or
    `Wakeup`.
-3. **Complete in this slice:** add the caller-run paced frame loop and
+3. **Complete:** add the caller-run paced frame loop and
    black-box tests for idle wake, coalescing, live frames, measured deltas,
    cancellation, errors, and teardown.
-4. **Complete in this slice:** make scheduled renderer construction explicit
+4. **Complete:** make scheduled renderer construction explicit
    while retaining explicit synchronous/manual construction for tests and
    embedding.
-5. **Available through the completed capability plumbing:** theme refresh and
+5. **Complete:** theme refresh and
    timed waiters use an Eio clock when the renderer is created with one; the
    no-clock renderer reports unsupported positive timed waits.
-6. **Pending follow-up:** retrofit ScrollBar arrow repetition and cancellation.
-7. **Pending follow-up:** retrofit ScrollBox selection edge auto-scroll through
-   live frames.
-8. **Pending follow-up:** verify post effects under scheduler-measured deltas
-   and explicit live ownership.
-9. **Pending follow-up:** expose the pre-render driver seam required by the
-   separate animation feature without implementing animation itself.
+6. **Complete:** retrofit ScrollBar arrow repetition and cancellation.
+7. **Complete:** retrofit ScrollBox selection edge auto-scroll through live
+   frames, with an idempotent owner-local live contribution.
+8. **Complete:** run post effects before the diagnostic console with
+   renderer-supplied deltas expressed in seconds; post registration remains
+   passive.
+9. **Explicitly deferred:** animation has no pre-render driver registry or
+   animation surface in this feature.
 
 ## Acceptance criteria
 
@@ -320,9 +316,9 @@ This feature does not provide:
 - live ownership drives paced frames until the aggregate count returns to
   zero, after which the loop becomes idle without polling;
 - the first active frame delta is zero; later deltas are finite, nonnegative,
-  monotonic-attempt measurements and are shared by pre-render drivers, retained
-  updates, and post processes;
-- skipped or failed presentation does not rewind time or replay a pre-render
+  monotonic-attempt measurements and are shared by retained updates and post
+  processes;
+- skipped or failed presentation does not rewind time or replay a retained
   update;
 - frame pacing avoids both cumulative work-duration drift and an unbounded
   catch-up burst after an overrun;

@@ -94,10 +94,11 @@ selection events and directional key bindings, and `Select` can rasterize
 option labels with the shared ASCII-font data.
 
 Pointer selection reaches selectable text controls through the renderer's
-captured selection route and the native local-selection feed. The controls
-keep scheduler-dependent behavior explicit: scrollbar arrow repeat and
-selection auto-scroll are application-owned clock/update policies. Retained
-opacity and scissor commands execute through the typed native buffer stacks,
+captured selection route and the native local-selection feed. The renderer
+context owns scheduler-dependent behavior: scrollbar arrow repeat uses
+cancel-safe one-shot clock chains, while selection auto-scroll uses one
+idempotent live contribution and frame deltas. Retained opacity and scissor
+commands execute through the typed native buffer stacks,
 so `Scroll_box` clipping composes with nested retained content and propagates
 native failures as structured Core errors.
 
@@ -177,18 +178,21 @@ fall back to Blocks.
 `Post.Matrices` contains the reference RGBA matrices. `Post.Filters` applies
 color-matrix operations or snapshot-backed effects to borrowed renderer
 buffers, while `Post.Effects` keeps only reusable configuration and animation
-state. `Renderer.add_post_process` registers synchronous owner-local callbacks
-with opaque removal IDs and an explicit frame delta. Effects do not retain a
-buffer or start a scheduler; callers apply them inside their own Eio-owned
-frame loop. Deterministic procedural noise keeps tests and repeated frames
-free from process-global random state.
+state. `Renderer.add_post_process` passively registers synchronous owner-local
+callbacks with opaque removal IDs and an explicit frame delta. During a frame,
+retained content is followed by post processes, the diagnostic console, and
+native presentation. Effects do not retain a buffer or start a scheduler;
+callers request frames or hold an explicit live contribution when an effect
+needs ongoing updates. Deterministic procedural noise keeps tests and repeated
+frames free from process-global random state.
 
 ## Diagnostic console
 
 `Renderer.console` exposes an owner-local `Console.t`. Applications append
 typed log levels, show or hide the overlay, resize/reposition it, scroll,
 select and copy displayed lines, handle owner-local pointer selection, and let
-the renderer draw it as the last overlay pass.
+the renderer draw it after post processes as the last overlay pass before
+native presentation.
 Destroying the renderer destroys the console and invalidates its operations.
 The port does not replace process-global `console.log`, inspect Node values,
 save files, or install stdin listeners; applications that want capture bridge

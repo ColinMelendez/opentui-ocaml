@@ -491,9 +491,7 @@ module Crt_rolling_bar_effect = struct
           value.position <-
             if Float.compare cycle_height 0.0 = 0 then 0.0
             else
-              mod_float
-                (value.position +. (delta_time /. 1000.0) *. value.speed)
-                cycle_height;
+              mod_float (value.position +. delta_time *. value.speed) cycle_height;
           let bar_height = value.height *. float_of_int height in
           let fade_distance = value.fade_distance *. bar_height in
           let total_height = bar_height +. fade_distance *. 2.0 in

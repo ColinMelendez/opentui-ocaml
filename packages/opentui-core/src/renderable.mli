@@ -179,6 +179,7 @@ module Private : sig
 
   val make_behavior :
     ?on_update:(t -> float -> unit) ->
+    ?on_visibility:(t -> bool -> unit) ->
     ?on_resize:(t -> width:int -> height:int -> unit) ->
     ?on_remove:(t -> unit) ->
     ?lifecycle_pass:(t -> unit) ->

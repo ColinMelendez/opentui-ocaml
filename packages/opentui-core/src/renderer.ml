@@ -128,6 +128,27 @@ let terminal_capabilities_of_raw
     osc52_support;
   }
 
+let apply_selection renderer value =
+  Option.iter
+    (fun owner -> Renderable.Private.selection_changed owner value)
+    renderer.selection_owner
+
+let refresh_selection renderer =
+  match renderer.selection with
+  | None -> ()
+  | Some value when not (Lib.Selection.is_active value) -> ()
+  | Some value ->
+      Option.iter
+        (fun (x, y) ->
+          Lib.Selection.set_focus value
+            { Lib.Selection.x = float_of_int x; y = float_of_int y })
+        renderer.latest_pointer;
+      apply_selection renderer (Some value);
+      ignore
+        (Renderer_events.Private.emit_selection
+           (Render_context.Private.events renderer.context) (Some value));
+      Render_context.Private.request_render renderer.context
+
 let create_with_clock_option ~clock ~width ~height =
   match Opentui_raw.Renderer.create ~width ~height with
   | Error error -> Error (map_raw_error error)
@@ -181,7 +202,7 @@ let create_with_clock_option ~clock ~width ~height =
                                 Renderer_theme_mode.create_without_clock
                                   ~query:(fun () -> theme_query_requested := true) ()
                           in
-                          Ok
+                          let renderer =
                             {
                               raw;
                               context;
@@ -205,7 +226,11 @@ let create_with_clock_option ~clock ~width ~height =
                               captured = None;
                               selection = None;
                               selection_owner = None;
-                            })))))
+                            }
+                          in
+                          Render_context.Private.set_selection_update context
+                            (fun () -> refresh_selection renderer);
+                          Ok renderer)))))
 
 let create_with_clock ~clock ~width ~height =
   create_with_clock_option ~clock:(Some clock) ~width ~height
@@ -282,11 +307,6 @@ let live_request_count renderer = Render_context.live_request_count renderer.con
 let selection renderer =
   if Render_context.Private.is_open renderer.context then Ok renderer.selection
   else Error Error.Closed
-
-let apply_selection renderer value =
-  Option.iter
-    (fun owner -> Renderable.Private.selection_changed owner value)
-    renderer.selection_owner
 
 let clear_selection renderer =
   if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
@@ -967,12 +987,12 @@ let render ?(delta_time = 0.0) renderer ~force =
         Render_context.Private.request_render renderer.context;
         Error error
     | Ok () ->
-        (match Console.render renderer.console renderer.next_buffer with
+        (match apply_post_processes renderer ~delta_time with
         | Error error ->
             Render_context.Private.request_render renderer.context;
             Error error
         | Ok () ->
-            (match apply_post_processes renderer ~delta_time with
+            (match Console.render renderer.console renderer.next_buffer with
             | Error error ->
                 Render_context.Private.request_render renderer.context;
                 Error error

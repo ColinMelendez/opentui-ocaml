@@ -21,6 +21,8 @@ type t = {
   mutable show_arrows : bool;
   mutable manual_visibility : bool;
   change_events : float Event_kernel.t;
+  mutable repeat_timer : Lib.Clock.timer option;
+  mutable repeat_generation : int64;
   mutable destroyed : bool;
 }
 
@@ -99,6 +101,13 @@ let update_slider bar =
 let recalculate_visibility bar =
   if not bar.manual_visibility then
     let should_show = Float.compare bar.scroll_size bar.viewport_size > 0 in
+    if not should_show then begin
+      bar.repeat_generation <- Int64.add bar.repeat_generation 1L;
+      (match Render_context.clock (Renderable.context bar.renderable) with
+      | Ok (Some clock) -> Option.iter (Lib.Clock.cancel clock) bar.repeat_timer
+      | Ok None | Error _ -> ());
+      bar.repeat_timer <- None
+    end;
     ignore (Renderable.set_visible bar.renderable should_show)
 
 let set_scroll_position bar value =
@@ -141,6 +150,13 @@ let set_viewport_size bar value =
 
 let set_show_arrows bar value =
   Result.bind (ensure_alive bar) (fun () ->
+      if not value then begin
+        bar.repeat_generation <- Int64.add bar.repeat_generation 1L;
+        (match Render_context.clock (Renderable.context bar.renderable) with
+        | Ok (Some clock) -> Option.iter (Lib.Clock.cancel clock) bar.repeat_timer
+        | Ok None | Error _ -> ());
+        bar.repeat_timer <- None
+      end;
       bar.show_arrows <- value;
       ignore (Renderable.set_visible bar.start_arrow.renderable value);
       ignore (Renderable.set_visible bar.end_arrow.renderable value);
@@ -159,13 +175,49 @@ let scroll_by bar delta unit =
   in
   set_scroll_position bar (bar.scroll_position +. (delta *. multiplier))
 
+let cancel_arrow_repeat bar =
+  bar.repeat_generation <- Int64.add bar.repeat_generation 1L;
+  (match Render_context.clock (Renderable.context bar.renderable) with
+  | Ok (Some clock) -> Option.iter (Lib.Clock.cancel clock) bar.repeat_timer
+  | Ok None | Error _ -> ());
+  bar.repeat_timer <- None
+
+let rec schedule_arrow_repeat bar ~ending ~delay ~step =
+  match ensure_alive bar with
+  | Error _ -> ()
+  | Ok () ->
+      (match Render_context.clock (Renderable.context bar.renderable) with
+      | Error _ | Ok None -> ()
+      | Ok (Some clock) ->
+          let generation = bar.repeat_generation in
+          let timer =
+            Lib.Clock.schedule clock ~delay (fun () ->
+                if not bar.destroyed
+                   && Int64.equal generation bar.repeat_generation
+                   && Renderable.visible bar.renderable
+                then begin
+                  bar.repeat_timer <- None;
+                  ignore
+                    (scroll_by bar (if ending then step else -.step) Viewport);
+                  if not bar.destroyed
+                     && Int64.equal generation bar.repeat_generation
+                     && Renderable.visible bar.renderable
+                  then
+                    schedule_arrow_repeat bar ~ending ~delay:0.2 ~step:0.2
+                end)
+          in
+          bar.repeat_timer <- Some timer)
+
 let arrow_mouse_handler bar ~ending event =
   match Renderable.mouse_kind event with
   | Renderable.Down ->
       Renderable.mouse_prevent_default event;
       Renderable.mouse_stop_propagation event;
-      ignore (scroll_by bar (if ending then 0.5 else -.0.5) Viewport)
+      cancel_arrow_repeat bar;
+      ignore (scroll_by bar (if ending then 0.5 else -.0.5) Viewport);
+      schedule_arrow_repeat bar ~ending ~delay:0.5 ~step:0.5
   | Renderable.Up | Renderable.Drag_end ->
+      cancel_arrow_repeat bar;
       Renderable.mouse_stop_propagation event
   | Renderable.Move | Renderable.Drag | Renderable.Drop | Renderable.Over
   | Renderable.Out | Renderable.Scroll -> ()
@@ -248,6 +300,8 @@ let create context ~orientation ?id ?(show_arrows = false)
                       show_arrows;
                       manual_visibility = false;
                       change_events = Event_kernel.create ();
+                      repeat_timer = None;
+                      repeat_generation = 0L;
                       destroyed = false;
                     }
                   in
@@ -255,6 +309,7 @@ let create context ~orientation ?id ?(show_arrows = false)
                     Renderable.Private.make_behavior
                       ~key_press:(fun _ event -> ignore (handle_key_press bar event))
                       ~destroy_self:(fun _ ->
+                        cancel_arrow_repeat bar;
                         Event_kernel.clear bar.change_events;
                         Slider.destroy bar.slider;
                         Renderable.destroy bar.start_arrow.renderable;
@@ -290,9 +345,13 @@ let create context ~orientation ?id ?(show_arrows = false)
                             (Some (arrow_mouse_handler bar ~ending:false)));
                   ignore (Renderable.set_on_mouse_up start_arrow.renderable
                             (Some (arrow_mouse_handler bar ~ending:false)));
+                  ignore (Renderable.set_on_mouse_drag_end start_arrow.renderable
+                            (Some (arrow_mouse_handler bar ~ending:false)));
                   ignore (Renderable.set_on_mouse_down end_arrow.renderable
                             (Some (arrow_mouse_handler bar ~ending:true)));
                   ignore (Renderable.set_on_mouse_up end_arrow.renderable
+                            (Some (arrow_mouse_handler bar ~ending:true)));
+                  ignore (Renderable.set_on_mouse_drag_end end_arrow.renderable
                             (Some (arrow_mouse_handler bar ~ending:true)));
                   let attach child index =
                     Renderable.Private.attach ~parent:renderable ~child ~index
@@ -356,6 +415,7 @@ let visible bar = Renderable.visible bar.renderable
 
 let set_visible bar value =
   Result.bind (ensure_alive bar) (fun () ->
+      if not value then cancel_arrow_repeat bar;
       set_manual_visibility bar true;
       Renderable.set_visible bar.renderable value)
 
@@ -384,6 +444,7 @@ let on_change bar callback = Event_kernel.on bar.change_events callback
 
 let destroy bar =
   if not bar.destroyed then begin
+    cancel_arrow_repeat bar;
     bar.destroyed <- true;
     Renderable.destroy_recursively bar.renderable
   end

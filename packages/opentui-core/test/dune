@@ -125,3 +125,8 @@
  (name test_renderer_scheduler)
  (modules test_renderer_scheduler)
  (libraries opentui-core eio_main windtrap))
+
+(test
+ (name test_scheduler_consumers)
+ (modules test_scheduler_consumers)
+ (libraries opentui-core eio_main windtrap))

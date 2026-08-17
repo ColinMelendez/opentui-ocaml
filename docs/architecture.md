@@ -284,8 +284,9 @@ The interactive controls in this tranche remain on that same retained tree:
 the editor controls compose the pure edit/view state with native text
 rendering, while scrolling and selection controls compose ordinary renderable
 children with typed event channels. Their scheduler-dependent repeat and
-auto-scroll behavior is an explicit application-owned clock/update seam rather
-than hidden component state.
+auto-scroll behavior is owned by the renderer context: ScrollBar uses
+cancel-safe clock chains and ScrollBox uses a guarded live contribution for
+frame updates.
 
 The [core source mirror feature record](major-features/in-progress/core-source-mirror/feature.md)
 defines the complete `core/src` inventory, correspondence statuses, directory

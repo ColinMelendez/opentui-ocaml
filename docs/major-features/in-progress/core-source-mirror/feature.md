@@ -77,7 +77,7 @@ reference concept closely enough for the name to be truthful.
 | Reference path | OCaml path | Status | Boundary |
 | --- | --- | --- | --- |
 | `Renderable.ts` | `src/renderable.ml`, `src/layout_children.ml` | Active slice | Heterogeneous retained nodes, typed child capabilities, layout state, lifecycle, focus, keyboard slots, and pointer routing. |
-| `renderer.ts` | `src/renderer.ml`; [`scheduler` feature record](../scheduler/feature.md) | Active translated owner | Renderer ownership, explicit frames, borrowed buffers, retained-tree rendering, scoped native opacity/scissor execution, hit-grid routing, focus, input dispatch, capability/palette response processing, renderer geometry, forced repaint invalidation, post-process callbacks, console ownership, and terminal-session hooks exist. Terminal setup/output is supplied by the Eio/Unix session boundary; the renderer-owned Eio scheduler is designed but not implemented. |
+| `renderer.ts` | `src/renderer.ml`; [`scheduler` feature record](../scheduler/feature.md) | Active translated owner | Renderer ownership, explicit frames, borrowed buffers, retained-tree rendering, scoped native opacity/scissor execution, hit-grid routing, focus, input dispatch, capability/palette response processing, renderer geometry, forced repaint invalidation, post-process callbacks, console ownership, and terminal-session hooks exist. Terminal setup/output is supplied by the Eio/Unix session boundary; the renderer-owned Eio clock, frame scheduler, post/console ordering, and scheduler consumers are implemented. |
 | `types.ts` (`RenderContext`) | `src/render_context.ml`, with internal `src/renderer_events.ml` | Active translated capability owner | Renderer-owned dimensions, copied terminal capabilities, typed owner-local event sources, lifecycle, focus, input, and render-request state are composed through the context. |
 | `types.ts` (`TerminalCapabilities`) | `src/terminal_capabilities.ml`, populated by `src/renderer.ml` from `opentui-raw` | Active slice | Immutable typed snapshots, copied terminal strings, and renderer/context sharing are implemented. |
 | `yoga.ts` | `src/yoga.ml` | Active slice | Independent node ownership, non-destructive detach, explicit free, style operations, and layout readback exist. |
@@ -118,7 +118,7 @@ reference concept closely enough for the name to be truthful.
 | `renderables/Input.ts` | `src/renderables/input.ml` | Active slice | Single-line constraints, focus/blur change semantics, paste sanitization, submit validation, and input/change/enter events exist. |
 | `renderables/Textarea.ts` | `src/renderables/textarea.ml` | Active slice | Multi-line editing wrapper, placeholder/focus styling, submit event, selection, undo/redo, and viewport/line-info forwarding exist. |
 | `renderables/ScrollBox.ts` | `src/renderables/scroll_box.ml` | Active slice | Composed root/wrapper/viewport/content ownership, culling, sticky positions, scroll accumulation, child scrolling, and scrollbar ownership exist. |
-| `renderables/ScrollBar.ts` | `src/renderables/scroll_bar.ml` | Active slice | Slider-backed scroll range, visibility, arrows, scroll units, keyboard input, and change events exist. Arrow repeat is an application-owned clock/update policy, not hidden renderable state. |
+| `renderables/ScrollBar.ts` | `src/renderables/scroll_bar.ml` | Active slice | Slider-backed scroll range, visibility, arrows, scroll units, keyboard input, change events, and renderer-clock-backed cancel-safe arrow repetition exist. |
 | `renderables/Select.ts` | `src/renderables/select.ml` | Active slice | Vertical option navigation, fast movement, descriptions, selection indicators, scrolling, wrapping, typed events, and the optional ASCII-font composition path exist. |
 | `renderables/TabSelect.ts` | `src/renderables/tab_select.ml` | Active slice | Horizontal tab navigation, dynamic rows, underline/description/arrows, wrapping, pointer translation, and typed events exist. |
 | `renderables/Slider.ts` | `src/renderables/slider.ml` | Active slice | Virtual track/thumb rendering, value clamping, keyboard/pointer input, focusability, and change events exist; ScrollBar composes it for range scrolling. |
@@ -194,9 +194,9 @@ portions of that area. Capability response recognition,
 palette parsing/normalization, renderer geometry, generic selection
 calculations, native text-view selection, editor state, and the utility
 modules above are active. Actual terminal output setup and asynchronous query
-scheduling remain Eio/application responsibilities; scrollbar repeat and
-selection auto-scroll likewise remain explicit application-owned scheduling
-seams.
+scheduling remain Eio/application responsibilities; renderer-owned timing now
+drives ScrollBar repetition, ScrollBox edge auto-scroll, theme waiters, and
+post/console frame ordering.
 
 ## Port sequence
 

@@ -40,6 +40,7 @@ and render_command =
 
 and behavior = {
   on_update : t -> float -> unit;
+  on_visibility : t -> bool -> unit;
   on_resize : t -> width:int -> height:int -> unit;
   on_remove : t -> unit;
   lifecycle_pass : (t -> unit) option;
@@ -200,6 +201,7 @@ let emit event renderable value = ignore (Event_kernel.emit event value)
 let default_behavior =
   {
     on_update = (fun _ _ -> ());
+    on_visibility = (fun _ _ -> ());
     on_resize = (fun renderable ~width:_ ~height:_ ->
       emit renderable.resized_events renderable ();
       request_render_internal renderable);
@@ -223,7 +225,7 @@ let default_behavior =
     filters_children = false;
   }
 
-let make_behavior ?on_update ?on_resize ?on_remove ?lifecycle_pass ?key_press
+let make_behavior ?on_update ?on_visibility ?on_resize ?on_remove ?lifecycle_pass ?key_press
     ?key_release ?paste ?mouse_event ?selection_changed ?should_start_selection
     ?render_before ?render_self ?render_after ?render_replacement ?scissor_rect
     ?visible_children ?destroy_self
@@ -231,6 +233,8 @@ let make_behavior ?on_update ?on_resize ?on_remove ?lifecycle_pass ?key_press
     ?(filters_children = false) () =
   {
     on_update = Option.value on_update ~default:default_behavior.on_update;
+    on_visibility =
+      Option.value on_visibility ~default:default_behavior.on_visibility;
     on_resize = Option.value on_resize ~default:default_behavior.on_resize;
     on_remove = Option.value on_remove ~default:default_behavior.on_remove;
     lifecycle_pass;
@@ -1092,6 +1096,10 @@ let detach_children renderable =
 
 let destroy renderable =
   if not renderable.destroyed then begin
+    if renderable.live then begin
+      renderable.live <- false;
+      if renderable.visible then update_live_count renderable (-1)
+    end;
     renderable.destroyed <- true;
     emit renderable.destroyed_events renderable ();
     Option.iter
@@ -1168,6 +1176,7 @@ let set_visible renderable value =
           if renderable.live then
             if (not was_visible) && value then update_live_count renderable 1
             else if was_visible && not value then update_live_count renderable (-1);
+          renderable.behavior.on_visibility renderable value;
           blur_state renderable;
           invalidate_layout_cache renderable;
           request_render renderable)

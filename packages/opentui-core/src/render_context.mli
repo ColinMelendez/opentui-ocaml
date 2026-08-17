@@ -81,6 +81,10 @@ val clock : t -> (Lib.Clock.t option, Error.t) result
 (** [request_render context] records one coalesced future render request. *)
 val request_render : t -> (unit, Error.t) result
 
+(** [request_selection_update context] asks the renderer to reapply its active
+    pointer selection after an owner-local translation change. *)
+val request_selection_update : t -> (unit, Error.t) result
+
 (** [has_pending_render context] reports whether a coalesced render request is
     waiting for the renderer scheduler. *)
 val has_pending_render : t -> (bool, Error.t) result
@@ -230,6 +234,7 @@ module Private : sig
   val live_request_count : t -> int
   val install_scheduler_wakeup : t -> (unit -> unit) -> scheduler_wakeup option
   val remove_scheduler_wakeup : t -> scheduler_wakeup -> unit
+  val set_selection_update : t -> (unit -> unit) -> unit
   val clear_hit_grid : t -> unit
   val add_hit_grid :
     t -> x:int -> y:int -> width:int -> height:int -> id:int -> unit

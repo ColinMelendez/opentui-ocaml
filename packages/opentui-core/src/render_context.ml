@@ -78,6 +78,7 @@ type t = {
   mutable next_hit_grid : int array;
   mutable closed : bool;
   mutable scheduler_wakeup : scheduler_wakeup_state option;
+  mutable selection_update : (unit -> unit) option;
   events : Renderer_events.t;
   key_handler : Lib.Key_handler.t;
 }
@@ -172,6 +173,13 @@ let request_render context =
   | Error error -> Error error
   | Ok () ->
       request_render_state context;
+      Ok ()
+
+let request_selection_update context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () ->
+      Option.iter (fun callback -> callback ()) context.selection_update;
       Ok ()
 
 let has_pending_render context =
@@ -446,6 +454,7 @@ module Private = struct
       next_hit_grid = create_hit_grid ~width ~height;
       closed = false;
       scheduler_wakeup = None;
+      selection_update = None;
       events;
       key_handler;
     }
@@ -592,6 +601,9 @@ module Private = struct
     | Some current when current == wakeup -> context.scheduler_wakeup <- None
     | Some _ | None -> ()
 
+  let set_selection_update context callback =
+    if not context.closed then context.selection_update <- Some callback
+
   let clear_hit_grid context =
     Array.fill context.next_hit_grid 0 (Array.length context.next_hit_grid) 0;
     context.hit_grid_count <- 0
@@ -631,6 +643,7 @@ module Private = struct
     if not context.closed then begin
       notify_scheduler context;
       context.scheduler_wakeup <- None;
+      context.selection_update <- None;
       context.closed <- true;
       context.render_requested <- false;
       context.capabilities <- None;

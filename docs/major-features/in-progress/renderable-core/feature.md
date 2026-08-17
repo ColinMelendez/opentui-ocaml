@@ -132,11 +132,12 @@ root boundary calls `request_live` on a `0`-to-positive transition and
 `drop_live` on a positive-to-`0` transition. Root-specific scheduling is an
 ownership boundary, not an arbitrary override in every concrete behavior.
 
-`request_live` auto-starts an idle renderer into continuous frames.
-`drop_live` returns an auto-started renderer to idle when the live-request
-count reaches zero. `drop_live` does not stop a renderer that was started
-explicitly. That control distinction is part of this slice because it is how
-the reference live-count boundary schedules work.
+The renderer scheduler observes the aggregate live-request count and keeps
+frames flowing while it is positive. `request_live` records one contribution
+and wakes a caller-run scheduler; `drop_live` removes one contribution and
+wakes it to reconsider the idle predicate. The synchronous renderer does not
+start fibers implicitly, and the scheduler does not maintain a second live
+registry.
 
 ## Heterogeneous renderables
 
@@ -250,18 +251,16 @@ services. The supported slice includes:
 - the renderer event source shared with normal render contexts;
 - focus state, focused-descendant propagation, and the focus/blur/hide/destroy
   lifecycle;
-- live-render reference counting, including auto-start from idle and the
-  distinction between auto-started and explicitly started renderers;
+- live-render reference counting and scheduler wakeups for positive and zero
+  aggregate ownership;
 - hit-grid writes during command execution;
 - the initial typed terminal-capability snapshot, synchronous capability-response
   processing, shared capability notifications, and one-shot forced repaint
   invalidation; and
 - Eio-backed terminal input/output adapters and Unix terminal resource scopes
   at the runtime boundary. `Lib.Clock` remains an injected capability with a
-  deterministic manual implementation; an Eio system-clock adapter and a
-  renderer-owned scheduler are specified by the separate
-  [`scheduler` feature record](../scheduler/feature.md) but are not yet
-  included.
+  deterministic manual implementation, and the Eio clock/scheduler path is
+  implemented in the separate [`scheduler` feature record](../scheduler/feature.md).
 
 The retained core represents opacity and clipping as scoped command-list
 operations. `Buffer.t` exposes typed push/pop operations for the native
@@ -284,14 +283,15 @@ services:
 - terminal setup, output writing, and asynchronous query scheduling; Core now
   supplies transport-neutral query strings, palette parsing/normalization,
   pixel resolution, and render geometry;
-- scrollback surfaces, console rendering, split footers, post-processing
-  effects, animation services, feed-idle retries, and isolated snapshot
-  contexts;
-- explicit pause, suspend, resume, and screen-mode services beyond the live
-  auto-start boundary.
+- scrollback surfaces, animation services, feed-idle retries, and isolated
+  snapshot contexts;
+- explicit pause, suspend, and resume services beyond the live scheduler
+  boundary.
 
-When post-processing is implemented, its reference position is between
-retained-tree command execution and native presentation.
+The renderer frame order is retained-tree command execution, registered post
+processes, diagnostic console overlay, and native presentation. Post-process
+registration remains passive; a caller requests a frame or owns a live
+contribution when it needs ongoing updates.
 
 Immediate re-renders after a frame are capped at the reference default of 60
 frames per second. Continuous live frames use the reference default of 30
@@ -679,10 +679,10 @@ The low-level buffer operation remains synchronous. The Eio runtime owns
 terminal I/O, scheduling, cancellation, and resource scopes around this
 operation; it does not change the retained-tree or buffer semantics.
 
-The renderer-spine frame does not apply post-processing effects or render the
-console. Those operations occupy the reference boundary between command
-execution and native presentation when their separate feature records are
-implemented.
+The renderer frame applies registered post-processing effects, renders the
+diagnostic console overlay, and then presents natively. Post registration is
+passive; callers request a frame or own a live contribution when an effect
+needs ongoing updates.
 
 The renderer obtains the current and next native-buffer views at construction
 and keeps them as borrowed views. Native resize mutates the owned buffers in
@@ -732,8 +732,10 @@ invalidates the retained node and updates the text-buffer state used by layout
 and native text-view rendering. Global and local selection methods on the
 text-buffer renderable update both Core metadata and the native text view;
 renderer-driven selection from pointer input is connected for the selectable
-text-buffer and editor renderables. Edge auto-scroll during a drag remains a
-future scheduler/update seam.
+text-buffer and editor renderables. Edge auto-scroll during a drag is owned by
+`Scroll_box`: it uses the renderer-owned `on_update` callback and one guarded
+`Render_context` live contribution while the pointer remains in the edge
+region.
 
 `TextNode.t` is a separate text-composition tree. It has no Yoga node and does
 not participate in the retained layout tree. `Text.t` owns a root text node;
@@ -855,10 +857,8 @@ The feature satisfies these criteria when:
   text-renderable cleanup boundary;
 - renderer shutdown uses recursive root destruction, and later operations
   return `Closed`;
-- live-state transitions update ancestor live counts and renderer scheduling
-  without excluding non-live visible nodes from drawing, including auto-start
-  from idle and the rule that `drop_live` does not stop an explicitly started
-  renderer;
+- live-state transitions update ancestor live counts and renderer scheduler
+  wakeups without excluding non-live visible nodes from drawing;
 - TextNode tests prove that text composition is separate from Yoga layout
   children, that `Text_children.children` returns nodes rather than strings,
   and that Text child operations use the text-node tree;
@@ -888,8 +888,9 @@ The feature satisfies these criteria when:
 Keyboard delivery and pointer bubbling are accepted by their own feature
 records. Programmatic text-view selection is part of the current native view
 contract, and renderer-driven pointer selection is connected for the active
-selectable text/editor renderables. Pointer ownership, capture, and drag-edge
-auto-scroll remain responsibilities of the pointer-dispatch feature.
+selectable text/editor renderables. Pointer ownership and capture remain
+pointer-dispatch responsibilities; ScrollBox owns drag-edge auto-scroll once
+selection is active.
 
 The feature record moves to
 `docs/major-features/implemented/renderable-core/` when these criteria are

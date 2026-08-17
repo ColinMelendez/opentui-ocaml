@@ -19,6 +19,14 @@ type t = {
   mutable manual_content_size : bool;
   mutable scroll_accumulator_x : float;
   mutable scroll_accumulator_y : float;
+  mutable auto_scroll_pointer : (int * int) option;
+  mutable auto_scroll_speed : float;
+  mutable auto_scroll_active : bool;
+  mutable auto_scroll_accumulator_x : float;
+  mutable auto_scroll_accumulator_y : float;
+  mutable auto_scroll_live_acquired : bool;
+  mutable selection_dragging : bool;
+  mutable selection_subscription : Event_subscription.t option;
   mutable destroyed : bool;
 }
 
@@ -190,6 +198,131 @@ and scroll_by box ~dx ~dy =
             Scroll_bar.scroll_by box.vertical_scrollbar dy Scroll_bar.Absolute
           else Ok ()))
 
+let auto_scroll_direction_x box x =
+  let left = Renderable.screen_x box.viewport in
+  let right = left +. Renderable.width box.viewport in
+  let relative = float_of_int x -. left in
+  let distance_to_left = relative in
+  let distance_to_right = right -. float_of_int x in
+  let position = Scroll_bar.scroll_position box.horizontal_scrollbar in
+  let maximum = max 0.0 (box.content_width -. Renderable.width box.viewport) in
+  if Float.compare distance_to_left 3.0 <= 0 then
+    if Float.compare position 0.0 > 0 then -1 else 0
+  else if Float.compare distance_to_right 3.0 <= 0 then
+    if Float.compare position maximum < 0 then 1 else 0
+  else 0
+
+let auto_scroll_direction_y box y =
+  let top = Renderable.screen_y box.viewport in
+  let bottom = top +. Renderable.height box.viewport in
+  let distance_to_top = float_of_int y -. top in
+  let distance_to_bottom = bottom -. float_of_int y in
+  let position = Scroll_bar.scroll_position box.vertical_scrollbar in
+  let maximum = max 0.0 (box.content_height -. Renderable.height box.viewport) in
+  if Float.compare distance_to_top 3.0 <= 0 then
+    if Float.compare position 0.0 > 0 then -1 else 0
+  else if Float.compare distance_to_bottom 3.0 <= 0 then
+    if Float.compare position maximum < 0 then 1 else 0
+  else 0
+
+let auto_scroll_speed box x y =
+  let left = Renderable.screen_x box.viewport in
+  let top = Renderable.screen_y box.viewport in
+  let right = left +. Renderable.width box.viewport in
+  let bottom = top +. Renderable.height box.viewport in
+  let distances =
+    [ float_of_int x -. left;
+      right -. float_of_int x;
+      float_of_int y -. top;
+      bottom -. float_of_int y ]
+  in
+  let minimum = List.fold_left Float.min Float.infinity distances in
+  if Float.compare minimum 1.0 <= 0 then 72.0
+  else if Float.compare minimum 2.0 <= 0 then 36.0
+  else 6.0
+
+let stop_auto_scroll box =
+  box.auto_scroll_active <- false;
+  box.auto_scroll_pointer <- None;
+  box.auto_scroll_accumulator_x <- 0.0;
+  box.auto_scroll_accumulator_y <- 0.0;
+  if box.auto_scroll_live_acquired then begin
+    ignore
+      (Render_context.drop_live (Renderable.context box.renderable));
+    box.auto_scroll_live_acquired <- false
+  end
+
+let start_auto_scroll box ~x ~y =
+  box.auto_scroll_pointer <- Some (x, y);
+  box.auto_scroll_speed <- auto_scroll_speed box x y;
+  if not box.auto_scroll_active then begin
+    box.auto_scroll_active <- true;
+    box.auto_scroll_accumulator_x <- 0.0;
+    box.auto_scroll_accumulator_y <- 0.0;
+    match Render_context.request_live (Renderable.context box.renderable) with
+    | Ok () ->
+        box.auto_scroll_live_acquired <- true
+    | Error _ ->
+        box.auto_scroll_active <- false
+  end
+
+let update_auto_scroll box ~x ~y =
+  if box.selection_dragging then begin
+    let direction_x = auto_scroll_direction_x box x in
+    let direction_y = auto_scroll_direction_y box y in
+    if Int.equal direction_x 0 && Int.equal direction_y 0 then
+      stop_auto_scroll box
+    else if box.auto_scroll_active then begin
+      box.auto_scroll_pointer <- Some (x, y);
+      box.auto_scroll_speed <- auto_scroll_speed box x y
+    end
+    else start_auto_scroll box ~x ~y
+  end
+  else stop_auto_scroll box
+
+let handle_auto_scroll box delta_time =
+  if box.auto_scroll_active && box.selection_dragging then
+    match box.auto_scroll_pointer with
+    | None -> stop_auto_scroll box
+    | Some (x, y) ->
+        let direction_x = auto_scroll_direction_x box x in
+        let direction_y = auto_scroll_direction_y box y in
+        if Int.equal direction_x 0 && Int.equal direction_y 0 then
+          stop_auto_scroll box
+        else if not (Float.is_finite delta_time)
+                || Float.compare delta_time 0.0 < 0 then
+          stop_auto_scroll box
+        else begin
+          let amount = box.auto_scroll_speed *. delta_time in
+          box.auto_scroll_accumulator_x <-
+            box.auto_scroll_accumulator_x
+            +. (float_of_int direction_x *. amount);
+          box.auto_scroll_accumulator_y <-
+            box.auto_scroll_accumulator_y
+            +. (float_of_int direction_y *. amount);
+          let dx = Float.trunc box.auto_scroll_accumulator_x in
+          let dy = Float.trunc box.auto_scroll_accumulator_y in
+          box.auto_scroll_accumulator_x <-
+            box.auto_scroll_accumulator_x -. dx;
+          box.auto_scroll_accumulator_y <-
+            box.auto_scroll_accumulator_y -. dy;
+          let before_x = Scroll_bar.scroll_position box.horizontal_scrollbar in
+          let before_y = Scroll_bar.scroll_position box.vertical_scrollbar in
+          ignore (scroll_by box ~dx ~dy);
+          let after_x = Scroll_bar.scroll_position box.horizontal_scrollbar in
+          let after_y = Scroll_bar.scroll_position box.vertical_scrollbar in
+          if not (Float.equal before_x after_x)
+             || not (Float.equal before_y after_y)
+          then begin
+            ignore
+              (Render_context.request_selection_update
+                 (Renderable.context box.renderable))
+          end
+          else if not (Float.equal dx 0.0) || not (Float.equal dy 0.0) then
+            stop_auto_scroll box
+        end
+  else if box.auto_scroll_active then stop_auto_scroll box
+
 let handle_key_press box event =
   if box.scroll_y && Scroll_bar.handle_key_press box.vertical_scrollbar event then begin
     Lib.Scroll_acceleration.reset box.acceleration;
@@ -255,13 +388,23 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                               manual_content_size = false;
                               scroll_accumulator_x = 0.0;
                               scroll_accumulator_y = 0.0;
+                              auto_scroll_pointer = None;
+                              auto_scroll_speed = 6.0;
+                              auto_scroll_active = false;
+                              auto_scroll_accumulator_x = 0.0;
+                              auto_scroll_accumulator_y = 0.0;
+                              auto_scroll_live_acquired = false;
+                              selection_dragging = false;
+                              selection_subscription = None;
                               destroyed = false;
                             }
                           in
                           install_content_behavior box;
                           let viewport_behavior =
                             Renderable.Private.make_behavior
-                              ~on_resize:(fun _ ~width:_ ~height:_ -> update_scrollbars box)
+                              ~on_resize:(fun _ ~width:_ ~height:_ ->
+                                stop_auto_scroll box;
+                                update_scrollbars box)
                               ~mouse_event:(fun _ event ->
                                 match Renderable.mouse_kind event with
                                 | Renderable.Scroll ->
@@ -278,16 +421,37 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                           Renderable.Private.set_behavior viewport viewport_behavior;
                           let behavior =
                             Renderable.Private.make_behavior
+                              ~on_update:(fun _ delta_time ->
+                                handle_auto_scroll box delta_time)
+                              ~on_visibility:(fun _ visible ->
+                                if not visible then stop_auto_scroll box)
                               ~lifecycle_pass:(fun _ -> compute_content_size box)
-                              ~on_resize:(fun _ ~width:_ ~height:_ -> update_scrollbars box)
+                              ~on_resize:(fun _ ~width:_ ~height:_ ->
+                                stop_auto_scroll box;
+                                update_scrollbars box)
                               ~key_press:(fun _ event -> ignore (handle_key_press box event))
                               ~mouse_event:(fun _ event ->
                                 match Renderable.mouse_kind event with
                                 | Renderable.Scroll ->
                                     handle_scroll box event;
                                     Renderable.mouse_stop_propagation event
-                                | _ -> ())
+                                | Renderable.Down | Renderable.Move
+                                | Renderable.Drag ->
+                                    update_auto_scroll box
+                                      ~x:(Renderable.mouse_x event)
+                                      ~y:(Renderable.mouse_y event)
+                                | Renderable.Up | Renderable.Drag_end ->
+                                    stop_auto_scroll box
+                                | Renderable.Drop | Renderable.Over
+                                | Renderable.Out -> ())
+                              ~updates_each_frame:true
                               ~destroy_self:(fun _ ->
+                                stop_auto_scroll box;
+                                box.selection_dragging <- false;
+                                Option.iter
+                                  Event_subscription.cancel
+                                  box.selection_subscription;
+                                box.selection_subscription <- None;
                                 box.destroyed <- true;
                                 Scroll_bar.destroy vertical_scrollbar;
                                 Scroll_bar.destroy horizontal_scrollbar;
@@ -350,7 +514,24 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                               bind_scroll vertical_scrollbar;
                               bind_scroll horizontal_scrollbar;
                               apply_sticky_start box;
-                              Ok box))))))
+                              (match
+                                 Render_context.on_selection context
+                                   (fun selection ->
+                                     match selection with
+                                     | Some value
+                                       when Lib.Selection.is_active value
+                                            && Lib.Selection.is_dragging value ->
+                                         box.selection_dragging <- true
+                                     | Some _ | None ->
+                                         box.selection_dragging <- false;
+                                         stop_auto_scroll box)
+                               with
+                              | Error error ->
+                                  Renderable.destroy_recursively renderable;
+                                  Error error
+                              | Ok subscription ->
+                                  box.selection_subscription <- Some subscription;
+                                  Ok box)))))))
 
 let as_renderable box = box.renderable
 let wrapper box = box.wrapper

@@ -10,7 +10,8 @@ type render_status = Rendered | Skipped | Failed
 type post_process =
   Buffer.t -> delta_time:float -> (unit, Error.t) result
 (** A synchronous, owner-local post-process applied to the next buffer after
-    retained renderables and the diagnostic console have drawn. *)
+    retained renderables and before the diagnostic console draws. The delta is
+    measured in seconds by the caller-owned renderer scheduler. *)
 
 type post_process_id
 
