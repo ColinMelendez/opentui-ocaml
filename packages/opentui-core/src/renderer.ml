@@ -1136,7 +1136,9 @@ let render ?(delta_time = 0.0) renderer ~force =
   end
 
 let destroy renderer =
-  if Render_context.Private.is_open renderer.context then begin
+  if not renderer.destruction_started
+     && Render_context.Private.is_open renderer.context
+  then begin
     renderer.destruction_started <- true;
     let attachments = renderer.before_destroy in
     renderer.before_destroy <- [];

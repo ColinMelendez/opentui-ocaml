@@ -189,4 +189,14 @@ let () =
           | Ok attachment ->
               Renderer.detach_before_destroy attachment;
               fail "destroyed renderer accepted a teardown attachment"));
+      test "destroy ignores recursive teardown attempts" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let calls = ref 0 in
+          ignore
+            (Renderer.attach_before_destroy renderer (fun () ->
+                 incr calls;
+                 Renderer.destroy renderer));
+          Renderer.destroy renderer;
+          equal int 1 !calls;
+          equal bool true (Renderer.is_destroyed renderer));
     ]
