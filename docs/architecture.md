@@ -153,7 +153,7 @@ src/
 │   ├── markdown_parser.ml  typed Markdown block/inline lexer
 │   └── composition/       typed VNode/VRenderable construction boundary
 ├── owned_buffer.ml         explicit off-screen buffer ownership
-├── image.ml                Eio/native image source and decoder owner
+├── image.ml                synchronous native image owner and bounded path reader
 ├── console.ml              renderer-owned diagnostic overlay
 ├── post/                   typed matrices, filters, and stateful effects
 ├── line_info.ml             shared visual-line metadata
@@ -187,9 +187,15 @@ workers, WASM grammars, or claim a language parser that the application has
 not registered; unresolved filetypes become explicit Code fallback states.
 
 Images and post-processing stay below the same retained identity boundary.
-`Image.t` owns native decoder handles and only accepts explicit encoded, RGBA,
-or Eio filesystem sources. `Renderables.Image` owns retained references and,
-when requested, an owner-local `Owned_buffer.t`; it passes capability-selected
+`Image.t` is a synchronous, callback-free owner of native decoder handles. It
+copies encoded/RGBA admission bytes, bounds path reads to 64 MiB, and preserves
+the distinction between read, decode, and native-operation errors.
+`Renderables.Image` owns retained references and, when requested, an owner-local
+`Owned_buffer.t`. Its optional Eio switch is required only for Path sources:
+the owner fiber performs cooperative path I/O and generation/cancellation
+delivery, while native decode, retain, callbacks, drawing, and close remain on
+the owner domain. Thus a large decode can still occupy a frame, and no native
+image handle enters the background executor. It passes capability-selected
 protocol placement through the borrowed `Buffer.t` seam. `Post.Filters` and
 `Post.Effects` never own a buffer; they operate on a borrowed renderer surface
 through typed matrices or snapshots. Renderer post-process registrations are
@@ -208,9 +214,11 @@ are not directories in the reference source.
 
 The application-facing runtime is Eio-native. One Eio switch can own terminal
 setup, input, output, clocks, cancellation, and cleanup. `opentui-core` keeps
-the rendering and parsing operations synchronous: `Renderer`, `Renderable`,
-Yoga, renderable setters, the byte parser, and the bounded event queue do not
-start fibers or perform terminal I/O.
+rendering, parsing, and native image decode synchronous: `Renderer`,
+`Renderable`, Yoga, renderable setters, the byte parser, and the bounded event
+queue do not start fibers or perform terminal I/O. The one image exception is
+the explicit `Renderables.Image` Path mode, whose owner-domain fiber performs
+cooperative file I/O before handing bytes to that synchronous decoder.
 
 An application fiber calls the synchronous renderer and parser operations. The
 renderer exposes explicit frame execution and presentation boundaries, so an

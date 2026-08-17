@@ -80,19 +80,7 @@ let image_protocol_to_int = function
   | Sixel -> 2l
   | Blocks -> 3l
 
-let map_image_error = function
-  | Opentui_raw.Image.Invalid_handle -> Error.Destroyed
-  | Opentui_raw.Image.Invalid_argument -> Error.Invalid_argument
-  | Opentui_raw.Image.Unsupported_feature
-  | Opentui_raw.Image.Unsupported_format
-  | Opentui_raw.Image.Unsupported_color_space ->
-      Error.Unsupported
-  | Opentui_raw.Image.Malformed_input
-  | Opentui_raw.Image.Dimension_limit
-  | Opentui_raw.Image.Memory_limit
-  | Opentui_raw.Image.Out_of_memory
-  | Opentui_raw.Image.Output_too_small
-  | Opentui_raw.Image.Internal_error -> Error.Unsupported
+let map_image_error error = Error.Native_image error
 
 let map_raw_draw_error = function
   | Opentui_raw.Error.Closed | Opentui_raw.Error.Stale_handle ->

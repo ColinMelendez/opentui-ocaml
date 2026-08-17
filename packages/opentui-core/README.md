@@ -181,20 +181,33 @@ by these renderables, not every extension of CommonMark/`marked`.
 
 ## Images and post-processing
 
-`Image.t` is an explicit native image owner backed by the vendored Zig
-decoder. Sources are encoded bytes, caller-provided RGBA bytes, or an
-`Eio.Path.t` loaded through an application-owned Eio filesystem capability;
-there is no Node/Bun asset loader. Metadata, pixel copying/materialization,
-resize, extraction, extension, transforms, compositing, and protocol-neutral
-image ownership return structured errors. `Image.resize` accepts either
-dimension or both dimensions, and `Image.take_raw` enforces the native
-single-owner materialization rule before returning an explicitly owned pixel
-copy and closing the image owner. `Renderables.Image` retains its source,
-resolves `Auto` against the renderer's Kitty/Sixel/tmux/pixel capabilities, and
-delegates clipping and protocol fallback to the typed native buffer seam.
-Buffered images clear and redraw an owner-local `Owned_buffer` before copying
-it to the renderer surface. Explicit Sixel requests without pixel resolution
-fall back to Blocks.
+`Image.t` is a synchronous, callback-free native image owner backed by the
+vendored Zig decoder. Encoded and RGBA source bytes are copied at admission;
+path reads are bounded to 64 MiB and report structured `Read` errors for I/O
+or oversized input, while native decode failures remain exact `Decode` errors.
+`Image.load` can read an `Eio.Path.t` synchronously under Eio, but
+`Renderables.Image` Native admission and Core encoded/RGBA use do not require
+an Eio runtime. There is no Node/Bun asset loader. Metadata, pixel
+copying/materialization, resize, extraction,
+extension, transforms, compositing, and protocol-neutral image ownership
+return structured errors. `Image.resize` accepts either dimension or both
+dimensions, and `Image.take_raw` enforces the native single-owner materialization
+rule before returning an explicitly owned pixel copy and closing the image
+owner.
+
+`Renderables.Image` retains its source and exposes the truthful
+`Empty`/`Loading`/`Ready`/`Failed` state. A Path source is read asynchronously
+and cooperatively by an owner-domain Eio fiber only when `~sw` is supplied;
+native decode, retain, callbacks, drawing, and close remain on that owner
+domain. A very large encoded image can therefore still consume a frame during
+decode. Each request is generation-checked and cancel-safe: stale completions
+are inert, failed replacements preserve the displayed image, and clearing or
+destroying closes it immediately. `on_load` receives immutable `Image.info`,
+while `on_error` receives the structured load error. The renderable resolves
+`Auto` against Kitty/Sixel/tmux/pixel capabilities and delegates clipping and
+protocol fallback to the typed native buffer seam. Buffered images clear and
+redraw an owner-local `Owned_buffer` before copying it to the renderer surface.
+Explicit Sixel requests without pixel resolution fall back to Blocks.
 
 `Post.Matrices` contains the reference RGBA matrices. `Post.Filters` applies
 color-matrix operations or snapshot-backed effects to borrowed renderer

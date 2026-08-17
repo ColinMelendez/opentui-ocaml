@@ -3,6 +3,7 @@
 type t =
   | Closed
   | Destroyed
+  | Missing_async_lifetime
   | Invalid_argument
   | Owner_mismatch
   | Not_child
@@ -10,6 +11,7 @@ type t =
   | Unsupported
   | Io of string
   | Native of Native.Error.t
+  | Native_image of Opentui_raw.Image.error
 
 (** [message error] is a diagnostic string for [error]. *)
 val message : t -> string

@@ -4,15 +4,31 @@ type fit = Fit | Cover | Fill
 
 type source = Native of Image.t | Source of Image.source
 
+type load_state =
+  | Empty
+  | Loading
+  | Ready
+  | Failed of Image.load_error
+
+exception Path_request_cancelled
+
+type path_lease = {
+  switch : Eio.Switch.t option ref;
+  mutable cancelled : bool;
+}
+
 type t = {
   renderable : Renderable.t;
   mutable source : source option;
   mutable image : Image.t option;
   mutable fit : fit;
   mutable protocol : Image.protocol;
-  mutable load_error : Image.error option;
-  on_load : (Image.t -> unit) option;
-  on_error : (Image.error -> unit) option;
+  mutable load_state : load_state;
+  mutable generation : int;
+  mutable in_flight : path_lease option;
+  path_switch : Eio.Switch.t option;
+  on_load : (Image.info -> unit) option;
+  on_error : (Image.load_error -> unit) option;
   buffered : bool;
   frame_buffer : Owned_buffer.t option;
   mutable destroyed : bool;
@@ -20,11 +36,21 @@ type t = {
 
 let as_renderable image = image.renderable
 let image image = image.image
-let source image = image.source
+let copy_source = function
+  | Native value -> Native value
+  | Source (Image.Encoded bytes) -> Source (Image.Encoded (Bytes.copy bytes))
+  | Source (Image.Rgba { pixels; width; height; stride }) ->
+      Source (Image.Rgba { pixels = Bytes.copy pixels; width; height; stride })
+  | Source (Image.Path path) -> Source (Image.Path path)
+
+let source image = Option.map copy_source image.source
 let fit image = image.fit
 let protocol image = image.protocol
-let load_error image = image.load_error
-let loading _image = false
+let state image = image.load_state
+let loading image =
+  match image.load_state with Loading -> true | Empty | Ready | Failed _ -> false
+let load_error image =
+  match image.load_state with Failed error -> Some error | Empty | Loading | Ready -> None
 let buffered image = image.buffered
 
 let ensure_alive image =
@@ -35,7 +61,31 @@ let ensure_alive image =
 let image_error_to_core = function
   | Image.Closed -> Error.Closed
   | Image.Invalid_argument -> Error.Invalid_argument
-  | Image.Source_read | Image.Native _ -> Error.Unsupported
+  | Image.Native error -> Error.Native_image error
+
+let is_current image generation =
+  not image.destroyed
+  && not (Renderable.is_destroyed image.renderable)
+  && Int.equal generation image.generation
+
+let next_generation image =
+  if Int.equal image.generation Stdlib.max_int then image.generation <- 0
+  else image.generation <- image.generation + 1;
+  image.generation
+
+let cancel_path_lease lease =
+  if not lease.cancelled then begin
+    lease.cancelled <- true;
+    match !(lease.switch) with
+    | None -> ()
+    | Some switch -> Eio.Switch.fail switch Path_request_cancelled
+  end
+
+let cancel_in_flight image =
+  Option.iter cancel_path_lease image.in_flight;
+  image.in_flight <- None
+
+let switch_is_open switch = Option.is_none (Eio.Switch.get_error switch)
 
 let capabilities context =
   match Render_context.capabilities context with
@@ -133,69 +183,97 @@ let fitted_size image ~target_width ~target_height ?(cell_aspect = 2.0) () =
           ( max 1 (int_of_float (Float.round (display_aspect *. scale))),
             max 1 (int_of_float (Float.round scale)) ))
 
-let source_dimensions image =
-  match image.image with
-  | None -> None
-  | Some value ->
-      (match Image.get_info value with
-      | Ok info -> Some (info.width, info.height)
-      | Error _ -> None)
+let maybe_set_default_dimensions image (info : Image.info) =
+  let current_width = Renderable.width image.renderable in
+  let current_height = Renderable.height image.renderable in
+  let set_width =
+    if Float.compare current_width 0.0 > 0 then Ok ()
+    else Renderable.set_width image.renderable (Yoga.Point (float_of_int info.width))
+  in
+  Result.bind set_width (fun () ->
+      if Float.compare current_height 0.0 > 0 then Ok ()
+      else
+        Renderable.set_height image.renderable
+          (Yoga.Point (float_of_int info.height)))
 
-let maybe_set_default_dimensions image =
-  match source_dimensions image with
-  | None -> Ok ()
-  | Some (width, height) ->
-      let current_width = Renderable.width image.renderable in
-      let current_height = Renderable.height image.renderable in
-      let set_width =
-        if Float.compare current_width 0.0 > 0 then Ok ()
-        else Renderable.set_width image.renderable (Yoga.Point (float_of_int width))
-      in
-      Result.bind set_width (fun () ->
-          if Float.compare current_height 0.0 > 0 then Ok ()
-          else
-            Renderable.set_height image.renderable
-              (Yoga.Point (float_of_int height)))
+let core_error_to_load_error error = Image.Core error
 
-let install_source image source_value =
-  match source_value with
+let request_if_current image generation =
+  if is_current image generation then ignore (Renderable.request_render image.renderable)
+
+let deliver_error image ~generation error =
+  if is_current image generation then begin
+    image.load_state <- Failed error;
+    Option.iter (fun callback -> callback error) image.on_error;
+    request_if_current image generation
+  end
+
+let clear_in_flight image lease =
+  match image.in_flight with
+  | Some current when current == lease -> image.in_flight <- None
+  | Some _ | None -> ()
+
+let apply_loaded image ~generation loaded =
+  if not (is_current image generation) then Image.close loaded
+  else
+    match Image.get_info loaded with
+    | Error error ->
+        Image.close loaded;
+        deliver_error image ~generation (Image.Native error)
+    | Ok info ->
+        (match maybe_set_default_dimensions image info with
+        | Error error ->
+            Image.close loaded;
+            deliver_error image ~generation (core_error_to_load_error error)
+        | Ok () ->
+            let previous = image.image in
+            image.image <- Some loaded;
+            image.load_state <- Ready;
+            Option.iter Image.close previous;
+            Option.iter (fun callback -> callback info) image.on_load;
+            request_if_current image generation)
+
+let apply_load_result image ~generation result =
+  match result with
+  | Error error -> deliver_error image ~generation error
+  | Ok loaded -> apply_loaded image ~generation loaded
+
+let install_synchronous_source image ~generation source_value =
+  apply_load_result image ~generation (Image.load source_value)
+
+let start_path_source image ~generation path =
+  let lease = { switch = ref None; cancelled = false } in
+  image.in_flight <- Some lease;
+  match image.path_switch with
   | None ->
-      Option.iter Image.close image.image;
-      image.image <- None;
-      image.load_error <- None;
-      Ok ()
-  | Some (Native value) ->
-      (match Image.retain value with
-      | Error error ->
-          image.load_error <- Some error;
-          Option.iter (fun callback -> callback error) image.on_error;
-          Ok ()
-      | Ok retained ->
-          let previous = image.image in
-          image.image <- Some retained;
-          image.load_error <- None;
-          Option.iter Image.close previous;
-          (match maybe_set_default_dimensions image with
-          | Error error -> Error error
-          | Ok () ->
-              Option.iter (fun callback -> callback retained) image.on_load;
-              Ok ()))
-  | Some (Source source_value) ->
-      (match Image.load source_value with
-      | Error error ->
-          image.load_error <- Some error;
-          Option.iter (fun callback -> callback error) image.on_error;
-          Ok ()
-      | Ok loaded ->
-          let previous = image.image in
-          image.image <- Some loaded;
-          image.load_error <- None;
-          Option.iter Image.close previous;
-          (match maybe_set_default_dimensions image with
-          | Error error -> Error error
-          | Ok () ->
-              Option.iter (fun callback -> callback loaded) image.on_load;
-              Ok ()))
+      clear_in_flight image lease;
+      Error Error.Missing_async_lifetime
+  | Some switch ->
+      (try
+         Eio.Fiber.fork ~sw:switch (fun () ->
+             try
+               Eio.Switch.run @@ fun request_switch ->
+               lease.switch := Some request_switch;
+               if lease.cancelled then raise Path_request_cancelled;
+               let result = Image.read_path path in
+               lease.switch := None;
+               clear_in_flight image lease;
+               match result with
+               | Error error ->
+                   deliver_error image ~generation (Image.Read error)
+               | Ok bytes ->
+                   if is_current image generation then
+                     apply_load_result image ~generation
+                       (Image.decode bytes
+                       |> Result.map_error (fun error -> Image.Decode error))
+             with
+             | Path_request_cancelled -> ()
+             | Eio.Cancel.Cancelled Path_request_cancelled -> ());
+         Ok ()
+       with
+       | Invalid_argument _ ->
+           clear_in_flight image lease;
+           Error Error.Closed)
 
 let draw_image_to_buffer ~target ~image ~x ~y ~width ~height ~pixel_width
     ~pixel_height ~source_x ~source_y ~source_width ~source_height ~protocol =
@@ -339,12 +417,72 @@ let resize_frame_buffer image ~width ~height =
   match image.frame_buffer with
   | None -> ()
   | Some frame_buffer ->
-      ignore
+        ignore
         (Owned_buffer.resize frame_buffer ~width:(max 1 width)
            ~height:(max 1 height))
 
+let cleanup image =
+  if not image.destroyed then begin
+    image.destroyed <- true;
+    cancel_in_flight image;
+    image.source <- None;
+    image.load_state <- Empty;
+    Option.iter Image.close image.image;
+    image.image <- None;
+    Option.iter Owned_buffer.close image.frame_buffer
+  end
+
+let set_source image value =
+  match ensure_alive image with
+  | Error error -> Error error
+  | Ok () ->
+      let copied_value = Option.map copy_source value in
+      let requires_switch =
+        match copied_value with
+        | Some (Source (Image.Path _)) -> true
+        | None | Some (Native _) | Some (Source (Image.Encoded _))
+        | Some (Source (Image.Rgba _)) -> false
+      in
+      (match requires_switch, image.path_switch with
+      | true, None -> Error Error.Missing_async_lifetime
+      | true, Some switch when not (switch_is_open switch) -> Error Error.Closed
+      | false, _ | true, Some _ ->
+          let previous_source = image.source in
+          let previous_state = image.load_state in
+          let generation = next_generation image in
+          cancel_in_flight image;
+          image.source <- copied_value;
+          match copied_value with
+          | None ->
+              Option.iter Image.close image.image;
+              image.image <- None;
+              image.load_state <- Empty;
+              ignore (Renderable.request_render image.renderable);
+              Ok ()
+          | Some (Native value) ->
+              image.load_state <- Loading;
+              (match Image.retain value with
+              | Error error ->
+                  deliver_error image ~generation (Image.Native error);
+                  Ok ()
+              | Ok retained ->
+                  apply_loaded image ~generation retained;
+                  Ok ())
+          | Some (Source ((Image.Encoded _ | Image.Rgba _) as source_value)) ->
+              image.load_state <- Loading;
+              install_synchronous_source image ~generation source_value;
+              Ok ()
+          | Some (Source (Image.Path path)) ->
+              image.load_state <- Loading;
+              (match start_path_source image ~generation path with
+              | Ok () -> Ok ()
+              | Error error ->
+                  image.source <- previous_source;
+                  image.load_state <- previous_state;
+                  Error error))
+
 let create context ?id ?source ?(fit = Fit) ?(protocol = Image.Auto)
-    ?(buffered = false) ?width ?height ?on_load ?on_error () =
+    ?sw ?(buffered = false) ?width ?height ?on_load ?on_error () =
   match Renderable.Private.create context ?id () with
   | Error error -> Error error
   | Ok renderable ->
@@ -388,7 +526,10 @@ let create context ?id ?source ?(fit = Fit) ?(protocol = Image.Auto)
                   image = None;
                   fit;
                   protocol;
-                  load_error = None;
+                  load_state = Empty;
+                  generation = 0;
+                  in_flight = None;
+                  path_switch = sw;
                   on_load;
                   on_error;
                   buffered;
@@ -402,41 +543,18 @@ let create context ?id ?source ?(fit = Fit) ?(protocol = Image.Auto)
                   ~on_resize:(fun _renderable ~width ~height ->
                     resize_frame_buffer value ~width ~height;
                     ignore (Renderable.request_render value.renderable))
-                  ~destroy_self:(fun _ ->
-                    if not value.destroyed then begin
-                      value.destroyed <- true;
-                      Option.iter Image.close value.image;
-                      value.image <- None;
-                      Option.iter Owned_buffer.close value.frame_buffer
-                    end)
+                  ~destroy_self:(fun _ -> cleanup value)
                   ()
               in
               Renderable.Private.set_behavior renderable behavior;
               (match source with
               | None -> Ok value
               | Some source_value ->
-                  value.source <- Some source_value;
-                  (match install_source value (Some source_value) with
-                  | Ok () ->
-                      ignore (Renderable.request_render renderable);
-                      Ok value
+                  (match set_source value (Some source_value) with
+                  | Ok () -> Ok value
                   | Error error ->
                       Renderable.destroy renderable;
                       Error error))))
-
-let set_source image value =
-  match ensure_alive image with
-  | Error error -> Error error
-  | Ok () ->
-      let previous = image.source in
-      image.source <- value;
-      (match install_source image value with
-      | Ok () ->
-          ignore (Renderable.request_render image.renderable);
-          Ok ()
-      | Error error ->
-          image.source <- previous;
-          Error error)
 
 let set_fit image value =
   match ensure_alive image with

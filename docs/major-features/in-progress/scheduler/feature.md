@@ -265,11 +265,21 @@ requests one frame. A continuously changing effect explicitly acquires live
 ownership for its active lifetime and releases it when paused, removed, or
 destroyed. The scheduler never inspects effect types.
 
+### Image path boundary
+
+`Renderables.Image` does not submit image work to the scheduler or to the
+background executor. When constructed with an explicit Eio switch, it performs
+cooperative Path I/O in an owner-domain fiber and hands the bytes to the
+synchronous Core image decoder on that same domain. Generation checks and
+cancellation belong to the image owner; native handles, callbacks, drawing,
+and close never cross domains. Consequently, a large decode can still occupy a
+frame even though file I/O is asynchronous.
+
 ## Explicit non-goals
 
 This feature does not provide:
 
-- background CPU domains or parser/image job submission;
+- executor-domain CPU jobs or parser/image work admission;
 - parallel rendering, layout, event dispatch, or native access;
 - terminal input multiplexing or output ownership;
 - a general task scheduler, actor runtime, or cross-domain mailbox;

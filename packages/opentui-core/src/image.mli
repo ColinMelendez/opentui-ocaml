@@ -16,11 +16,26 @@ type info = {
   has_alpha : bool;
 }
 
+type read_operation = Stat | Open | Read
+
+type read_error =
+  | Io of { operation : read_operation; detail : string }
+  | Too_large of { limit : int }
+
+type decode_error =
+  | Invalid_argument
+  | Native of Opentui_raw.Image.error
+
 type error =
   | Closed
   | Invalid_argument
-  | Source_read
   | Native of Opentui_raw.Image.error
+
+type load_error =
+  | Read of read_error
+  | Decode of decode_error
+  | Native of error
+  | Core of Error.t
 
 type source =
   | Encoded of bytes
@@ -37,10 +52,22 @@ type raw = {
 
 type t
 
-val decode : bytes -> (t, error) result
-val info : bytes -> (info, error) result
-val from_rgba : pixels:bytes -> width:int -> height:int -> stride:int -> (t, error) result
-val load : source -> (t, error) result
+val max_path_bytes : int
+val message : error -> string
+val pp : Format.formatter -> error -> unit
+val read_message : read_error -> string
+val read_pp : Format.formatter -> read_error -> unit
+val decode_message : decode_error -> string
+val decode_pp : Format.formatter -> decode_error -> unit
+val load_message : load_error -> string
+val load_pp : Format.formatter -> load_error -> unit
+
+val read_path : Eio.Fs.dir_ty Eio.Path.t -> (bytes, read_error) result
+val decode : bytes -> (t, decode_error) result
+val info : bytes -> (info, decode_error) result
+val from_rgba :
+  pixels:bytes -> width:int -> height:int -> stride:int -> (t, decode_error) result
+val load : source -> (t, load_error) result
 val close : t -> unit
 val get_info : t -> (info, error) result
 val width : t -> (int, error) result

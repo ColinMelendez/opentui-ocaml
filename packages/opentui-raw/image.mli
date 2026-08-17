@@ -40,6 +40,9 @@ type error =
   | Internal_error
   | Unsupported_feature
 
+val message : error -> string
+val pp : Format.formatter -> error -> unit
+
 val info : bytes -> (info, error) result
 val decode : bytes -> (t, error) result
 val create_from_rgba :

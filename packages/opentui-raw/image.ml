@@ -38,6 +38,21 @@ type error =
   | Internal_error
   | Unsupported_feature
 
+let message = function
+  | Invalid_handle -> "the native image handle is invalid"
+  | Unsupported_format -> "the image format is unsupported"
+  | Unsupported_color_space -> "the image color space is unsupported"
+  | Malformed_input -> "the encoded image is malformed"
+  | Dimension_limit -> "the image dimensions exceed the native limit"
+  | Memory_limit -> "the image exceeds the native memory limit"
+  | Invalid_argument -> "the native image argument is invalid"
+  | Out_of_memory -> "the native image operation ran out of memory"
+  | Output_too_small -> "the native image output is too small"
+  | Internal_error -> "the native image decoder reported an internal error"
+  | Unsupported_feature -> "the native image feature is unsupported"
+
+let pp formatter error = Format.pp_print_string formatter (message error)
+
 type t = {
   handle : Native_token.Image.t;
   owner : Native_owner.t;

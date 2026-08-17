@@ -13,10 +13,12 @@ let expect_ok result =
 let expect_image_ok result =
   match result with
   | Ok value -> value
-  | Error Core.Image.Invalid_argument -> fail "image argument was rejected"
-  | Error Core.Image.Closed -> fail "image was unexpectedly closed"
-  | Error Core.Image.Source_read -> fail "image source could not be read"
-  | Error (Core.Image.Native _) -> fail "native image operation failed"
+  | Error error -> fail (Core.Image.message error)
+
+let expect_decode_ok result =
+  match result with
+  | Ok value -> value
+  | Error error -> fail (Core.Image.decode_message error)
 
 let expect_color_ok result =
   match result with
@@ -44,7 +46,7 @@ let rgba_pixels () =
 let test_image_owner () =
   let pixels = rgba_pixels () in
   let image =
-    expect_image_ok
+    expect_decode_ok
       (Core.Image.from_rgba ~pixels ~width:2 ~height:1 ~stride:8)
   in
   let info = expect_image_ok (Core.Image.get_info image) in
@@ -100,7 +102,7 @@ let test_image_source_boundary () =
   Eio_main.run @@ fun env ->
   let path = Eio.Path.(env#fs / "__opentui_visual_runtime_missing_image__") in
   match Core.Image.load (Core.Image.Path path) with
-  | Error Core.Image.Source_read -> ()
+  | Error (Core.Image.Read _) -> ()
   | Error _ -> fail "Eio image source returned the wrong read error"
   | Ok image ->
       Core.Image.close image;
@@ -109,7 +111,7 @@ let test_image_source_boundary () =
 let test_image_renderable () =
   let renderer = expect_ok (Renderer.create ~width:12l ~height:4l) in
   let source =
-    expect_image_ok
+    expect_decode_ok
       (Core.Image.from_rgba ~pixels:(rgba_pixels ()) ~width:2 ~height:1 ~stride:8)
   in
   let image =
@@ -145,7 +147,7 @@ let test_image_renderable () =
   | None -> ()
   | Some _ -> fail "clearing image source retained a native image");
   let buffered_source =
-    expect_image_ok
+    expect_decode_ok
       (Core.Image.from_rgba ~pixels:(rgba_pixels ()) ~width:2 ~height:1 ~stride:8)
   in
   let buffered =

@@ -1,17 +1,19 @@
 # Background CPU jobs
 
-Status: implemented for Tree-sitter-backed Code; Markdown parsing and image
-loading remain synchronous by design.
+Status: implemented for Tree-sitter-backed Code; Markdown parsing and native
+image decode remain synchronous by design. Renderables.Image uses a separate
+owner-domain Eio fiber for cooperative Path I/O and does not use Background.
 
 This feature defines the small Eio boundary used to keep expensive,
 synchronous CPU work from blocking terminal input and rendering. It provides
 one application-owned pool of reusable OCaml domains and a submission
 operation whose completion handler resumes on the submitting Eio domain.
 
-Tree-sitter highlighting is the first consumer. Large Markdown parses and
-copied-pixel image decoding are possible later consumers when benchmarks and
-native ownership permit them. This feature does not make the renderer,
-retained tree, event system, or native handles safe for concurrent mutation.
+Tree-sitter highlighting is the first executor-domain consumer. Large Markdown
+parses and copied-pixel image decoding remain possible later consumers when
+benchmarks and ownership contracts permit them. This feature does not make the
+renderer, retained tree, event system, or native handles safe for concurrent
+mutation.
 
 ## Purpose
 
@@ -49,7 +51,7 @@ renderer domain.
 | `vendor/opentui/packages/core/src/lib/tree-sitter/parser.worker.ts` | `Background.submit` plus `Lib.Tree_sitter_client` | Run worker-safe highlighting away from the renderer domain and return typed highlight data. The JavaScript worker protocol and WASM asset loader are not ported. |
 | `vendor/opentui/packages/core/src/lib/tree-sitter/client.ts` and `renderables/Code.ts` | `Lib.Tree_sitter_client` and `Renderables.Code` | Own parser lookup, immutable content/parser snapshots, per-consumer generations, one-running/one-pending admission, stale-result rejection, fallback, and owner-domain application of highlights. |
 | `vendor/opentui/packages/core/src/renderables/markdown-parser.ts` | `Renderables.Markdown_parser` and the `Markdown` background option | The Markdown parser and retained-child rebuild remain synchronous; the optional capability is passed only to fenced Code children. |
-| `vendor/opentui/packages/core/src/image.ts` | `Image` and `opentui-raw` | Remain renderer/native-domain code initially. A later audited pipeline may return copied pixels and metadata from a worker. |
+| `vendor/opentui/packages/core/src/image.ts` | `Image`, `Renderables.Image`, and `opentui-raw` | Core remains a synchronous owner-domain/native boundary. Renderables.Image may perform a bounded cooperative Eio Path read under an explicit owner switch, then decodes and owns the native handle on that same domain; no image work is submitted to Background. |
 | Eio 1.4 `Executor_pool` | `Platform.Eio_runtime.Background` | Supply reusable worker domains, structured switch lifetime, and a promise-backed return to the submitting fiber. |
 
 The repository is locked to Eio 1.4. Its
@@ -70,7 +72,9 @@ CPU-heavy paths run synchronously:
   requests stay on the owner domain;
 - `Renderables.Markdown.set_content` parses and rebuilds retained children in
   one call; and fenced Code children may use the same owner-bound submitter;
-- `Image.load` performs path loading and native decode synchronously.
+- Core `Image.load` remains synchronous and callback-free. `Renderables.Image`
+  may use its explicit owner switch for a cooperative Path read, but native
+  decode, retain, callbacks, drawing, and close remain on the owner domain.
 
 `Tree_sitter_client` no longer has request or generation state. Once work can
 overlap, one Code renderable must not make another Code renderable's result
@@ -329,15 +333,21 @@ render requests all remain in the owner-domain completion callback.
 
 ### Images
 
-Image loading is not an acceptance condition for the first implementation.
-Eio path reads are I/O and should remain Eio operations rather than executor
-jobs. Native decoding currently produces a foreign image handle whose registry
-assumes serialized native entry, so that handle does not cross domains.
+The image slice deliberately has two owner-domain stages. Core `Image.t` and
+`Image.load` remain synchronous and callback-free. Encoded/RGBA bytes are
+copied at admission; Path reads are bounded to 64 MiB and distinguish stat/open/
+read I/O from oversized input and exact native decode failures.
 
-A later audited pipeline may perform a worker-safe decoder operation that
-returns copied RGBA pixels and metadata. Native image construction, retention,
-drawing, and destruction remain on the renderer domain unless the raw/native
-ABI gains and documents a different thread-safety contract.
+`Renderables.Image` requires an explicit Eio switch only for a Path source. It
+owns one cancel-safe, generation-tagged Path-read lease in an owner fiber.
+Replacement or destruction cancels delivery; stale successes are closed if a
+native value was produced, stale failures are inert, and a failed replacement
+leaves the current displayed image in place. Native decoding, retention,
+callbacks, drawing, buffered storage, and destruction remain on the owner
+domain. Background is not used, and no `opentui-raw` handle crosses an executor
+domain. A very large encoded image can still consume a frame during owner-domain
+decode; moving that work later would require a copied-pixel ABI and new
+benchmarks, not merely an executor submission.
 
 ## Explicit non-goals
 
@@ -388,7 +398,10 @@ synchronous and background paths for representative content sizes and report:
 
 Tree-sitter fixtures should include small, medium, and large files plus a burst
 of edits where only the final generation is applied. Markdown background work
-is enabled only after similar measurements establish a useful threshold.
+is enabled only after similar measurements establish a useful threshold. Image
+measurements should separate cooperative Path-read latency from owner-domain
+decode time and frame delay; the current design does not claim background image
+decode.
 
 `packages/opentui-core/bench/parser_background.ml` supplies the initial
 executor-handoff baseline with a deterministic 16 KiB pure parser. It measures
@@ -415,8 +428,10 @@ measurements, so Core does not impose an automatic size threshold.
 6. Add a deterministic parser handoff baseline while retaining the documented
    one-worker starting guidance; leave grammar-specific admission thresholds
    to measured applications. **Complete.**
-7. Evaluate large/streaming Markdown and copied-pixel image work separately;
-   add them only with evidence and the documented ownership boundary.
+7. **Decision:** keep Markdown parsing synchronous pending evidence. The image
+   slice uses the owner-domain Path-read lease described above; copied-pixel
+   image decoding remains deferred until a worker-safe decoder contract and
+   latency evidence exist.
 
 ## Acceptance criteria
 
@@ -458,4 +473,6 @@ measurements, so Core does not impose an automatic size threshold.
   cancellation, staleness, shared-client independence, and lifecycle cleanup;
   and
 - benchmarks record the responsiveness benefit and overhead before Markdown,
-  image, additional workers, affinity, or mailbox mechanisms are enabled.
+  copied-pixel image decoding, additional workers, affinity, or mailbox
+  mechanisms are enabled; Path-read and owner-decode costs are reported
+  separately for images.
