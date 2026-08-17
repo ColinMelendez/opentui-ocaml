@@ -4,3 +4,10 @@
  (package opentui-bench)
  (modules profile)
  (libraries opentui-core mtime.clock))
+
+(executable
+ (name parser_background)
+ (public_name opentui-bench.parser_background)
+ (package opentui-bench)
+ (modules parser_background)
+ (libraries opentui-core eio_main mtime.clock))

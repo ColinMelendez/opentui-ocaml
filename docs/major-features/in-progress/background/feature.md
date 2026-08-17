@@ -390,6 +390,12 @@ Tree-sitter fixtures should include small, medium, and large files plus a burst
 of edits where only the final generation is applied. Markdown background work
 is enabled only after similar measurements establish a useful threshold.
 
+`packages/opentui-core/bench/parser_background.ml` supplies the initial
+executor-handoff baseline with a deterministic 16 KiB pure parser. It measures
+the synchronous and owner-bound background paths under the same workload. It
+does not substitute for representative grammar, owner-latency, or burst-update
+measurements, so Core does not impose an automatic size threshold.
+
 ## Implementation sequence
 
 1. `Platform.Eio_runtime.Background` implements one application-owned
@@ -406,8 +412,9 @@ is enabled only after similar measurements establish a useful threshold.
 5. Add integration tests covering two Code owners sharing one parser client,
    destruction during work, rapid content replacement, parser failure, and
    owner-domain application. **Complete.**
-6. Benchmark Tree-sitter submission and establish the default worker-count
-   guidance.
+6. Add a deterministic parser handoff baseline while retaining the documented
+   one-worker starting guidance; leave grammar-specific admission thresholds
+   to measured applications. **Complete.**
 7. Evaluate large/streaming Markdown and copied-pixel image work separately;
    add them only with evidence and the documented ownership boundary.
 

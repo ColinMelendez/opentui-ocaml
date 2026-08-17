@@ -25,6 +25,19 @@ The reference OpenTUI renderer and native buffer benchmarks remain under
 `vendor/opentui/packages/core/src/zig/bench`. Compare scenario meaning and
 ownership boundaries before comparing measurements.
 
+The parser handoff profile compares repeated pure parser execution with the
+same parser submitted through the owner-bound Eio executor:
+
+```sh
+nix develop -c dune exec --profile release \
+  ./packages/opentui-core/bench/parser_background.exe
+```
+
+It reports elapsed nanoseconds for a fixed 16 KiB worker-safe parser and 64
+iterations. The result is a handoff baseline, not a claim that every parser or
+document benefits from a worker; compare it with realistic grammar work and
+owner-domain latency before changing admission thresholds.
+
 ## Runtime tracing
 
 Tracing lives in the development-only `opentui-bench` package. The production
