@@ -113,8 +113,9 @@ animation boundary before calling `Engine.update`. A timeline stores
 `current_time` and `duration` in milliseconds. The evaluator must preserve
 these reference cases:
 
-- a negative delta does not apply an item before its start offset (while
-  preserving the reference current-time behavior);
+- a negative delta regresses the timeline's current time and is forwarded to
+  already-started synchronized children; items and callbacks still apply only
+  when the resulting absolute time is at or after their start offset;
 - a large delta evaluates crossed start and completion boundaries plus the
   reference evaluator's resulting loop-cycle transition in one update;
 - an item captures its initial property values when it starts, not when it is
@@ -646,9 +647,9 @@ The remaining work is intentionally narrower:
 4. Add renderable-specific property descriptors where a renderable exposes a
    stable public numeric setter; callers can already animate ordinary mutable
    numeric state through `Property.bind_ref` and project it in `on_update`.
-5. Decide whether callback-time structural mutation needs staged commits beyond
-   the current ownership and re-entrancy guards; the current API does not
-   promise same-update insertion behavior.
+5. Keep the staged callback-mutation boundary covered as the evaluator grows;
+   committed `add`, `once`, `call`, and `sync` mutations remain ineligible until
+   the next logical update, including when the current update faults.
 6. Add custom easing only if a real consumer needs it, preserving the typed
    built-in easing surface as the default.
 7. Add framework bindings after the framework/plugin boundary exists. They must
@@ -694,8 +695,10 @@ The remaining work is intentionally narrower:
   release or cancellation is harmless and cannot repeat lifecycle callbacks;
 - engine and renderer teardown cancel the pre-render attachment before
   releasing the live token, and repeated cancellation is harmless;
-- re-entrant update and structural mutation fail with `Busy`, while engine
-  registration changes do not alter the current engine snapshot;
+- re-entrant update and restart fail with `Busy`; callback-time `add`, `once`,
+  `call`, and `sync` validate immediately, stage successfully, and commit only
+  after the outer update (including a fault), while engine registration changes
+  do not alter the current engine snapshot;
 - synchronization has one advancement owner, rejects cross-engine trees, and
   its cancellation token cannot leave the child permanently inert; direct
   lifecycle controls on an attached child return an ownership error;

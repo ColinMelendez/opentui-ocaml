@@ -39,7 +39,11 @@ type callback_item = {
 
 type item = Numeric of numeric_item | Callback of callback_item
 
-type sync_token = {
+type pending_mutation =
+  | Pending_item of item
+  | Pending_sync of sync_token
+
+and sync_token = {
   parent : t;
   child : t;
   offset_ms : float;
@@ -58,7 +62,9 @@ and t = {
   mutable next_item_id : int;
   mutable next_sync_id : int;
   mutable sync_parent : sync_token option;
+  mutable pending_sync_parent : sync_token option;
   mutable sync_children : sync_token list;
+  mutable pending_mutations : pending_mutation list;
   mutable engine_owner : int option;
   mutable engine_token_id : int option;
   mutable engine_promote : (t -> unit) option;
@@ -150,7 +156,9 @@ let create ?(duration_ms = 1000.0) ?(loop = false) ?(autoplay = true)
           next_item_id = 0;
           next_sync_id = 0;
           sync_parent = None;
+          pending_sync_parent = None;
           sync_children = [];
+          pending_mutations = [];
           engine_owner = None;
           engine_token_id = None;
           engine_promote = None;
@@ -178,15 +186,38 @@ let is_complete timeline = match timeline.state with Completed -> true | _ -> fa
 let fault timeline = timeline.fault
 let item_count timeline = List.length timeline.items
 
-let ensure_mutable timeline phase =
+type mutation_mode = Immediate | Staged
+
+let ensure_mutable timeline _phase =
   match timeline.fault, timeline.sync_parent, timeline.engine_owner with
   | Some _, _, _ -> Error Error.Timeline_faulted
+  | None, _, _ when timeline.updating -> Ok Staged
   | None, Some parent, _ -> Error (Error.Synchronized_child parent.parent.timeline_id)
   | None, None, Some engine -> Error (Error.Engine_owned engine)
-  | None, None, None when timeline.updating -> Error Error.Busy
-  | None, None, None ->
-      ignore phase;
-      Ok ()
+  | None, None, None -> Ok Immediate
+
+let commit_mutation timeline = function
+  | Pending_item item -> timeline.items <- timeline.items @ [ item ]
+  | Pending_sync token ->
+      if token.active then begin
+        (match token.child.pending_sync_parent with
+        | Some current when current == token ->
+            token.child.pending_sync_parent <- None
+        | Some _ | None -> ());
+        token.child.sync_parent <- Some token;
+        timeline.sync_children <- timeline.sync_children @ [ token ]
+      end
+
+let enqueue_mutation timeline mode mutation =
+  match mode with
+  | Immediate -> commit_mutation timeline mutation
+  | Staged ->
+      timeline.pending_mutations <- timeline.pending_mutations @ [ mutation ]
+
+let commit_pending_mutations timeline =
+  let pending = timeline.pending_mutations in
+  timeline.pending_mutations <- [];
+  List.iter (commit_mutation timeline) pending
 
 let add timeline ~bindings ?(start_time_ms = 0.0) ?(duration_ms = 1000.0)
     ?(easing = Easing.linear) ?(loops = Once) ?(loop_delay_ms = 0.0)
@@ -194,7 +225,7 @@ let add timeline ~bindings ?(start_time_ms = 0.0) ?(duration_ms = 1000.0)
     ?on_complete () =
   match ensure_mutable timeline Error.Add with
   | Error error -> Error error
-  | Ok () ->
+  | Ok mutation_mode ->
       match finite "start offset" start_time_ms with
       | Error error -> Error error
       | Ok () ->
@@ -212,9 +243,9 @@ let add timeline ~bindings ?(start_time_ms = 0.0) ?(duration_ms = 1000.0)
                       | Ok () ->
                           let item_id = timeline.next_item_id in
                           timeline.next_item_id <- item_id + 1;
-                          timeline.items <-
-                            timeline.items
-                            @ [ Numeric
+                          enqueue_mutation timeline mutation_mode
+                            (Pending_item
+                               (Numeric
                                   {
                                     id = item_id;
                                     start_time_ms;
@@ -233,7 +264,7 @@ let add timeline ~bindings ?(start_time_ms = 0.0) ?(duration_ms = 1000.0)
                                     on_start;
                                     on_loop;
                                     on_complete;
-                                  } ];
+                                  }));
                           Ok item_id
 
 let once timeline ~bindings ?start_time_ms ?duration_ms ?easing ?loops
@@ -245,36 +276,42 @@ let once timeline ~bindings ?start_time_ms ?duration_ms ?easing ?loops
 let call timeline ?(start_time_ms = 0.0) callback =
   match ensure_mutable timeline Error.Call with
   | Error error -> Error error
-  | Ok () ->
+  | Ok mutation_mode ->
       (match finite "callback start offset" start_time_ms with
       | Error error -> Error error
       | Ok () ->
           let item_id = timeline.next_item_id in
           timeline.next_item_id <- item_id + 1;
-          timeline.items <-
-            timeline.items
-            @ [ Callback { id = item_id; start_time_ms; callback; called = false } ];
+          enqueue_mutation timeline mutation_mode
+            (Pending_item
+               (Callback { id = item_id; start_time_ms; callback; called = false }));
           Ok item_id)
 
 let rec contains timeline target =
   if timeline == target then true
-  else List.exists (fun token -> contains token.child target) timeline.sync_children
+  else
+    List.exists (fun token -> contains token.child target) timeline.sync_children
+    || List.exists
+         (function
+           | Pending_item _ -> false
+           | Pending_sync token -> contains token.child target)
+         timeline.pending_mutations
 
 let sync parent child ?(start_time_ms = 0.0) () =
   match ensure_mutable parent Error.Sync with
   | Error error -> Error error
-  | Ok () when parent == child -> Error Error.Parent_cycle
-  | Ok () when contains child parent -> Error Error.Parent_cycle
-  | Ok () ->
+  | Ok _ when parent == child -> Error Error.Parent_cycle
+  | Ok _ when contains child parent -> Error Error.Parent_cycle
+  | Ok mutation_mode ->
       (match finite "sync start offset" start_time_ms with
       | Error error -> Error error
       | Ok () ->
           (match child.engine_owner with
           | Some engine -> Error (Error.Engine_owned engine)
           | None ->
-              (match child.sync_parent with
-              | Some token -> Error (Error.Already_synchronized)
-              | None ->
+              (match child.sync_parent, child.pending_sync_parent with
+              | Some _, _ | _, Some _ -> Error (Error.Already_synchronized)
+              | None, None ->
                   let token_id = parent.next_sync_id in
                   parent.next_sync_id <- token_id + 1;
                   let token =
@@ -287,8 +324,10 @@ let sync parent child ?(start_time_ms = 0.0) () =
                       active = true;
                     }
                   in
-                  parent.sync_children <- parent.sync_children @ [ token ];
-                  child.sync_parent <- Some token;
+                  (match mutation_mode with
+                  | Immediate -> ()
+                  | Staged -> child.pending_sync_parent <- Some token);
+                  enqueue_mutation parent mutation_mode (Pending_sync token);
                   Ok token)))
 
 let cancel_sync token =
@@ -297,6 +336,15 @@ let cancel_sync token =
     token.active <- false;
     token.parent.sync_children <-
       List.filter (fun current -> current != token) token.parent.sync_children;
+    token.parent.pending_mutations <-
+      List.filter
+        (function
+          | Pending_item _ -> true
+          | Pending_sync current -> current != token)
+        token.parent.pending_mutations;
+    (match token.child.pending_sync_parent with
+    | Some current when current == token -> token.child.pending_sync_parent <- None
+    | Some _ | None -> ());
     (match token.child.sync_parent with
     | Some current when current == token -> token.child.sync_parent <- None
     | Some _ | None -> ());
@@ -390,15 +438,18 @@ let pause timeline =
           | Faulted -> Error Error.Timeline_faulted))
 
 let restart timeline =
-  match ensure_mutable timeline Error.Restart with
-  | Error error -> Error error
-  | Ok () ->
-      timeline.current_time_ms <- 0.0;
-      timeline.fault <- None;
-      reset_items timeline;
-      reset_synchronized_children timeline;
-      set_state timeline Playing;
-      Ok ()
+  if timeline.updating then Error Error.Busy
+  else
+    match timeline.sync_parent, timeline.engine_owner with
+    | Some parent, _ -> Error (Error.Synchronized_child parent.parent.timeline_id)
+    | None, Some engine -> Error (Error.Engine_owned engine)
+    | None, None ->
+        timeline.current_time_ms <- 0.0;
+        timeline.fault <- None;
+        reset_items timeline;
+        reset_synchronized_children timeline;
+        set_state timeline Playing;
+        Ok ()
 
 let total_cycles (item : numeric_item) =
   match item.loops with
@@ -633,13 +684,11 @@ let update_child ~engine_update timeline token ~previous_time_ms
         target_time_ms -. token.offset_ms
       else delta_time_ms
     in
-    if Float.compare child_delta_time_ms 0.0 < 0 then Ok ()
-    else
-      match engine_update token.child child_delta_time_ms with
-      | Ok () -> Ok ()
-      | Error fault ->
-          fail timeline Error.Child_timeline
-            (Error.Child_fault fault)
+    match engine_update token.child child_delta_time_ms with
+    | Ok () -> Ok ()
+    | Error fault ->
+        fail timeline Error.Child_timeline
+          (Error.Child_fault fault)
   end
 
 let evaluate_segment ~engine_update timeline ~previous_time_ms
@@ -687,7 +736,8 @@ let evaluate_segment ~engine_update timeline ~previous_time_ms
 let rec update_internal timeline ~delta_time_ms ~from_owner =
   let admission =
     if timeline.updating then
-      fail timeline Error.Ownership (Error.Structured Error.Busy)
+      Error
+        (make_fault timeline Error.Ownership (Error.Structured Error.Busy))
     else if not from_owner then
       match timeline.sync_parent, timeline.engine_owner with
       | Some parent, _ ->
@@ -706,13 +756,11 @@ let rec update_internal timeline ~delta_time_ms ~from_owner =
       | Error error ->
           fail timeline Error.Validation (Error.Structured error)
       | Ok () ->
-          if Float.compare delta_time_ms 0.0 < 0 then Ok ()
-          else
-            match timeline.state with
-            | Faulted ->
-                fail timeline Error.Validation (Error.Structured Error.Timeline_faulted)
-            | Idle | Paused | Completed -> Ok ()
-            | Playing -> begin
+          (match timeline.state with
+          | Faulted ->
+              fail timeline Error.Validation (Error.Structured Error.Timeline_faulted)
+          | Idle | Paused | Completed -> Ok ()
+          | Playing -> begin
                 let previous_time_ms = timeline.current_time_ms in
                 let requested_time_ms = previous_time_ms +. delta_time_ms in
                 if not (Float.is_finite requested_time_ms) then
@@ -758,24 +806,28 @@ let rec update_internal timeline ~delta_time_ms ~from_owner =
                         ~target_time_ms ~delta_time_ms
                     end
                   in
+                  let final_result =
+                    match result with
+                    | Error fault -> Error fault
+                    | Ok () when timeline.loop -> Ok ()
+                    | Ok ()
+                      when Float.compare timeline.current_time_ms
+                             timeline.duration_ms >= 0 ->
+                        set_state timeline Completed;
+                        (match timeline.on_complete with
+                        | None -> Ok ()
+                        | Some callback ->
+                            (try callback (); Ok () with
+                            | exception_value ->
+                                callback_failure timeline Error.On_complete
+                                  exception_value))
+                    | Ok () -> Ok ()
+                  in
                   timeline.updating <- false;
-                  match result with
-                  | Error fault -> Error fault
-                  | Ok () when timeline.loop -> Ok ()
-                  | Ok ()
-                    when Float.compare timeline.current_time_ms
-                           timeline.duration_ms >= 0 ->
-                      set_state timeline Completed;
-                      (match timeline.on_complete with
-                      | None -> Ok ()
-                      | Some callback ->
-                          (try callback (); Ok () with
-                          | exception_value ->
-                              callback_failure timeline Error.On_complete
-                                exception_value))
-                  | Ok () -> Ok ()
-                end
-              end)
+                  commit_pending_mutations timeline;
+                  final_result
+              end
+              end))
 
 let update timeline ~delta_time_ms = update_internal timeline ~delta_time_ms ~from_owner:false
 
