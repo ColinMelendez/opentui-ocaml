@@ -15,14 +15,11 @@ type highlight = {
 
 type parser_error = No_parser of string | Failed of string
 
+type worker_safety = Owner_only | Worker_safe
+
 type parser = {
   filetype : string;
   aliases : string list;
+  worker_safety : worker_safety;
   highlight : string -> (highlight list, parser_error) result;
-}
-
-type request = {
-  generation : int;
-  filetype : string;
-  content : string;
 }

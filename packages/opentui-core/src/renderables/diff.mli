@@ -9,6 +9,7 @@ val create :
   ?filetype:string ->
   ?syntax_style:Syntax_style.t ->
   ?tree_sitter_client:Lib.Tree_sitter_client.t ->
+  ?background:Platform.Eio_runtime.Background.submitter ->
   ?sync_scroll:bool ->
   ?show_line_numbers:bool ->
   ?wrap_mode:Text_buffer_view.wrap_mode ->

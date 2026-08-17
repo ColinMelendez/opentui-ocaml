@@ -29,6 +29,7 @@ type t = {
   fg : Color.t option;
   bg : Color.t option;
   tree_sitter_client : Lib.Tree_sitter_client.t option;
+  background : Platform.Eio_runtime.Background.submitter option;
   mutable conceal : bool;
   mutable conceal_code : bool;
   mutable streaming : bool;
@@ -179,6 +180,7 @@ let render_token markdown token index =
   | Parser.Code_block { language; text; _ } ->
       Code.create markdown.context ~id ~content:text ?filetype:language
         ?tree_sitter_client:markdown.tree_sitter_client
+        ?background:markdown.background
         ~syntax_style:markdown.syntax_style ~conceal:markdown.conceal_code
         ~streaming:markdown.streaming ~wrap_mode:markdown.wrap_mode ()
       |> Result.map (fun code ->
@@ -337,7 +339,7 @@ let rebuild ?(reuse = false) markdown =
   | None -> markdown.blocks <- List.rev !rendered; Renderable.request_render markdown.renderable
 
 let create context ?id ?(content = "") ?syntax_style ?fg ?bg
-    ?tree_sitter_client ?(conceal = true) ?(conceal_code = false)
+    ?tree_sitter_client ?background ?(conceal = true) ?(conceal_code = false)
     ?(streaming = false) ?(wrap_mode = Text_buffer_view.Word) ?table_options () =
   let syntax_style, owns_syntax_style = match syntax_style with Some value -> value, false | None -> Syntax_style.create (), true in
   let table_options = Option.value table_options ~default:{ show_borders = true; outer_border = true; cell_padding_x = 1; cell_padding_y = 0 } in
@@ -345,7 +347,7 @@ let create context ?id ?(content = "") ?syntax_style ?fg ?bg
   | Error error -> if owns_syntax_style then Syntax_style.destroy syntax_style; Error error
   | Ok renderable ->
       let markdown =
-        { renderable; children = Layout_children.Private.of_renderable renderable; context; content; syntax_style; owns_syntax_style; fg; bg; tree_sitter_client; conceal; conceal_code; streaming; wrap_mode; table_options; parse_state = Parser.parse content; blocks = []; destroyed = false }
+        { renderable; children = Layout_children.Private.of_renderable renderable; context; content; syntax_style; owns_syntax_style; fg; bg; tree_sitter_client; background; conceal; conceal_code; streaming; wrap_mode; table_options; parse_state = Parser.parse content; blocks = []; destroyed = false }
       in
       register_default_styles syntax_style;
       let result = Result.bind (Renderable.set_flex_direction renderable Yoga.Flex_column) (fun () -> rebuild markdown) in

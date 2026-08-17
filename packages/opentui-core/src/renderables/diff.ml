@@ -14,6 +14,7 @@ type t = {
   syntax_style : Syntax_style.t;
   owns_syntax_style : bool;
   tree_sitter_client : Lib.Tree_sitter_client.t option;
+  background : Platform.Eio_runtime.Background.submitter option;
   mutable sync_scroll : bool;
   mutable show_line_numbers : bool;
   wrap_mode : Text_buffer_view.wrap_mode;
@@ -99,6 +100,7 @@ let make_code diff ~id ~lines =
   match
     Code.create diff.context ~id ~content ?filetype:diff.filetype
       ?tree_sitter_client:diff.tree_sitter_client
+      ?background:diff.background
       ~syntax_style:diff.syntax_style ~draw_unstyled_text:false
       ~initial_styled_text:styled ()
   with
@@ -280,7 +282,7 @@ let set_content diff value =
         | Ok patch -> diff.parsed <- Some patch; diff.parse_error <- None; build diff
 
 let create context ?id ?(content = "") ?(view = Unified) ?filetype ?syntax_style
-    ?tree_sitter_client ?(sync_scroll = true) ?(show_line_numbers = true)
+    ?tree_sitter_client ?background ?(sync_scroll = true) ?(show_line_numbers = true)
     ?(wrap_mode = Text_buffer_view.No_wrap) () =
   let syntax_style, owns_syntax_style =
     match syntax_style with Some value -> value, false | None -> Syntax_style.create (), true
@@ -291,7 +293,7 @@ let create context ?id ?(content = "") ?(view = Unified) ?filetype ?syntax_style
       let diff =
         {
           renderable; context; content; view; filetype; syntax_style;
-          owns_syntax_style; tree_sitter_client; sync_scroll; show_line_numbers;
+          owns_syntax_style; tree_sitter_client; background; sync_scroll; show_line_numbers;
           wrap_mode; parsed = None; parse_error = None; left = None; right = None;
           error_text = None;
           destroyed = false;

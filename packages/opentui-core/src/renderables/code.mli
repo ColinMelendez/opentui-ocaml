@@ -1,4 +1,11 @@
-type highlight_state = Idle | Applied | Fallback of Lib.Tree_sitter_types.parser_error
+type highlight_state =
+  | Idle
+  | Pending
+  | Applied
+  | Fallback of Lib.Tree_sitter_types.parser_error
+(** [Pending] means the current generation has either been admitted to the
+    background executor or is the one latest snapshot queued behind admitted
+    work. Failed admission does not enter [Pending]. *)
 
 type t
 
@@ -9,6 +16,7 @@ val create :
   ?filetype:string ->
   ?syntax_style:Syntax_style.t ->
   ?tree_sitter_client:Lib.Tree_sitter_client.t ->
+  ?background:Platform.Eio_runtime.Background.submitter ->
   ?wrap_mode:Text_buffer_view.wrap_mode ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->
@@ -50,3 +58,5 @@ val scroll_x : t -> int
 val scroll_y : t -> int
 val set_scroll : t -> x:int -> y:int -> (unit, Error.t) result
 val destroy : t -> unit
+(** [destroy code] destroys {!as_renderable}. Destroying that renderable
+    directly performs the same one-shot Code cleanup. *)

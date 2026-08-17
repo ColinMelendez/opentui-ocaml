@@ -1,17 +1,17 @@
 # Background CPU jobs
 
-Status: implemented; consumer integrations remain in progress.
+Status: implemented for Tree-sitter-backed Code; Markdown parsing and image
+loading remain synchronous by design.
 
 This feature defines the small Eio boundary used to keep expensive,
 synchronous CPU work from blocking terminal input and rendering. It provides
 one application-owned pool of reusable OCaml domains and a submission
 operation whose completion handler resumes on the submitting Eio domain.
 
-The first intended consumer is Tree-sitter highlighting. Large Markdown
-parses and copied-pixel image decoding are possible later consumers when
-benchmarks and native ownership permit them. This feature does not make the
-renderer, retained tree, event system, or native handles safe for concurrent
-mutation.
+Tree-sitter highlighting is the first consumer. Large Markdown parses and
+copied-pixel image decoding are possible later consumers when benchmarks and
+native ownership permit them. This feature does not make the renderer,
+retained tree, event system, or native handles safe for concurrent mutation.
 
 ## Purpose
 
@@ -46,9 +46,9 @@ renderer domain.
 | Reference source | Planned OCaml correspondence | Responsibility |
 | --- | --- | --- |
 | `vendor/opentui/packages/core/src/platform/worker.ts` | `packages/opentui-core/src/platform/eio_runtime/background.ml` | Replace the JavaScript/Node worker transport mechanism with reusable Eio executor domains. |
-| `vendor/opentui/packages/core/src/lib/tree-sitter/parser.worker.ts` | `Background.submit` plus `Lib.Tree_sitter_client` | Run highlighting away from the renderer domain and return typed highlight data. The JavaScript worker protocol and WASM asset loader are not ported. |
-| `vendor/opentui/packages/core/src/lib/tree-sitter/client.ts` and `renderables/Code.ts` | `Lib.Tree_sitter_client` and `Renderables.Code` | Own parser lookup, content snapshots, per-consumer generations, stale-result rejection, fallback, and application of highlights. |
-| `vendor/opentui/packages/core/src/renderables/markdown-parser.ts` | `Renderables.Markdown_parser` | Remain a synchronous pure parser; a Markdown owner may submit sufficiently expensive parses through `Background`. |
+| `vendor/opentui/packages/core/src/lib/tree-sitter/parser.worker.ts` | `Background.submit` plus `Lib.Tree_sitter_client` | Run worker-safe highlighting away from the renderer domain and return typed highlight data. The JavaScript worker protocol and WASM asset loader are not ported. |
+| `vendor/opentui/packages/core/src/lib/tree-sitter/client.ts` and `renderables/Code.ts` | `Lib.Tree_sitter_client` and `Renderables.Code` | Own parser lookup, immutable content/parser snapshots, per-consumer generations, one-running/one-pending admission, stale-result rejection, fallback, and owner-domain application of highlights. |
+| `vendor/opentui/packages/core/src/renderables/markdown-parser.ts` | `Renderables.Markdown_parser` and the `Markdown` background option | The Markdown parser and retained-child rebuild remain synchronous; the optional capability is passed only to fenced Code children. |
 | `vendor/opentui/packages/core/src/image.ts` | `Image` and `opentui-raw` | Remain renderer/native-domain code initially. A later audited pipeline may return copied pixels and metadata from a worker. |
 | Eio 1.4 `Executor_pool` | `Platform.Eio_runtime.Background` | Supply reusable worker domains, structured switch lifetime, and a promise-backed return to the submitting fiber. |
 
@@ -59,22 +59,25 @@ long-lived parser domain are not part of the initial feature.
 
 ## Assessment of the current implementation
 
-There is no background submission module today. Parser-backed renderables run
-their work synchronously:
+The Background executor and parser consumer are now implemented. The remaining
+CPU-heavy paths run synchronously:
 
-- `Lib.Tree_sitter_client.highlight_request` invokes the registered parser
-  function in the caller;
-- `Renderables.Code.refresh` parses, converts highlights, mutates its text
-  buffer, and requests a render in one call;
+- `Lib.Tree_sitter_client` resolves registered parsers and exposes
+  `run_parser` without owning request identity;
+- `Renderables.Code` invokes `Worker_safe` parsers through `Background` when
+  supplied, while `Owner_only` parsers and the no-background path remain
+  synchronous; conversion, callbacks, text-buffer mutation, and render
+  requests stay on the owner domain;
 - `Renderables.Markdown.set_content` parses and rebuilds retained children in
-  one call; and
+  one call; and fenced Code children may use the same owner-bound submitter;
 - `Image.load` performs path loading and native decode synchronously.
 
-The current `Tree_sitter_client` generation belongs to the whole client. That
-works only because requests are synchronous. Once work can overlap, one Code
-renderable must not make another Code renderable's result stale. Generation
-and latest-result policy therefore belong to the consuming Code/buffer, not to
-one client-global counter.
+`Tree_sitter_client` no longer has request or generation state. Once work can
+overlap, one Code renderable must not make another Code renderable's result
+stale, so generation and latest-result policy belong to each consuming Code
+owner. The client registry remains an owner-domain lookup table; a resolved
+parser record and copied content are the only values captured by the worker
+closure.
 
 The current runtime `Event_queue` and `Wakeup` are single-domain structures.
 They remain unchanged and are not a completion transport for background jobs.
@@ -241,6 +244,15 @@ owner. Obsolete running work may finish, but its result is discarded. The
 policy remains local because Code, Markdown, and Image have different notions
 of identity, error fallback, and useful intermediate results.
 
+`Code.highlight_state` reports `Pending` only after the current worker request
+has been accepted by `Background`, or after the current generation has
+replaced the one pending snapshot behind accepted work. A direct admission
+failure returns its structured Core error and leaves the previous state intact.
+If re-admitting the queued snapshot from a completion ever fails, there is no
+setter call to receive that error; Code therefore executes that already
+resolved worker-safe parser snapshot synchronously on the owner domain rather
+than silently dropping the latest generation.
+
 Every asynchronous parser consumer owns a monotonically increasing generation
 or version. The completion callback checks the generation and owner lifetime
 before applying a result. Destroying or changing a renderable makes old
@@ -276,10 +288,10 @@ arbitrary feature state or call feature callbacks during teardown.
 
 ### Tree-sitter and Code
 
-Tree-sitter highlighting is the first required integration. Parser lookup and
-request snapshot creation happen on the owner domain. The worker receives the
-resolved parser operation, content, filetype, and any immutable parse options,
-and returns typed highlight data or a typed parser error.
+Tree-sitter highlighting is the first integration. Parser lookup and request
+snapshot creation happen on the owner domain. A `Worker_safe` parser and copied
+content cross to the executor; the worker returns typed highlight data or a
+typed parser error. `Owner_only` parsers never cross the boundary.
 
 The parser function must be safe to invoke on an executor worker. A parser
 that wraps mutable or foreign state must make that state job-local or provide
@@ -291,7 +303,17 @@ lifecycle remain owner-domain operations.
 text may be installed immediately according to `draw_unstyled_text`; the final
 highlight result is applied only if the Code owner is alive and its generation
 is still current. Two Code renderables sharing one client do not invalidate
-each other's generations.
+each other's generations. `Markdown`, `Diff`, and composition Code
+constructors propagate the optional submitter to the Code instances they own;
+Markdown's own parser and retained-child rebuild remain synchronous.
+
+Code registers one cleanup callback through the underlying renderable's
+`once_destroyed` event before highlighting begins. Destroying through either
+`Code.destroy` or `Renderable.destroy (Code.as_renderable code)` cancels active
+completion delivery, drops queued work, marks the Code owner dead, and releases
+an internally created `Syntax_style` once. Caller-supplied syntax styles remain
+caller-owned. The callback does not recursively destroy the renderable; normal
+`Text_buffer_renderable` destruction continues through its existing behavior.
 
 ### Markdown
 
@@ -372,18 +394,18 @@ is enabled only after similar measurements establish a useful threshold.
 
 1. `Platform.Eio_runtime.Background` implements one application-owned
    `Eio.Executor_pool`, with explicit switch lifetime, owner-bound submitters,
-   and structured admission errors.
+   and structured admission errors. **Complete.**
 2. Black-box Eio tests prove that work runs on another domain, completion
    runs on the submitting domain, expected result errors are preserved,
    cancellation suppresses completion, closed lifetimes reject submission, and
-   unexpected exceptions reach the appropriate switch.
+   unexpected exceptions reach the appropriate switch. **Complete.**
 3. Change Tree-sitter request identity from one client-global generation to
-   per-Code/per-buffer generations.
+   per-Code/per-buffer generations. **Complete.**
 4. Run Code highlighting through `Background` and implement one-running plus
-   one-latest-pending admission with stale-result rejection.
+   one-latest-pending admission with stale-result rejection. **Complete.**
 5. Add integration tests covering two Code owners sharing one parser client,
    destruction during work, rapid content replacement, parser failure, and
-   final render invalidation.
+   owner-domain application. **Complete.**
 6. Benchmark Tree-sitter submission and establish the default worker-count
    guidance.
 7. Evaluate large/streaming Markdown and copied-pixel image work separately;
@@ -413,10 +435,14 @@ is enabled only after similar measurements establish a useful threshold.
   ordering are unchanged;
 - Code owns per-consumer generations and at most one running plus one latest
   pending highlight request;
+- Code reports `Pending` only for admitted or queued current work, and an
+  admission failure cannot leave a false pending state;
 - two Code renderables sharing one Tree-sitter client cannot invalidate one
   another's results;
 - stale or post-destruction results perform no mutation, emit no component
   event, and request no render;
+- destroying Code through its exposed `Renderable.t` identity performs the
+  same one-shot cancellation and owned-style cleanup as `Code.destroy`;
 - an accepted result is applied through existing owner-domain setters and
   requests a normal coalesced future frame;
 - parser functions used by workers have an explicit worker-safety contract and

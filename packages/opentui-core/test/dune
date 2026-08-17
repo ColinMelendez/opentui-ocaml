@@ -135,3 +135,8 @@
  (name test_background)
  (modules test_background)
  (libraries opentui-core eio_main windtrap))
+
+(test
+ (name test_parser_background)
+ (modules test_parser_background)
+ (libraries opentui-core eio_main windtrap))

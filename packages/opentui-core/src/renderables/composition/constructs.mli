@@ -35,6 +35,7 @@ val code :
   ?filetype:string ->
   ?syntax_style:Syntax_style.t ->
   ?tree_sitter_client:Lib.Tree_sitter_client.t ->
+  ?background:Platform.Eio_runtime.Background.submitter ->
   ?wrap_mode:Text_buffer_view.wrap_mode ->
   ?conceal:bool ->
   ?draw_unstyled_text:bool ->

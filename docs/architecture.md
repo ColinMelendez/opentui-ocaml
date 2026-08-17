@@ -180,9 +180,11 @@ Parser-backed content stays below the retained renderable identity: `Code`
 owns one `Text_buffer_renderable`, `Diff` composes ordinary Code and gutter
 children, and `Markdown` owns a layout-children list whose stable prefix can
 be retained across content updates. `Lib.Tree_sitter_client` is an injectable,
-synchronous parser registry. It does not load JavaScript workers, WASM
-grammars, or claim a language parser that the application has not registered;
-unresolved filetypes become explicit Code fallback states.
+owner-domain parser registry and pure runner; `Code` can submit explicitly
+`Worker_safe` parser snapshots through `Platform.Eio_runtime.Background`,
+while `Owner_only` parsers remain synchronous. It does not load JavaScript
+workers, WASM grammars, or claim a language parser that the application has
+not registered; unresolved filetypes become explicit Code fallback states.
 
 Images and post-processing stay below the same retained identity boundary.
 `Image.t` owns native decoder handles and only accepts explicit encoded, RGBA,
@@ -254,7 +256,7 @@ TypeScript class syntax or JavaScript runtime mechanisms.
 | Reference line-number and timing renderables | `Renderables.Line_number` consumes unified `Line_info` providers and owns only its internal gutter; `Renderables.Time_to_first_draw` records a monotonic first-draw timestamp. |
 | Reference `TextTable` and width helper | `Renderables.Text_table` owns native cell views plus one retained table identity, applies typed per-column alignment, and keeps aligned selection coordinates in cell-local space; `Text_table_width` implements the deterministic water-fill allocator. |
 | Reference composition VNodes | `Renderables.Composition.Vnode` is an inert typed description. Instantiation attaches ordinary `Renderable.t` identities, so composition does not create a competing runtime tree; `V_renderable` supplies typed drawing callbacks, while `Constructs` includes Code and typed styled-text conveniences. |
-| Reference parser-backed content | `Renderables.Code`, `Renderables.Diff`, and `Renderables.Markdown` compose the existing text/style/line-number seams, including propagation of parsed pipe-table alignment into `Text_table`. `Lib.Tree_sitter_client` accepts typed parser functions and rejects stale generations synchronously; `Tree_sitter_styled_text`, `Detect_links`, and `Hast_styled_text` are typed conversion utilities. |
+| Reference parser-backed content | `Renderables.Code`, `Renderables.Diff`, and `Renderables.Markdown` compose the existing text/style/line-number seams, including propagation of parsed pipe-table alignment into `Text_table`. `Lib.Tree_sitter_client` accepts typed parser functions and leaves per-Code generation/coalescing to the consumer; `Code` optionally uses the owner-bound Eio background executor for `Worker_safe` parsers. `Tree_sitter_styled_text`, `Detect_links`, and `Hast_styled_text` are typed conversion utilities. |
 | Reference utility singletons and host services | Owner composition in `Renderer`, `Render_context`, `Data_paths`, `Env`, `Clipboard`, `Output_capture`, `Stdin_parser`, and `Renderer_theme_mode`; injected clocks, schedulers, and sinks carry effects without a process-global singleton. |
 | Reference JavaScript/Bun/Node/WASM loaders | Translated/non-applicable platform mechanisms. Typed parser, filesystem, terminal, and raw-ABI capabilities are injected by the Eio-native application boundary. |
 | `requestRender()` | Dirty-state invalidation plus a coalesced future-frame request, distinct from an explicit renderer frame/presentation operation. |
@@ -301,9 +303,11 @@ The [background feature record](major-features/in-progress/background/feature.md
 defines the application-owned Eio executor pool used for selected CPU-heavy
 work. `Platform.Eio_runtime.Background` binds submissions to an owner domain
 and Eio switch, runs only the typed work closure on a reusable executor domain,
-and returns completion to the owner. It does not make retained or native state
-concurrently mutable; consumer integrations add their own generations and
-lifetime checks.
+and returns completion to the owner. Tree-sitter-backed `Code` uses that
+boundary for explicitly `Worker_safe` parsers, with per-Code generations,
+coalesced latest snapshots, and owner-domain conversion/application; Markdown,
+Diff, and composition constructors only propagate the capability to their Code
+children. It does not make retained or native state concurrently mutable.
 
 The [scheduler feature record](major-features/in-progress/scheduler/feature.md)
 defines the separate renderer-owned Eio clock, timer, render-request wakeup,

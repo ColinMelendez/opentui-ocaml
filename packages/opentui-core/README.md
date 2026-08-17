@@ -140,16 +140,30 @@ integer-width arithmetic is not a supported terminal use case.
 pool for selected CPU-heavy work. Submitters are bound to an owner domain and
 switch: only the typed work closure crosses to a reusable executor domain, and
 completion returns to the owner. Cancellation suppresses callback delivery but
-does not claim to interrupt CPU work already running. Consumers remain
-responsible for generation and retained-object lifetime checks.
+does not claim to interrupt CPU work already running. Tree-sitter-backed Code
+uses this capability only for parser records marked `Worker_safe`; Code owns
+per-instance generations, one running plus one latest pending snapshot, stale
+completion rejection, and destruction lifetime checks. Its public `Pending`
+state is entered only after worker admission or while the current snapshot is
+queued behind admitted work; failed admission does not claim progress.
+Destroying either Code or its exposed renderable identity runs the same
+one-shot cancellation and internally owned syntax-style cleanup. Consumers
+remain responsible for their retained-object ownership.
 
 `Renderables.Code` owns one native `Text_buffer_renderable` and accepts an
 application-registered `Lib.Tree_sitter_types.parser` through
-`Lib.Tree_sitter_client`. Requests are synchronous and generation-checked:
-when a parser callback causes a newer request, the older result is rejected.
-Syntax highlights are converted to native styled chunks with UTF-8 code-point
-ranges, syntax-theme merging, concealment, source-line mapping, selection, and
-plain-text fallback for missing or failing parsers.
+`Lib.Tree_sitter_client`. The client is only a registry and pure parser runner;
+Code resolves an immutable parser/content snapshot, uses the optional
+Background submitter for `Worker_safe` parsers, and keeps conversion,
+callbacks, and native styled-buffer mutation on its owner domain. Syntax
+highlights are converted to native styled chunks with UTF-8 code-point ranges,
+syntax-theme merging, concealment, source-line mapping, selection, and
+plain-text fallback for missing or failing parsers. Markdown, Diff, and
+composition constructors can propagate the same optional submitter to Code;
+Markdown parsing itself remains synchronous.
+If the latest queued snapshot cannot be re-admitted from a completion, Code
+runs that resolved worker-safe snapshot synchronously on the owner rather than
+losing the current generation.
 
 `Renderables.Diff` parses unified hunks into typed lines and composes Code with
 line-number gutters in unified or split layout. `Renderables.Markdown` uses a

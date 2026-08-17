@@ -52,6 +52,7 @@ let () =
             {
               filetype = "ocaml";
               aliases = [ "ml" ];
+              worker_safety = Core.Lib.Tree_sitter_types.Owner_only;
               highlight = (fun _ -> Ok [ { start = 0; end_ = 3; group = "keyword"; meta = None } ]);
             }
           in
@@ -60,6 +61,7 @@ let () =
             {
               filetype = "conceal";
               aliases = [];
+              worker_safety = Core.Lib.Tree_sitter_types.Owner_only;
               highlight =
                 (fun _ ->
                   Ok
@@ -82,14 +84,13 @@ let () =
             }
           in
           ignore (expect_parser_ok (Core.Lib.Tree_sitter_client.register_parser client conceal_parser));
-          let request = Core.Lib.Tree_sitter_client.begin_request client ~content:"let" ~filetype:"ocaml" in
-          ignore (expect_parser_ok (Core.Lib.Tree_sitter_client.highlight_request client request));
-          let stale = Core.Lib.Tree_sitter_client.begin_request client ~content:"fun" ~filetype:"ocaml" in
-          (match Core.Lib.Tree_sitter_client.highlight_request client request with
-          | Error (Core.Lib.Tree_sitter_types.Failed _) -> ()
-          | Error _ -> fail "stale request returned the wrong parser error"
-          | Ok _ -> fail "stale request was accepted");
-          ignore (expect_parser_ok (Core.Lib.Tree_sitter_client.highlight_request client stale));
+          let parser = Option.get (Core.Lib.Tree_sitter_client.resolve_parser client "ocaml") in
+          ignore
+            (expect_parser_ok
+               (Core.Lib.Tree_sitter_client.run_parser parser ~content:"let"));
+          ignore
+            (expect_parser_ok
+               (Core.Lib.Tree_sitter_client.run_parser parser ~content:"fun"));
           Core.Lib.Tree_sitter_client.destroy client);
       test "Code uses native styled chunks, selection, and parser fallback" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:40l ~height:5l) in
@@ -110,6 +111,7 @@ let () =
             {
               filetype = "ocaml";
               aliases = [];
+              worker_safety = Core.Lib.Tree_sitter_types.Owner_only;
               highlight = (fun _ -> Ok [ { start = 0; end_ = 3; group = "keyword"; meta = None } ]);
             }
           in
@@ -118,6 +120,7 @@ let () =
             {
               filetype = "conceal";
               aliases = [];
+              worker_safety = Core.Lib.Tree_sitter_types.Owner_only;
               highlight =
                 (fun _ ->
                   Ok
@@ -190,6 +193,7 @@ let () =
           Renderables.Code.destroy fallback;
           Renderables.Code.destroy code;
           Core.Lib.Tree_sitter_client.destroy client;
+          equal bool false (Core.Syntax_style.is_destroyed syntax_style);
           Core.Syntax_style.destroy syntax_style;
           Renderer.destroy renderer);
       test "styled conversion and links preserve Unicode codepoint ranges" (fun () ->

@@ -23,14 +23,14 @@ let text ?id ?width_method ?wrap_mode ?content children =
         (Text.create context ?id ?width_method ?wrap_mode ?content ()))
     () children
 
-let code ?id ?content ?filetype ?syntax_style ?tree_sitter_client ?wrap_mode
+let code ?id ?content ?filetype ?syntax_style ?tree_sitter_client ?background ?wrap_mode
     ?conceal ?draw_unstyled_text ?streaming ?initial_styled_text ?base_highlight
     ?on_highlight ?on_chunks children =
   Vnode.h
     (fun context () ->
       Result.map Code.as_renderable
         (Code.create context ?id ?content ?filetype ?syntax_style
-           ?tree_sitter_client ?wrap_mode ?conceal ?draw_unstyled_text
+           ?tree_sitter_client ?background ?wrap_mode ?conceal ?draw_unstyled_text
            ?streaming ?initial_styled_text ?base_highlight ?on_highlight
            ?on_chunks ()))
     () children

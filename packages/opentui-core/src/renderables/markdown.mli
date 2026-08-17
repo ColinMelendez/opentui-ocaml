@@ -15,6 +15,7 @@ val create :
   ?fg:Color.t ->
   ?bg:Color.t ->
   ?tree_sitter_client:Lib.Tree_sitter_client.t ->
+  ?background:Platform.Eio_runtime.Background.submitter ->
   ?conceal:bool ->
   ?conceal_code:bool ->
   ?streaming:bool ->

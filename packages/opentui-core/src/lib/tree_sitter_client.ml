@@ -2,12 +2,11 @@ module Types = Tree_sitter_types
 
 type t = {
   parsers : (string, Types.parser) Hashtbl.t;
-  mutable generation : int;
   mutable destroyed : bool;
 }
 
 let create () =
-  { parsers = Hashtbl.create 16; generation = 0; destroyed = false }
+  { parsers = Hashtbl.create 16; destroyed = false }
 
 let valid_name value = String.length value > 0 && not (String.contains value ' ')
 
@@ -43,21 +42,4 @@ let destroy client =
 
 let is_destroyed client = client.destroyed
 
-let begin_request client ~content ~filetype =
-  client.generation <- client.generation + 1;
-  { Types.generation = client.generation; filetype; content }
-
-let is_current client (request : Types.request) =
-  not client.destroyed && Int.equal request.Types.generation client.generation
-
-let highlight_request client request =
-  if not (is_current client request) then
-    Error (Types.Failed "stale tree-sitter request")
-  else
-    match resolve_parser client request.Types.filetype with
-    | None -> Error (Types.No_parser request.Types.filetype)
-    | Some parser -> parser.Types.highlight request.Types.content
-
-let highlight_once client ~content ~filetype =
-  let request = begin_request client ~content ~filetype in
-  highlight_request client request
+let run_parser (parser : Types.parser) ~content = parser.Types.highlight content
