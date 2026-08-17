@@ -15,6 +15,15 @@ type post_process =
 
 type post_process_id
 
+type pre_render_driver
+(** An idempotent owner-local pre-render registration. *)
+
+type live_lease
+(** An idempotent contribution to the renderer's continuous-render count. *)
+
+type teardown_attachment
+(** An idempotent callback invoked before retained-root destruction. *)
+
 type resize_event = Render_context.resize_event = {
   width : int32;
   height : int32;
@@ -103,6 +112,35 @@ val request_render : t -> (unit, Error.t) result
 val request_live : t -> (unit, Error.t) result
 val drop_live : t -> (unit, Error.t) result
 val live_request_count : t -> (int, Error.t) result
+
+val attach_pre_render :
+  t -> (float -> unit) -> (pre_render_driver, Error.t) result
+(** Register a callback that runs on the renderer owner immediately before
+    retained-tree traversal. Callbacks run in registration order and receive
+    the render delta in seconds. The callback may mutate owner-local state or
+    request a later frame; it must not render recursively. *)
+
+val detach_pre_render : pre_render_driver -> unit
+(** Remove a pre-render callback without invoking it. *)
+
+val acquire_live_lease : t -> (live_lease, Error.t) result
+(** Acquire one idempotent continuous-render lease for this renderer. *)
+
+val release_live_lease : live_lease -> unit
+(** Release a live lease. Repeated release and release after renderer destroy
+    are harmless. *)
+
+val attach_before_destroy :
+  t -> (unit -> unit) -> (teardown_attachment, Error.t) result
+(** Attach an owner-local teardown callback. Callbacks run once, in
+    registration order, after ordinary renderer work is frozen and before the
+    retained root is destroyed. *)
+
+val detach_before_destroy : teardown_attachment -> unit
+(** Detach a teardown callback without invoking it. *)
+
+val close_before_destroy : teardown_attachment -> unit
+(** Invoke and detach one teardown callback. Repeated close is harmless. *)
 
 val add_post_process : t -> post_process -> (post_process_id, Error.t) result
 val remove_post_process : t -> post_process_id -> (unit, Error.t) result

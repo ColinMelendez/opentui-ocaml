@@ -3,6 +3,7 @@ open Windtrap
 module Renderer = Opentui_core.Renderer
 module Context = Opentui_core.Render_context
 module Subscription = Opentui_core.Event_subscription
+module Renderable = Opentui_core.Renderable
 
 let expect_ok result =
   match result with
@@ -125,4 +126,67 @@ let () =
           | Error Opentui_core.Error.Closed -> ()
           | Error error -> fail (Opentui_core.Error.message error)
           | Ok _ -> fail "closed context accepted a new event registration"));
+      test "pre-render drivers receive deltas in registration order" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let calls = ref [] in
+          let first =
+            expect_ok
+              (Renderer.attach_pre_render renderer (fun delta ->
+                   calls := ("first", delta) :: !calls))
+          in
+          ignore
+            (Renderer.attach_pre_render renderer (fun delta ->
+                 calls := ("second", delta) :: !calls));
+          ignore (expect_ok (Renderer.render renderer ~delta_time:0.25 ~force:true));
+          equal string "first:0.25,second:0.25"
+            (String.concat ","
+               (List.map
+                  (fun (name, delta) -> name ^ ":" ^ string_of_float delta)
+                  (List.rev !calls)));
+          Renderer.detach_pre_render first;
+          calls := [];
+          ignore (expect_ok (Renderer.render renderer ~delta_time:0.5 ~force:true));
+          equal string "second:0.5"
+            (String.concat ","
+               (List.map
+                  (fun (name, delta) -> name ^ ":" ^ string_of_float delta)
+                  (List.rev !calls)));
+          Renderer.destroy renderer);
+      test "live leases are counted and released idempotently" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let lease = expect_ok (Renderer.acquire_live_lease renderer) in
+          equal int 1 (expect_ok (Renderer.live_request_count renderer));
+          Renderer.release_live_lease lease;
+          Renderer.release_live_lease lease;
+          equal int 0 (expect_ok (Renderer.live_request_count renderer));
+          Renderer.destroy renderer;
+          Renderer.release_live_lease lease);
+      test "before-destroy callbacks see a live root and run once in order" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let root = Renderer.root renderer in
+          let calls = ref [] in
+          let first =
+            expect_ok
+              (Renderer.attach_before_destroy renderer (fun () ->
+                   calls :=
+                     ("first", Renderable.is_destroyed root) :: !calls))
+          in
+          ignore
+            (Renderer.attach_before_destroy renderer (fun () ->
+                 calls := ("second", Renderable.is_destroyed root) :: !calls));
+          Renderer.close_before_destroy first;
+          Renderer.close_before_destroy first;
+          Renderer.destroy renderer;
+          equal string "first:false,second:false"
+            (String.concat ","
+               (List.map
+                  (fun (name, destroyed) -> name ^ ":" ^ string_of_bool destroyed)
+                  (List.rev !calls)));
+          equal bool true (Renderable.is_destroyed root);
+          (match Renderer.attach_before_destroy renderer ignore with
+          | Error Opentui_core.Error.Closed -> ()
+          | Error error -> fail (Opentui_core.Error.message error)
+          | Ok attachment ->
+              Renderer.detach_before_destroy attachment;
+              fail "destroyed renderer accepted a teardown attachment"));
     ]

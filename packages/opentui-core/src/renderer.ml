@@ -27,6 +27,29 @@ type t = {
   mutable captured : Renderable.t option;
   mutable selection : Lib.Selection.t option;
   mutable selection_owner : Renderable.t option;
+  mutable next_pre_render_id : int;
+  mutable pre_render_drivers : pre_render_driver list;
+  mutable before_destroy : teardown_attachment list;
+  mutable live_leases : live_lease list;
+  mutable destruction_started : bool;
+}
+
+and pre_render_driver = {
+  renderer : t;
+  id : int;
+  callback : float -> unit;
+  mutable active : bool;
+}
+
+and live_lease = {
+  renderer : t;
+  mutable active : bool;
+}
+
+and teardown_attachment = {
+  renderer : t;
+  callback : unit -> unit;
+  mutable active : bool;
 }
 
 type resize_event = Render_context.resize_event = {
@@ -231,6 +254,11 @@ let create_with_clock_option ~clock ~width ~height =
                               captured = None;
                               selection = None;
                               selection_owner = None;
+                              next_pre_render_id = 1;
+                              pre_render_drivers = [];
+                              before_destroy = [];
+                              live_leases = [];
+                              destruction_started = false;
                             }
                           in
                           Render_context.Private.set_selection_update context
@@ -319,6 +347,75 @@ let request_render renderer = Render_context.request_render renderer.context
 let request_live renderer = Render_context.request_live renderer.context
 let drop_live renderer = Render_context.drop_live renderer.context
 let live_request_count renderer = Render_context.live_request_count renderer.context
+
+let attach_pre_render renderer callback =
+  if renderer.destruction_started
+     || not (Render_context.Private.is_open renderer.context)
+  then Error Error.Closed
+  else begin
+    let id = renderer.next_pre_render_id in
+    renderer.next_pre_render_id <- id + 1;
+    let driver = { renderer; id; callback; active = true } in
+    renderer.pre_render_drivers <- renderer.pre_render_drivers @ [ driver ];
+    Ok driver
+  end
+
+let detach_pre_render driver =
+  if driver.active then begin
+    driver.active <- false;
+    driver.renderer.pre_render_drivers <-
+      List.filter
+        (fun current -> current != driver)
+        driver.renderer.pre_render_drivers
+  end
+
+let acquire_live_lease renderer =
+  if renderer.destruction_started
+     || not (Render_context.Private.is_open renderer.context)
+  then Error Error.Closed
+  else begin
+    match Render_context.request_live renderer.context with
+    | Error error -> Error error
+    | Ok () ->
+        let lease = { renderer; active = true } in
+        renderer.live_leases <- lease :: renderer.live_leases;
+        Ok lease
+  end
+
+let release_live_lease (lease : live_lease) =
+  if lease.active then begin
+    lease.active <- false;
+    lease.renderer.live_leases <-
+      List.filter
+        (fun (current : live_lease) -> current != lease)
+        lease.renderer.live_leases;
+    ignore (Render_context.drop_live lease.renderer.context)
+  end
+
+let attach_before_destroy renderer callback =
+  if renderer.destruction_started
+     || not (Render_context.Private.is_open renderer.context)
+  then Error Error.Closed
+  else begin
+    let attachment = { renderer; callback; active = true } in
+    renderer.before_destroy <- renderer.before_destroy @ [ attachment ];
+    Ok attachment
+  end
+
+let detach_before_destroy (attachment : teardown_attachment) =
+  if attachment.active then begin
+    attachment.active <- false;
+    attachment.renderer.before_destroy <-
+      List.filter
+        (fun (current : teardown_attachment) -> current != attachment)
+        attachment.renderer.before_destroy
+  end
+
+let close_before_destroy (attachment : teardown_attachment) =
+  if attachment.active then begin
+    detach_before_destroy attachment;
+    attachment.callback ()
+  end
 
 let selection renderer =
   if Render_context.Private.is_open renderer.context then Ok renderer.selection
@@ -998,12 +1095,17 @@ let resize renderer ~width ~height =
                 Ok ()))
 
 let render ?(delta_time = 0.0) renderer ~force =
-  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  if renderer.destruction_started
+     || not (Render_context.Private.is_open renderer.context)
+  then Error Error.Closed
   else if not (Float.is_finite delta_time) || Float.compare delta_time 0.0 < 0 then
     Error Error.Invalid_argument
   else begin
     Render_context.Private.clear_render_request renderer.context;
     let frame_id = Render_context.Private.advance_frame renderer.context in
+    List.iter
+      (fun driver -> if driver.active then driver.callback delta_time)
+      renderer.pre_render_drivers;
     (match
        Renderable.Private.render_root renderer.root renderer.next_buffer
          ~delta_time
@@ -1035,6 +1137,21 @@ let render ?(delta_time = 0.0) renderer ~force =
 
 let destroy renderer =
   if Render_context.Private.is_open renderer.context then begin
+    renderer.destruction_started <- true;
+    let attachments = renderer.before_destroy in
+    renderer.before_destroy <- [];
+    List.iter
+      (fun (attachment : teardown_attachment) ->
+        if attachment.active then begin
+          attachment.active <- false;
+          attachment.callback ()
+        end)
+      attachments;
+    List.iter
+      (fun (lease : live_lease) -> lease.active <- false)
+      renderer.live_leases;
+    renderer.live_leases <- [];
+    renderer.pre_render_drivers <- [];
     renderer.captured <- None;
     ignore (clear_selection renderer);
     renderer.last_over <- None;
