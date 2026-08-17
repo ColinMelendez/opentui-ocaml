@@ -165,3 +165,8 @@
  (name test_animation_engine)
  (modules test_animation_engine)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_audio_stream)
+ (modules test_audio_stream)
+ (libraries opentui-core eio_main eio.unix windtrap))
