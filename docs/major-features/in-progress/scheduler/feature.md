@@ -1,6 +1,8 @@
 # Renderer scheduler
 
-Status: in progress.
+Status: implemented for the current renderer, clock, and consumer scope.
+Animation's pre-render driver attachment remains explicitly deferred to the
+animation feature.
 
 This feature defines the Eio-owned timing and frame-driving boundary for one
 renderer. It turns coalesced render requests and live-render ownership into
