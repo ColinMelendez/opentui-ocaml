@@ -41,10 +41,18 @@ library. The feature does not include a general audio asset loader, the full
 reference `Audio` mixer API, microphone capture, recording, audio taps,
 mixer-only fallback, or device enumeration.
 
-The stream is an Eio-owned runtime component. The demuxer, option validation,
-metadata parser, and event vocabulary must remain usable without Eio so that
-their behavior can be tested and reasoned about independently of fibers and
-I/O.
+The stream is an application-owned Eio runtime component. The application
+establishes a dedicated audio scope with its own Eio switch and monotonic
+clock; `Stream.open_` receives those capabilities explicitly, and a stream may
+derive child scopes for individual attempts. The audio scope is distinct from
+the renderer's scope and clock. Audio does not depend on
+`Renderer_scheduler`, acquire renderer live ownership, or drive renderer
+frames. A UI owner may react to an audio event by requesting an ordinary
+renderer frame, but that callback remains the UI owner's responsibility.
+
+The demuxer, option validation, metadata parser, and event vocabulary must
+remain usable without Eio so that their behavior can be tested and reasoned
+about independently of fibers and I/O.
 
 ## Reference correspondence
 
@@ -96,19 +104,56 @@ native build already contains the reference miniaudio dependency and imports
 the reference audio implementation, but the local probe, header, stubs, and
 OCaml bindings do not expose those functions.
 
-The current Eio platform boundary provides the right kind of resource and
-clock ownership for a future stream, but it does not provide an audio source
-connector, a retry owner, or a native audio handle. The event-system design
-already reserves `AudioStream<M>` as an owner of typed metadata, reconnecting,
-ended, error, and disposed events. That design is normative for this feature:
-producer scheduling may be deferred by the audio runtime, but event delivery
-after scheduling uses the ordinary owner-local typed channel contract.
+The repository now has implemented Eio owner-domain clocks and a
+`Renderer_scheduler`, plus the application-owned `Background` executor. Those
+features do not change the audio ownership boundary or supply an audio source
+connector, a retry owner, or a native audio handle. Audio uses its own
+application-owned Eio switch and monotonic clock rather than borrowing the
+renderer scheduler's scope. The stream scope owns producer scheduling and
+event delivery; the renderer scheduler remains solely a renderer frame
+driver. The event-system design already reserves `AudioStream<M>` as an owner
+of typed metadata, reconnecting, ended, error, and disposed events. That
+design is normative for this feature: producer scheduling may be deferred by
+the audio runtime, but event delivery after scheduling uses the ordinary
+owner-local typed channel contract.
 
 There is therefore no partial implementation to preserve. The first work is
 an ownership and ABI decision, followed by pure demuxer behavior and then the
 Eio/native integration.
 
 ## Active design
+
+### Relationship to renderer scheduling and Background
+
+Audio is parallel to, rather than a consumer of, the renderer runtime. The
+application owns an audio scope consisting of an Eio switch and monotonic
+clock. Engine and stream fibers, source reads, retry delays, monitor sleeps,
+and event delivery are bound to that scope. They do not use
+`Renderer_scheduler.create`, `Renderer_scheduler.run`, renderer live counts,
+or frame deltas. An application may compose the audio scope and renderer
+scope under one larger lifetime, but neither scope owns the other.
+
+`Background` is not part of the stream's normal data path. The following values
+and operations remain on the audio owner domain and must not cross an executor
+boundary:
+
+- Eio sources and connector state;
+- borrowed demuxer slices and their sink calls;
+- native backpressure waits and the stream supervisor;
+- raw/native engine and stream handles, native writes, and decoder state; and
+- mutable lifecycle, generation, statistics, and event-delivery state.
+
+Only a later, measured optimization may consider `Background`: it must use
+copied, owned inputs and outputs for an isolated `Worker_safe` pure CPU phase.
+Its completion must return to the audio owner scope and pass the current
+stream/attempt generation before changing state. It must never move borrowed
+slices, Eio resources, backpressure, native calls, or decoder state into the
+executor, and it must not become an implicit audio scheduler.
+
+The stream scope owns audio event delivery. If a listener needs to affect the
+UI, it may notify an owner-domain UI callback; that callback may issue a normal
+renderer request, while audio remains unaware of and does not drive the
+renderer loop.
 
 ### Native ownership and the raw boundary
 
@@ -136,12 +181,13 @@ exactly once. Engine close is idempotent. An engine is application-scoped
 rather than implicitly renderer-owned; a later runtime may own one as a
 convenience by composition.
 
-The caller's Eio switch bounds a stream's source and monitor fibers, while the
-engine claim bounds its native handle; either owner ending invokes the same
-idempotent stream disposal path. If a child cannot release its native claim,
-engine close returns a structured aggregate error and remains `closing`; it
-does not invalidate the child or destroy the raw engine underneath it. A later
-close call retries the remaining cleanup.
+The application-owned audio switch bounds a stream's source and monitor
+fibers, and its monotonic clock bounds monitor polling, retry backoff, and
+event-delivery scheduling. The engine claim bounds the native handle; either
+owner ending invokes the same idempotent stream disposal path. If a child
+cannot release its native claim, engine close returns a structured aggregate
+error and remains `closing`; it does not invalidate the child or destroy the
+raw engine underneath it. A later close call retries the remaining cleanup.
 
 Applications that replace a live source, such as the reference station-picker
 demo, give each requested stream its own child switch. Replacing the selection
@@ -294,6 +340,10 @@ retryable statuses, applies bounded `Retry-After` hints, lowercases copied
 response URLs and every reconnect response are revalidated before audio bytes
 reach the native decoder.
 
+Connector and source ownership stay in the audio scope. An Eio source, a
+blocked read, and connection cleanup are not admissible `Background` work;
+they require the stream supervisor's cancellation and generation rules.
+
 Every attempt gets a fresh cancellation scope, byte-source ownership record,
 demuxer, and native-write state. Reusing a demuxer across attempts would allow
 partial metadata or framing from one connection to corrupt the next one.
@@ -351,6 +401,12 @@ A demuxer is not responsible for native backpressure. The stream-owned sink
 processes each emitted audio slice before returning and retains its exact
 unconsumed suffix when native writes are partial.
 
+The borrowed slice is valid only for its sink call and is consumed on the
+audio owner domain. A demuxer must not enqueue that slice, its backing input,
+or a sink that retains it into `Background`; a future worker phase would first
+copy the bytes into owned data and would be subject to the measured
+`Worker_safe` restriction above.
+
 The ICY demuxer must match the reference behavior:
 
 - interval zero treats every non-empty input chunk as audio and emits no
@@ -396,6 +452,10 @@ failed, cancelled, and ended native states to the supervisor. Raw calls remain
 synchronous and confined to the stream's owning domain; supporting callers
 from another domain requires an explicit handoff rather than relying on a
 mutex for lifecycle ordering.
+
+The monitor, capacity conditions, and native writes remain in this owner
+domain. In particular, a zero-capacity wait is an audio-scope backpressure
+wait, not a job that may be submitted to `Background`.
 
 When a native write returns zero, the source pump waits on a
 cancellation-aware capacity/state condition maintained by the monitor and then
@@ -526,14 +586,16 @@ and structural field names; it does not strip terminal controls, interpret
 metadata URLs, or apply display policy. Documentation and examples must
 sanitize values before rendering them to a terminal.
 
-The audio runtime schedules delivery after a read, demux, native state change,
-or cleanup transition; it never emits inline in the middle of source ownership
-changes. This preserves the reference's non-reentrant asynchronous event
-boundary without promising JavaScript macrotask ordering. Once scheduled,
-channel emission is synchronous and typed. The event source does not acquire
-Eio in its kernel, and event callbacks do not own the native stream. A terminal
-event is delivered after terminal cleanup, and `closed` resolves after that
-delivery attempt finishes.
+The stream owner schedules delivery through the audio Eio scope after a read,
+demux, native state change, or cleanup transition; it never emits inline in
+the middle of source ownership changes. This preserves the reference's
+non-reentrant asynchronous event boundary without promising JavaScript
+macrotask ordering. Once scheduled, channel emission is synchronous and typed.
+The event source does not acquire Eio in its kernel, and event callbacks do not
+own the native stream. A terminal event is delivered after terminal cleanup,
+and `closed` resolves after that delivery attempt finishes. If a listener must
+affect the UI, its owner-domain callback may request a normal renderer frame;
+audio does not acquire renderer live ownership or drive the renderer loop.
 
 Error reporting is a stream policy boundary. Connector, demuxer, native
 operation, and cleanup failures are tagged with their phase and operation.
@@ -575,10 +637,10 @@ second terminal arbiter; terminal cleanup is scheduled outside the getter's
 call stack.
 
 All public stream operations are confined to the Eio domain that owns the
-stream. Fibers on that domain may interleave calls because every raw operation
-is synchronous and the supervisor owns state transitions. A caller from
-another domain must use a future explicit handoff API; cross-domain access is
-not made safe merely by placing a mutex around the raw handle.
+audio scope. Fibers on that domain may interleave calls because every raw
+operation is synchronous and the supervisor owns state transitions. A caller
+from another domain must use a future explicit handoff API; cross-domain access
+is not made safe merely by placing a mutex around the raw handle.
 
 ### Deliberate differences from the reference
 
@@ -639,36 +701,61 @@ match the reference and are not porting differences.
 ## Planned implementation sequence
 
 1. Freeze the selected native audio ABI and the minimal core engine ownership
-   model. Add stopped-by-default playback start/stop, opaque groups and group
-   volume, generation-checked engine/stream handles, defensive busy close,
-   state, stats, and stream-operation tests without exposing the wider `Audio`
-   API.
+   model. Establish the application-owned audio scope with its dedicated Eio
+   switch and monotonic clock, explicitly separate from `Renderer_scheduler`
+   and `Background`. Add stopped-by-default playback start/stop, opaque groups
+   and group volume, generation-checked engine/stream handles, defensive busy
+   close, state, stats, and stream-operation tests without exposing the wider
+   `Audio` API.
 2. Implement pure ICY metadata and demuxer modules, including fragmented
    input, zero intervals, repeated metadata, invalid tails, and flush errors.
+   Keep these modules independent of Eio and `Background`; any borrowed slice
+   remains valid only for its owner-domain sink call.
 3. Implement an in-process fake connector and fake native engine/stream so the
    core engine lifetime, lifecycle, partial writes, zero-capacity waits,
    cancellation, controls, statistics, and retry policy can be tested without
-   hardware.
+   hardware. Run the fake source, supervisor, and native boundary in the audio
+   scope rather than an executor worker.
 4. Implement the Eio stream owner with fresh per-attempt scopes, a source pump,
    a whole-attempt native monitor, terminal arbitration, bounded cooperative
    cleanup, native backpressure, deferred event delivery, and idempotent
-   disposal.
+   disposal. Keep Eio sources, borrowed slices, capacity waits, the stream
+   supervisor, and all raw/native operations on the audio owner domain.
 5. Add typed terminal events, structured control results, diagnostic observer
    handling, the post-`open_` caller-turn gate, reference-compatible retry
-   ordinals, and fresh `get_stats` observation through the supervisor.
+   ordinals, and fresh `get_stats` observation through the supervisor. Deliver
+   events from the audio scope; a UI owner callback may request a normal frame,
+   but this feature must not acquire renderer live ownership or drive the
+   renderer loop.
 6. Add native MP3/FLAC integration fixtures and verify decoder/native state
-   behavior. Keep tests deterministic where possible and avoid requiring a
-   physical audio device.
+   behavior. Keep decoder state, native handles, writes, and backpressure in
+   the audio owner domain. Keep tests deterministic where possible and avoid
+   requiring a physical audio device.
 7. Add the separately packaged supported HTTP/URL connector with deterministic
    in-process-server tests for ICY negotiation, response validation, redirects,
    reconnect classification, retry hints, cancellation, and fresh demuxer
    selection. Only then consider the wider playback, capture, recorder, tap,
    mixer-only, and device features from `audio.ts`.
+8. After the stream path is complete, benchmark any candidate CPU phase against
+   the synchronous owner-domain path. Consider `Background` only if the
+   measurements justify an isolated `Worker_safe` phase over copied, owned
+   data, with completion returned to the audio scope and checked against the
+   current generation. Do not move sources, borrowed slices, waits, the
+   supervisor, native calls, or decoder state into the executor.
 
 ## Acceptance criteria
 
 - the raw boundary keeps native audio handles, buffers, decoder threads, and
   callbacks below `opentui-raw`;
+- audio is application-owned and runs in a dedicated Eio switch with its own
+  monotonic clock; it does not depend on `Renderer_scheduler`, hold renderer
+  live ownership, or drive renderer frames;
+- Eio sources, borrowed demuxer slices, backpressure waits, the stream
+  supervisor, raw/native handles and writes, and decoder state never cross the
+  `Background` executor boundary;
+- `Background` is considered only after measurement for copied, owned,
+  isolated `Worker_safe` pure CPU work, and its completion returns to the audio
+  owner scope before any stream state can change;
 - the minimal core engine owns all streams opened through it, rejects new work
   while closing, disposes its children before raw teardown, and does not expose
   the wider playback/capture API;
@@ -705,8 +792,10 @@ match the reference and are not porting differences.
 - native failure is observed and cancels the attempt even while source read or
   capacity waiting is blocked, and obsolete monitor notifications cannot affect
   a later attempt;
-- event delivery follows the event-system design and is not re-entrant with
-  unsafe source/native ownership transitions;
+- event delivery follows the event-system design, is owned by the audio stream
+  scope, and is not re-entrant with unsafe source/native ownership transitions;
+- a UI owner callback may request a normal renderer frame in response to audio,
+  but audio never owns or drives the renderer loop;
 - initial metadata becomes observable after setup, later clears are observable,
   and rapid metadata changes coalesce to the latest value as in the reference;
 - `open_` returns control before queued setup metadata or an already-ended
