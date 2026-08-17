@@ -170,3 +170,13 @@
  (name test_audio_stream)
  (modules test_audio_stream)
  (libraries opentui-core eio_main eio.unix windtrap))
+
+(test
+ (name test_plugins)
+ (modules test_plugins)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_plugin_lifetime)
+ (modules test_plugin_lifetime)
+ (libraries opentui-core windtrap))
