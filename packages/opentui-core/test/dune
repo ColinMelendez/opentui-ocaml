@@ -180,3 +180,8 @@
  (name test_plugin_lifetime)
  (modules test_plugin_lifetime)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_slot_mount)
+ (modules test_slot_mount)
+ (libraries opentui-core windtrap))
