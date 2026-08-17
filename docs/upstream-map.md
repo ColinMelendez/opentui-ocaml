@@ -21,7 +21,7 @@ correspondence intentionally stops.
 
 | Reference package or path | Repository-relative OCaml location | Status |
 | --- | --- | --- |
-| `packages/core` | `packages/opentui-core/src` | Active portable core; the source mirror records the explicit animation, audio, and plugin exclusions plus platform translations |
+| `packages/core` | `packages/opentui-core/src` | Active portable core; the source mirror records the implemented animation, audio-stream, and plugin slices, remaining runtime exclusions, and platform translations |
 | `packages/core/src/zig` | `packages/opentui-raw` | Translated native boundary |
 | `packages/keymap` | `deferred` | Separate package design follows core host-seam work |
 | `packages/react` | `deferred` | No React runtime exists in the OCaml port |
@@ -64,8 +64,8 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | --- | --- | --- |
 | `lib/KeyHandler.ts` (`KeyHandler`, `InternalKeyHandler`) | [keyboard-dispatch feature record](major-features/in-progress/keyboard-dispatch/feature.md); `packages/opentui-core/src/lib/key_handler.ml` | Active slice |
 | `lib/index.ts` | `packages/opentui-core/src/lib` namespace | Translated package boundary; no literal barrel module is introduced |
-| `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` | Active translated parser owner; protocol context, Kitty metadata, paste ownership, lifecycle, and caller/Eio timeout seams are explicit |
-| `lib/parse.keypress.ts` | `packages/opentui-core/src/lib/key_decoder.ml` and `kitty_keypress.ml` | Active translated key decoders, including Kitty event/lock/base-code metadata |
+| `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/stdin_parser.ml` | Active translated parser owner; protocol context, Kitty metadata, canonical Kitty press/repeat/release framing, paste ownership, lifecycle, and caller/Eio timeout seams are explicit |
+| `lib/parse.keypress.ts` | `packages/opentui-core/src/lib/key_decoder.ml` and `kitty_keypress.ml` | Active translated key decoders, including canonical Kitty Unicode and special-key frames, validated modifier fields, and event/lock/base-code metadata |
 | `lib/parse.mouse.ts` | `packages/opentui-core/src/lib/mouse_decoder.ml` | Active translated stateful SGR/X10 decoder |
 | `lib/paste.ts` | `packages/opentui-core/src/lib/paste.ml` | Active slice; decoding and ANSI stripping are separate from parser framing |
 | Private `ByteQueue` in `lib/stdin-parser.ts` | `packages/opentui-core/src/lib/byte_queue.ml` | Active slice |
@@ -88,7 +88,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | `lib/keybinding.internal.ts` | `packages/opentui-core/src/lib/keybinding.ml` | Active translated typed aliases and first-match bindings; Kitty modifier metadata is carried by `Key_decoder` |
 | `lib/objects-in-viewport.ts`, `render-geometry.ts` | `packages/opentui-core/src/lib/objects_in_viewport.ml`, `render_geometry.ml` | Active portable geometry/culling slice; geometry can describe a split footer, but external output, replay, and scrollback remain application-owned |
 | `lib/output.capture.ts` | `packages/opentui-core/src/lib/output_capture.ml` | Active translated explicit capture sink; process-stream replacement remains an application boundary |
-| `lib/parse.keypress-kitty.ts` | `packages/opentui-core/src/lib/kitty_keypress.ml` | Active translated Kitty protocol parser and flag sequences |
+| `lib/parse.keypress-kitty.ts` | `packages/opentui-core/src/lib/kitty_keypress.ml` | Active translated Kitty protocol parser for canonical Unicode, functional-letter, and tilde-key press/repeat/release frames; malformed modifier fields are rejected, and progressive-enhancement flag sequences are implemented |
 | `lib/renderable.validations.ts` | `packages/opentui-core/src/lib/renderable_validations.ml` | Active typed result parsers and option validation |
 | `lib/scroll-acceleration.ts` | `packages/opentui-core/src/lib/scroll_acceleration.ml` | Active slice; linear and platform-aware acceleration policies |
 | `lib/selection.ts` | `packages/opentui-core/src/lib/selection.ml` | Active slice; generic selection geometry and text grouping |

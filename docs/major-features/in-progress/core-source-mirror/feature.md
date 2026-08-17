@@ -12,12 +12,12 @@ The reference core contains more than the renderer and renderables. It also
 contains terminal utilities, text editing state, selection, syntax styling,
 post-processing, media support, testing helpers, and native span and buffer
 integration. The portable renderer, terminal, editor, buffer, utility,
-renderable, image, console, and post-processing paths are implemented here
-within documented translation boundaries. This is not a claim of exact
-TypeScript API parity. Animation, audio/audio-stream, and plugins/runtime-plugin
-remain explicit exclusions; JavaScript/Bun/Node/WASM loader mechanisms are
-translated as non-applicable platform boundaries rather than represented by
-fake APIs.
+renderable, image, console, post-processing, animation, audio-stream, and
+plugin-host paths are implemented here within documented translation
+boundaries. This is not a claim of exact TypeScript API parity. The
+Bun-specific runtime-plugin and Node/Bun/JavaScript/WASM loader mechanisms are
+translated as non-applicable or deferred platform boundaries rather than
+represented by fake APIs.
 
 ## Status vocabulary
 
@@ -50,7 +50,7 @@ Reference source directories have the following OCaml locations:
 | `core/src/platform` | `opentui-core/src/platform` | Preserve the directory. Eio and Unix runtime modules occupy explicit subdirectories because they own different effects. |
 | `core/src/post` | `opentui-core/src/post` | Post-processing modules use this directory. |
 | `core/src/animation` | `opentui-core/src/animation` | Timeline modules use this directory. |
-| `core/src/plugins` | `opentui-core/src/plugins` | Plugin registration modules use this directory. |
+| `core/src/plugins` | `opentui-core/src/plugin*.ml`, `opentui-core/src/slot*.ml` | The wrapped OCaml library keeps the typed plugin and slot owners at the source root while retaining the reference-derived module prefixes; no empty compatibility directory is introduced. |
 | `core/src/testing` | `opentui-core/test` and package-local testing helpers | Use the Dune test boundary and retain the reference path in the map. |
 | `core/src/benchmark` | `opentui-core/bench` | Keep benchmark programs beside the package they measure. |
 | `core/src/zig` | `opentui-raw` | Keep native handles, ABI calls, and foreign lifetimes below `opentui-core`. |
@@ -147,18 +147,19 @@ reference concept closely enough for the name to be truthful.
 | `lib/tree-sitter/{assets,download-utils,parser.worker,update-assets,default-parser-assets.bun}.ts`; `platform/runtime-assets.*.ts` | `src/platform/eio_runtime/background.ml`; [`background` feature record](../background/feature.md) | Translated platform boundary | Bundled JS/WASM assets, download/update tooling, and Bun/Node loaders remain non-applicable. Their worker CPU-isolation role is translated to an application-owned Eio executor pool, adopted by Code for worker-safe injected parsers. |
 | `lib/detect-links.ts`, `lib/hast-styled-text.ts` | `src/detect_links.ml`, `src/hast_styled_text.ml` | Active supporting utilities | Plain/syntax link ranges and typed HAST-to-styled-text conversion are used by content renderables; host parsers and JavaScript HAST loading remain outside Core. |
 
-### Explicitly excluded runtime areas
+### Deferred or non-applicable runtime areas
 
-The following reference areas are intentionally outside this tranche. Their
-source-map entries remain explicit so a contributor can distinguish an
-accepted exclusion from an unmapped feature:
+The following reference areas are either still deferred or intentionally
+translated at a platform boundary. The active sibling features are recorded
+in the correspondence table above; these rows remain explicit so a
+contributor can distinguish a boundary from an unmapped feature:
 
 | Reference area | Scope |
 | --- | --- |
-| `animation/*` | Timeline and animation scheduling; see the [animation feature record](../animation/feature.md). |
-| `plugins/*` | Plugin registration and render slots; see the [plugins feature record](../plugins/feature.md). |
+| `animation/*` | Active deterministic timeline and renderer-engine slice; framework bindings and custom easing remain deferred. See the [animation feature record](../animation/feature.md). |
+| `plugins/*` | Active typed host, slots, retained mounts, and teardown slice; framework adapters and dynamic loading remain deferred. See the [plugins feature record](../plugins/feature.md). |
 | `runtime-plugin*` | Bun-specific runtime module loading; see the [plugins feature record](../plugins/feature.md) for the boundary assessment. |
-| `audio.ts`, `audio-stream/*` | Audio stream ownership, demuxing, buffering, reconnects, and metadata; see the [audio-stream feature record](../audio-stream/feature.md). |
+| `audio.ts`, `audio-stream/*` | Active owner-domain lifecycle kernel; demuxing, native decoding, and transport integration remain deferred. See the [audio-stream feature record](../audio-stream/feature.md). |
 | `node-assets.ts`, `node-asset-target.ts` | Translated/non-applicable Node native and parser-asset discovery. The Eio-native package has no corresponding Node asset manifest. |
 
 ### Active utility and platform translations
@@ -220,10 +221,12 @@ current size of the OCaml tree:
    feature, but it does require stable renderer, focus, target-destruction,
    key-release, capability, and raw-input boundaries.
 
-The only remaining Core `Deferred` rows are the explicit animation,
-audio/audio-stream, and plugins/runtime-plugin exclusions above. No excluded
-area receives a speculative public module. A feature record and a
-reference-backed contract precede each future port unit.
+The remaining Core `Deferred` rows are the runtime-plugin and Node asset
+boundaries above, along with the deliberately omitted framework, demuxer,
+native-decoder, transport, and custom-easing follow-ups recorded by their
+feature documents. No deferred area receives a speculative compatibility
+module. A feature record and a reference-backed contract precede each future
+port unit.
 
 ## Acceptance criteria
 

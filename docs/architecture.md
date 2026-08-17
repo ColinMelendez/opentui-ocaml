@@ -179,8 +179,8 @@ recorded in the renderable-core feature record. The portable runtime paths
 marked active are implemented within their documented boundaries; that status
 does not claim every reference option or host service. The [core source
 mirror](major-features/in-progress/core-source-mirror/feature.md) records the
-explicit animation, audio/audio-stream, and plugins/runtime-plugin exclusions,
-the non-applicable Node/Bun/JavaScript/WASM mechanisms, and the deliberate
+active portable animation, audio-stream, and plugin slices, the still-deferred
+runtime-plugin and Node/Bun/JavaScript/WASM mechanisms, and the deliberate
 portable reductions.
 
 Parser-backed content stays below the retained renderable identity: `Code`

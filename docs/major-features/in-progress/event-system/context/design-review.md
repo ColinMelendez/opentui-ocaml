@@ -58,10 +58,10 @@ event descriptors or event-specific registration functions. A descriptor can
 carry an owner phantom type so that an event from one component cannot be
 registered on another component.
 
-The discussion applies the following component translations. Audio,
-edit-buffer, and renderer entries are future consumers of the event kernel;
-their inclusion defines the contract they will use and does not claim that
-those components are currently implemented.
+The discussion applies the following component translations. Audio and
+renderer entries now consume the event kernel; edit-buffer remains a future
+producer. The inclusion of a future entry defines the contract it will use and
+does not claim that that producer is currently implemented.
 
 - `AudioStream<M>` keeps its metadata type parameter and performs deferred
   delivery in the audio runtime before synchronous channel emission.

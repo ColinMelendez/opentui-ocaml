@@ -15,9 +15,10 @@ pointer routing have their own active feature records:
 [`pointer-dispatch`](../pointer-dispatch/feature.md).
 
 The contract covers the event abstraction and its ownership rules across the
-library. It is not an inventory of currently exported event producers. Audio,
-edit-buffer, and renderer integrations remain future component work even
-though their event vocabularies are specified here so that they use the same
+library. Active producers include renderer/context lifecycle notifications,
+keyboard and pointer dispatch reporting, and the audio-stream lifecycle
+channels. Edit-buffer-specific producer wiring remains future component work;
+its event vocabulary is specified here so that it can adopt the same
 abstraction when implemented.
 
 ## Reference correspondence
@@ -29,7 +30,7 @@ abstraction when implemented.
 | `vendor/opentui/packages/core/src/types.ts` | Renderer-context capabilities | A normal render context shares the renderer event source; it does not create a forwarding emitter. |
 | `vendor/opentui/packages/core/src/lib/KeyHandler.ts` | Dedicated keyboard-dispatch module | Global/local priority, prevention, propagation, and handler errors remain outside ordinary event channels. |
 | `vendor/opentui/packages/core/src/Renderable.ts` and renderer dispatch | `opentui-core.Renderable.t` tree and renderer pointer route | Hit-testing and pointer bubbling remain a dedicated dispatch path. |
-| `vendor/opentui/packages/core/src/audio.ts` | Deferred audio modules | Typed event families preserve synchronous channel semantics; producer scheduling remains in the audio runtime. |
+| `vendor/opentui/packages/core/src/audio.ts` | `opentui-core.Audio_stream` and its typed event channels | The implemented stream lifecycle kernel preserves typed event families; demuxing, native decoding, and transport integrations remain separate audio work. |
 | Native `eb_*` event names | Edit-buffer event mapping | Concrete native names map to typed edit-buffer events at the native boundary. |
 
 The source correspondence map records this cross-cutting feature under the
@@ -148,9 +149,9 @@ The following component translations define event vocabularies for current and
 future owners. A deferred component entry specifies the event contract it must
 use; it does not imply that the component currently exists in `opentui-core`.
 
-- `AudioStream<M>` is a future owner of typed metadata, reconnecting, ended,
-  error, and disposed events. Deferred delivery is an audio-runtime operation
-  followed by synchronous channel emission.
+- `AudioStream<M>` is an implemented owner of typed metadata, reconnecting,
+  ended, error, and disposed events. Deferred delivery is an audio-runtime
+  operation followed by synchronous channel emission.
 - `AudioRecorder` is a future owner of typed lifecycle and error events. Native
   capture subscriptions use cancellation tokens instead of callback identity.
 - `EditBuffer` is a future owner that maps concrete native `eb_*` names to

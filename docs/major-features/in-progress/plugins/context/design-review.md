@@ -9,7 +9,7 @@ An exhaustive search found no production use of the plugin system inside OpenTUI
 - React/Solid demos, including external loading.
 - Documentation and tests.
 
-The generic registry exists primarily so React and Solid can share one TypeScript implementation with different node types. React instantiates it with `ReactNode` in [slot.tsx](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/react/src/plugins/slot.tsx:56), while Solid instantiates it with `JSX.Element` in [slot.tsx](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/solid/src/plugins/slot.tsx:56). That is a real reason in TypeScript, but not currently a reason in this OCaml repository.
+The generic registry exists primarily so React and Solid can share one TypeScript implementation with different node types. React instantiates it with `ReactNode` in [slot.tsx](../../../../../vendor/opentui/packages/react/src/plugins/slot.tsx:56), while Solid instantiates it with `JSX.Element` in [slot.tsx](../../../../../vendor/opentui/packages/solid/src/plugins/slot.tsx:56). That is a real reason in TypeScript, but not currently a reason in this OCaml repository.
 
 The framework adapters use the registry quite narrowly:
 
@@ -19,7 +19,7 @@ The framework adapters use the registry quite narrowly:
 4. Apply append/replace/single-winner behavior.
 5. Install framework-specific error boundaries.
 
-For example, React’s complete interaction with the registry is visible around [slot.tsx](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/react/src/plugins/slot.tsx:191).
+For example, React’s complete interaction with the registry is visible around [slot.tsx](../../../../../vendor/opentui/packages/react/src/plugins/slot.tsx:191).
 
 ## Requirements demonstrated in practice
 
@@ -27,13 +27,13 @@ Several reference behaviors are genuinely useful and should remain.
 
 ### Plugins contribute to multiple slots
 
-The external example contributes both statusbar and sidebar output from one plugin value in [index.tsx](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/react/examples/.plugin/index.tsx:16).
+The external example contributes both statusbar and sidebar output from one plugin value in [index.tsx](../../../../../vendor/opentui/packages/react/examples/.plugin/index.tsx:16).
 
 That supports retaining a plugin-level installation transaction rather than registering completely unrelated contributions manually.
 
 ### Plugin values are loaded, installed, removed, and reloaded
 
-The external demo dynamically imports a module, obtains a plugin value, registers it, and retains the unregister token in [external-plugin-slots-demo.tsx](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/react/examples/external-plugin-slots-demo.tsx:79) and [external-plugin-slots-demo.tsx](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/react/examples/external-plugin-slots-demo.tsx:155).
+The external demo dynamically imports a module, obtains a plugin value, registers it, and retains the unregister token in [external-plugin-slots-demo.tsx](../../../../../vendor/opentui/packages/react/examples/external-plugin-slots-demo.tsx:79) and [external-plugin-slots-demo.tsx](../../../../../vendor/opentui/packages/react/examples/external-plugin-slots-demo.tsx:155).
 
 For OCaml, a plugin should therefore remain a first-class compiled value:
 
@@ -51,11 +51,11 @@ Notably, `single_winner` evaluates only the first ordered contribution and falls
 
 ### Runtime ordering is used
 
-The core demo updates plugin order interactively through `updateOrder` in [core-plugin-slots-demo.ts](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/examples/src/core-plugin-slots-demo.ts:543). An installed plugin instance should therefore expose a structured `set_order` operation that atomically updates all its contributions.
+The core demo updates plugin order interactively through `updateOrder` in [core-plugin-slots-demo.ts](../../../../../vendor/opentui/packages/examples/src/core-plugin-slots-demo.ts:543). An installed plugin instance should therefore expose a structured `set_order` operation that atomically updates all its contributions.
 
 ### Activation lifecycle has a real use
 
-The core demo uses activation/deactivation to run timers only while contribution views are visible in [core-plugin-slots-demo.ts](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/examples/src/core-plugin-slots-demo.ts:256).
+The core demo uses activation/deactivation to run timers only while contribution views are visible in [core-plugin-slots-demo.ts](../../../../../vendor/opentui/packages/examples/src/core-plugin-slots-demo.ts:256).
 
 However, those “plugin-owned” contributions explicitly destroy their own nodes during deactivation. That demonstrates the need for a visibility lifecycle, not the need for dual ownership.
 
@@ -78,7 +78,7 @@ The error history is used by error-focused demos and tests, but not by normal pl
 
 ## Runtime loading is genuinely separate
 
-The runtime “plugin” only rewrites imports so dynamically loaded modules can access host-owned runtime module instances. Its stated purpose is documented at [runtime-plugin.ts](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/core/src/runtime-plugin.ts:1), and its implementation constructs a Bun loader without depending on slot registries at [runtime-plugin.ts](/Users/colin/projects/ocaml-stuff/ocaml-open-tui/vendor/opentui/packages/core/src/runtime-plugin.ts:417).
+The runtime “plugin” only rewrites imports so dynamically loaded modules can access host-owned runtime module instances. Its stated purpose is documented at [runtime-plugin.ts](../../../../../vendor/opentui/packages/core/src/runtime-plugin.ts:1), and its implementation constructs a Bun loader without depending on slot registries at [runtime-plugin.ts](../../../../../vendor/opentui/packages/core/src/runtime-plugin.ts:417).
 
 The external demo composes the two mechanisms manually:
 
