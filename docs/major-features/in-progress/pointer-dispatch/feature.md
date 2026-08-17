@@ -62,9 +62,26 @@ event fact and must be defined for each action.
 The renderer derives `over`, `out`, `drag-end`, and `drop` behavior, tracks the
 captured target, updates hover state after input and committed frames, and
 uses left-button pointer events for focus. A resize releases pointer capture.
-Selectable text renderables also receive the renderer-owned global selection
-updates and translate them into native local-selection coordinates; selection
-text ownership remains with the individual text/editor renderable.
+The renderer walks the active selection container's retained descendants,
+notifies every affected selectable renderable, clears selectables that leave
+the touched set, and records generic selected/touched snapshots on the
+renderer-owned selection. Text renderables translate those updates into native
+local-selection coordinates; selection text ownership remains with the
+individual text/editor renderable. A left-button drag used for selection
+remains hit-tested rather than becoming pointer capture;
+an active selection also gives Ctrl-click its reference meaning of moving the
+selection focus without dispatching the mouse-down or taking focus. A captured
+release sends the captured source its `drag-end` and `up`, sends `drop` to the
+current target, and then performs the ordinary `up` target dispatch.
+
+Selection clearing is a renderer default action. A left-button down in empty
+space clears the active selection, while a routed target down clears it only if
+the event did not call `prevent_default`; prevention therefore preserves the
+selection. The pre-dispatch selection-start and active-selection Ctrl-click
+branches follow the reference ordering and are not converted into ordinary
+mouse-down routes. During an active selection drag, an edge move or release
+continues through the selection owner when the clipped hit grid has no target;
+this keeps scroll-box edge auto-scroll owned by the existing pointer route.
 
 The retained renderable tree owns tree routing and node-local lifecycle. The renderer/runtime
 owns capture, hover transitions, focus and selection defaults, and any terminal
@@ -80,8 +97,9 @@ pointer route does not use ordinary event-channel exception propagation.
 
 Destroyed subtrees are excluded from hit-testing and cannot receive a later
 route. Pointer capture is released when its owner is destroyed or the renderer
-is resized, and repeated cleanup is safe. Destroyed renderables do not receive
-later pointer callbacks.
+is resized, and repeated cleanup is safe; stale captured nodes are ignored even
+if a destruction notification races with input dispatch. Destroyed renderables
+do not receive later pointer callbacks.
 
 ## Implemented boundary and remaining correspondence
 
@@ -91,13 +109,14 @@ hover transitions, drag capture, drop delivery, focus-on-down, resize cleanup,
 stationary-pointer hover recheck, and handler-error reporting are implemented
 in `Renderable.t` and `Renderer.t`.
 
-Native scissor-aware hit-grid writes remain separate correspondence work. The
-current hit grid is OCaml-owned and follows the reference current/next
-semantics; replacing its storage with the native renderer grid requires an
-explicit raw ABI seam. Pointer selection is implemented for the active
-`TextBufferRenderable` and `EditBufferRenderable` paths, while selection
-auto-scroll at a scroll-box edge remains deferred until the renderer has a
-clock/update seam for it.
+The current/next hit grid is OCaml-owned and follows the reference
+current/next semantics, including scissor-aware clipping. The reference native
+renderer still owns its own hit-grid storage; replacing the OCaml grid with
+that native storage requires an explicit raw ABI seam. Pointer selection is
+implemented for the active `TextBufferRenderable` and `EditBufferRenderable`
+paths, including selection auto-scroll at a scroll-box edge. The native
+selection/local-coordinate callbacks remain owned by the concrete renderable,
+not by the pointer route.
 
 ## Acceptance criteria
 
@@ -108,7 +127,11 @@ clock/update seam for it.
 - decoded modifiers, scroll data, button state, and ownership survive the
   parser-to-dispatch boundary;
 - hover, drag, drag-end, drop, and capture behavior match the reference when
-  those event families are enabled;
+  those event families are enabled, including destruction cleanup and ordinary
+  target dispatch after captured release;
+- a left-button down in empty space clears selection, Ctrl-click follows the
+  reference selection branch, and routed selection-clearing defaults respect
+  `prevent_default`;
 - renderer default actions are separately defined from retained-tree bubbling and
   respect prevention;
 - destroyed nodes and captured targets cannot receive stale routes;

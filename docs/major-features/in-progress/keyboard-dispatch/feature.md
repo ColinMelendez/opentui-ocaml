@@ -27,13 +27,15 @@ own feature records and modules.
 | `vendor/opentui/packages/core/src/lib/KeyHandler.ts` | `packages/opentui-core/src/lib/key_handler.ml` | Key, key-release, and paste dispatch; global/local ordering; prevention; propagation; handler-error policy. |
 | `vendor/opentui/packages/core/src/Renderable.ts` focus and key handlers | `opentui-core.Renderable.t` focus state and concrete renderables | The focused renderable owns local keyboard behavior and its internal registrations. |
 | `vendor/opentui/packages/core/src/renderer.ts` focus methods | `opentui-core.Renderer.t` and `Render_context.t` focus ownership | There is one current focused renderable; focus transitions update the previous and next owners. |
-| `vendor/opentui/packages/core/src/lib/stdin-parser.ts` and `parse.keypress.ts` | `Stdin_parser` and `Key_decoder` | Framing and decoding produce typed input. They do not implement keyboard dispatch. |
+| `vendor/opentui/packages/core/src/lib/stdin-parser.ts` and `parse.keypress.ts` | `Stdin_parser` and `Key_decoder` | Framing and decoding produce typed input, including canonical Kitty Unicode and special-key press, repeat, and release events with validated modifier metadata. They do not implement keyboard dispatch. |
 
 `Lib.Key_handler` exposes the keyboard-dispatch boundary. The parser produces
 typed key and paste events, while the dispatcher also accepts an explicit
-key-release payload. `Stdin_parser` does not yet classify Kitty press, repeat,
-and release frames, so terminal key-release delivery remains a parser
-extension rather than an implicit promise of the current parser surface.
+key-release payload. `Stdin_parser` classifies the supported Kitty Unicode,
+functional-letter, and tilde-key frames, carrying press, repeat, and release
+metadata into the corresponding dispatch family. Invalid or empty Kitty
+modifier fields remain opaque responses rather than becoming default-modifier
+key events.
 
 ## Active contract
 
@@ -127,9 +129,11 @@ snapshot dispatch, control flags, exception reporting, and explicit cleanup.
 `Renderable.focus`, `blur`, visibility changes, detachment, and destruction
 own the local registration lifecycle.
 
-The Kitty keyboard protocol event-type extension and the complete reference
-key metadata remain outside the parser boundary. The dispatcher does not
-invent those fields or silently classify an ordinary parsed key as a release.
+The supported Kitty keyboard protocol event types, special-key forms, modifier
+validation, and Kitty metadata are inside the parser boundary. The dispatcher
+does not invent those fields or silently classify an ordinary parsed key as a
+release; it routes the parser's press, repeat, and release classifications to
+the matching keyboard event family.
 
 ## Acceptance criteria
 

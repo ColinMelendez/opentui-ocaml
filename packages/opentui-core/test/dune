@@ -97,6 +97,11 @@
  (libraries opentui-core windtrap))
 
 (test
+ (name test_keypress_kitty_protocol)
+ (modules test_keypress_kitty_protocol)
+ (libraries opentui-core windtrap))
+
+(test
  (name test_pointer_dispatch)
  (modules test_pointer_dispatch)
  (libraries opentui-core windtrap))

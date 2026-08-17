@@ -5,6 +5,7 @@ module Key_handler = Core.Lib.Key_handler
 module Decoder = Core.Lib.Key_decoder
 module Renderer = Core.Renderer
 module Renderable = Core.Renderable
+module Parser = Core.Lib.Stdin_parser
 
 let expect_ok result =
   match result with
@@ -17,6 +18,34 @@ let key_input () =
   Core.Lib.Stdin_parser.Key
     { raw = Bytes.of_string "a"; key = Decoder.Character (Bytes.of_string "a");
       modifiers; metadata = Decoder.raw_metadata }
+
+let parser_create () =
+  match Parser.create () with
+  | Ok value -> value
+  | Error error -> fail (Parser.message error)
+
+let push_string parser value =
+  match
+    Parser.push_bytes parser ~source:(Bytes.of_string value) ~off:0
+      ~len:(String.length value)
+  with
+  | Ok () -> ()
+  | Error error -> fail (Parser.message error)
+
+let read_key parser : Parser.event =
+  match Parser.read parser with
+  | Some event ->
+      (match event with
+      | Parser.Key _ -> event
+      | Parser.Mouse _ -> fail "expected a key event, got mouse"
+      | Parser.Paste _ -> fail "expected a key event, got paste"
+      | Parser.Response _ -> fail "expected a key event, got protocol response")
+  | None -> fail "expected a key event, but parser queue was empty"
+
+let parse_keypress sequence =
+  let parser = parser_create () in
+  push_string parser sequence;
+  read_key parser
 
 let () =
   run "opentui-core-key-handler"
@@ -167,5 +196,35 @@ let () =
           ignore (expect_ok (Core.Layout_children.remove (Renderer.children renderer) node));
           ignore (expect_ok (Renderer.handle_input renderer (key_input ())));
           equal int 1 !calls;
+          Renderer.destroy renderer);
+      test "kitty release events route to on_key_release handlers" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let renderable =
+            expect_ok
+              (Core.Renderables.Box.create (Renderer.context renderer)
+                 ~focusable:true ())
+          in
+          let node = Core.Renderables.Box.as_renderable renderable in
+          ignore
+            (expect_ok (Core.Layout_children.add (Renderer.children renderer) node));
+          let keydown_calls = ref 0 in
+          let keyup_calls = ref 0 in
+          ignore
+            (expect_ok
+               (Renderable.set_on_key_down node
+                  (Some (fun _ -> keydown_calls := !keydown_calls + 1))));
+          ignore
+            (expect_ok
+               (Renderable.set_on_key_release node
+                  (Some (fun _ -> keyup_calls := !keyup_calls + 1))));
+          ignore (expect_ok (Core.Renderables.Box.focus renderable));
+          ignore
+            (expect_ok
+               (Renderer.handle_input renderer (parse_keypress "\027[97;1u")));
+          ignore
+            (expect_ok
+               (Renderer.handle_input renderer (parse_keypress "\027[97;1:3u")));
+          equal int 1 !keydown_calls;
+          equal int 1 !keyup_calls;
           Renderer.destroy renderer);
     ]

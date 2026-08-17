@@ -333,6 +333,33 @@ let () =
                   ~child ~index:0));
           ignore (expect_ok (Renderer.render renderer ~force:true));
           Renderer.destroy renderer);
+      test "overflow scissor clips descendants in the retained hit grid"
+        (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let context = Renderer.context renderer in
+          let parent = make_child context ~id:"clipped-parent" () in
+          let child = make_child context ~id:"wide-child" () in
+          ignore (expect_ok (Renderable.set_width parent (Core.Yoga.Point 4.0)));
+          ignore (expect_ok (Renderable.set_height parent (Core.Yoga.Point 2.0)));
+          ignore (expect_ok (Renderable.set_overflow parent Core.Yoga.Overflow_hidden));
+          ignore (expect_ok (Renderable.set_width child (Core.Yoga.Point 8.0)));
+          ignore (expect_ok (Renderable.set_height child (Core.Yoga.Point 2.0)));
+          ignore (expect_ok (Renderable.set_flex_shrink child (Some 0.0)));
+          ignore
+            (expect_ok
+               (Renderable.Private.attach ~parent:(Renderer.root renderer)
+                  ~child:parent ~index:0));
+          ignore
+            (expect_ok
+               (Renderable.Private.attach ~parent ~child ~index:0));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal bool true
+            (match expect_ok (Renderer.hit_test renderer ~x:1 ~y:1) with
+            | Some target -> target == child
+            | None -> false);
+          equal bool true
+            (Option.is_none (expect_ok (Renderer.hit_test renderer ~x:5 ~y:1)));
+          Renderer.destroy renderer);
       test "focus, visibility, detach, and destruction preserve reference lifecycle order"
         (fun () ->
           let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in

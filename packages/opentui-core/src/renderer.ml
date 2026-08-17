@@ -25,8 +25,11 @@ type t = {
   mutable last_over : Renderable.t option;
   mutable last_over_num : int option;
   mutable captured : Renderable.t option;
+  mutable captured_destroy_subscription : Event_subscription.t option;
   mutable selection : Lib.Selection.t option;
   mutable selection_owner : Renderable.t option;
+  mutable selection_containers : Renderable.t list;
+  mutable selection_touched : Renderable.t list;
   mutable next_pre_render_id : int;
   mutable pre_render_drivers : pre_render_driver list;
   mutable before_destroy : teardown_attachment list;
@@ -156,10 +159,182 @@ let terminal_capabilities_of_raw
     osc52_support;
   }
 
+type selection_intersection = {
+  left : float;
+  top : float;
+  right : float;
+  bottom : float;
+}
+
+let selection_intersection renderable (bounds : Lib.Selection.bounds) =
+  let left =
+    Float.max (Renderable.screen_x renderable) bounds.Lib.Selection.x
+  in
+  let top =
+    Float.max (Renderable.screen_y renderable) bounds.Lib.Selection.y
+  in
+  let right =
+    Float.min
+      (Renderable.screen_x renderable +. Renderable.width renderable)
+      (bounds.Lib.Selection.x +. bounds.Lib.Selection.width)
+  in
+  let bottom =
+    Float.min
+      (Renderable.screen_y renderable +. Renderable.height renderable)
+      (bounds.Lib.Selection.y +. bounds.Lib.Selection.height)
+  in
+  if Float.compare left right < 0 && Float.compare top bottom < 0 then
+    Some { left; top; right; bottom }
+  else None
+
+let integer_interval low high =
+  int_of_float (Float.ceil low), int_of_float (Float.ceil high) - 1
+
+let has_selection_point renderable ~left ~top ~right ~bottom =
+  let first_x, last_x = integer_interval left right in
+  let first_y, last_y = integer_interval top bottom in
+  let found = ref false in
+  if first_x <= last_x && first_y <= last_y then begin
+    for y = first_y to last_y do
+      for x = first_x to last_x do
+        if
+          not !found
+          && Renderable.Private.should_start_selection renderable ~x ~y
+        then found := true
+      done
+    done
+  end;
+  !found
+
+let has_selectable_point renderable =
+  let left = Renderable.screen_x renderable in
+  let top = Renderable.screen_y renderable in
+  let right = left +. Renderable.width renderable in
+  let bottom = top +. Renderable.height renderable in
+  has_selection_point renderable ~left ~top ~right ~bottom
+
+let selection_snapshot renderable : Lib.Selection.selectable =
+  {
+    Lib.Selection.id = Renderable.num renderable;
+    x = Renderable.screen_x renderable;
+    y = Renderable.screen_y renderable;
+    destroyed = Renderable.is_destroyed renderable;
+    text = "";
+  }
+
+let selection_contains_renderable renderables renderable =
+  List.exists (fun current -> current == renderable) renderables
+
+let selection_parent renderer renderable =
+  Option.value (Renderable.parent renderable) ~default:renderer.root
+
+let rec renderable_within renderable container =
+  if renderable == container then true
+  else
+    match Renderable.parent renderable with
+    | None -> false
+    | Some parent -> renderable_within parent container
+
+let last_selection_container renderer =
+  match List.rev renderer.selection_containers with
+  | container :: _ when not (Renderable.is_destroyed container) -> container
+  | _ -> renderer.root
+
+let selection_container_index target containers =
+  let rec find index = function
+    | [] -> None
+    | container :: rest ->
+        if container == target then Some index else find (index + 1) rest
+  in
+  find 0 containers
+
+let rec take_renderables count renderables =
+  if Int.compare count 0 <= 0 then []
+  else
+    match renderables with
+    | [] -> []
+    | renderable :: rest -> renderable :: take_renderables (count - 1) rest
+
+let update_selection_container renderer current_target =
+  let current_container = last_selection_container renderer in
+  let containers = renderer.selection_containers in
+  match current_target with
+  | Some target when renderable_within target current_container ->
+      let candidate =
+        match selection_container_index target containers with
+        | Some _ -> Some target
+        | None -> Renderable.parent target
+      in
+      (match candidate with
+      | Some candidate ->
+          (match selection_container_index candidate containers with
+          | Some index when index < List.length containers - 1 ->
+              renderer.selection_containers <- take_renderables (index + 1) containers
+          | Some _ | None -> ())
+      | None -> ())
+  | Some _ | None ->
+      let parent = selection_parent renderer current_container in
+      if parent != current_container then
+        renderer.selection_containers <- containers @ [ parent ]
+
+let selection_container renderer =
+  last_selection_container renderer
+
+let collect_selection_renderables renderer value =
+  let bounds = Lib.Selection.bounds value in
+  let selected = ref [] in
+  let touched = ref [] in
+  let touched_nodes = ref [] in
+  let rec visit container =
+    List.iter
+      (fun child ->
+        if not (Renderable.is_destroyed child) && Renderable.visible child then
+          match selection_intersection child bounds with
+          | None -> ()
+          | Some intersection ->
+              let selected_here =
+                has_selection_point child ~left:intersection.left
+                  ~top:intersection.top ~right:intersection.right
+                  ~bottom:intersection.bottom
+              in
+              let selectable = selected_here || has_selectable_point child in
+              if selectable then begin
+                Renderable.Private.selection_changed child (Some value);
+                if not (Renderable.is_destroyed child) then begin
+                  touched := selection_snapshot child :: !touched;
+                  touched_nodes := child :: !touched_nodes;
+                  if selected_here then selected := selection_snapshot child :: !selected
+                end
+              end;
+              visit child)
+      (Renderable.children container)
+  in
+  visit (selection_container renderer);
+  List.rev !selected, List.rev !touched, List.rev !touched_nodes
+
 let apply_selection renderer value =
-  Option.iter
-    (fun owner -> Renderable.Private.selection_changed owner value)
-    renderer.selection_owner
+  match value with
+  | None ->
+      List.iter
+        (fun renderable ->
+          if not (Renderable.is_destroyed renderable) then
+            Renderable.Private.selection_changed renderable None)
+        renderer.selection_touched;
+      renderer.selection_touched <- []
+  | Some value ->
+      let selected, touched, touched_nodes =
+        collect_selection_renderables renderer value
+      in
+      List.iter
+        (fun renderable ->
+          if
+            not (selection_contains_renderable touched_nodes renderable)
+            && not (Renderable.is_destroyed renderable)
+          then Renderable.Private.selection_changed renderable None)
+        renderer.selection_touched;
+      Lib.Selection.update_selected_renderables value selected;
+      Lib.Selection.update_touched_renderables value touched;
+      renderer.selection_touched <- touched_nodes
 
 let refresh_selection renderer =
   match renderer.selection with
@@ -252,8 +427,11 @@ let create_with_clock_option ~clock ~width ~height =
                               last_over = None;
                               last_over_num = None;
                               captured = None;
+                              captured_destroy_subscription = None;
                               selection = None;
                               selection_owner = None;
+                              selection_containers = [];
+                              selection_touched = [];
                               next_pre_render_id = 1;
                               pre_render_drivers = [];
                               before_destroy = [];
@@ -431,6 +609,7 @@ let clear_selection renderer =
       renderer.selection;
     renderer.selection <- None;
     renderer.selection_owner <- None;
+    renderer.selection_containers <- [];
     if had_selection then
       ignore
         (Renderer_events.Private.emit_selection
@@ -685,19 +864,58 @@ let report_pointer_error renderer ~owner_num exception_value =
        })
 
 let send_pointer_event renderer target event =
-  try Renderable.Private.process_mouse_event target event with
-  | exception_value ->
-      let owner_num =
-        Option.value
-          (Option.map Renderable.num (Renderable.mouse_current_target event))
-          ~default:(Renderable.num target)
-      in
-      report_pointer_error renderer ~owner_num exception_value
+  if not (Renderable.is_destroyed target) then
+    try Renderable.Private.process_mouse_event target event with
+    | exception_value ->
+        let owner_num =
+          Option.value
+            (Option.map Renderable.num (Renderable.mouse_current_target event))
+            ~default:(Renderable.num target)
+        in
+        report_pointer_error renderer ~owner_num exception_value
+
+let release_capture renderer =
+  Option.iter Event_subscription.cancel renderer.captured_destroy_subscription;
+  renderer.captured_destroy_subscription <- None;
+  renderer.captured <- None
+
+let release_destroyed_capture renderer target =
+  match renderer.captured with
+  | Some captured when captured == target ->
+      release_capture renderer;
+      (match renderer.last_over with
+      | Some last_over when last_over == target ->
+          renderer.last_over <- None;
+          renderer.last_over_num <- None
+      | Some _ | None -> ())
+  | Some _ | None -> ()
+
+let capture renderer target =
+  release_capture renderer;
+  if not (Renderable.is_destroyed target) then
+    match
+      Renderable.once_destroyed target
+        (fun () -> release_destroyed_capture renderer target)
+    with
+    | Error _ -> ()
+    | Ok subscription ->
+        renderer.captured <- Some target;
+        renderer.captured_destroy_subscription <- Some subscription
+
+let active_capture renderer =
+  match renderer.captured with
+  | Some captured when Renderable.is_destroyed captured ->
+      release_destroyed_capture renderer captured;
+      None
+  | captured -> captured
 
 let hit_target renderer ~x ~y =
   match Render_context.Private.hit_test renderer.context ~x ~y with
   | None -> None
-  | Some id -> Renderable.Private.find_by_num renderer.root id
+  | Some id ->
+      (match Renderable.Private.find_by_num renderer.root id with
+      | Some target when not (Renderable.is_destroyed target) -> Some target
+      | Some _ | None -> None)
 
 let focused_target renderer =
   match Render_context.Private.focused_num renderer.context with
@@ -716,21 +934,24 @@ let begin_selection renderer target ~x ~y =
   | None ->
       ignore (clear_selection renderer)
   | Some owner ->
+      ignore (clear_selection renderer);
       let point = { Lib.Selection.x = float_of_int x; y = float_of_int y } in
       let value = Lib.Selection.create ~anchor:point ~focus:point in
       Lib.Selection.set_is_start value true;
       renderer.selection <- Some value;
       renderer.selection_owner <- Some owner;
+      renderer.selection_containers <- [ selection_parent renderer owner ];
       apply_selection renderer renderer.selection;
       ignore
         (Renderer_events.Private.emit_selection
            (Render_context.Private.events renderer.context) renderer.selection);
       Render_context.Private.request_render renderer.context
 
-let update_selection renderer ~x ~y ~dragging =
+let update_selection renderer ~current_target ~x ~y ~dragging =
   match renderer.selection with
   | None -> ()
   | Some value ->
+      update_selection_container renderer current_target;
       Lib.Selection.set_focus value { Lib.Selection.x = float_of_int x; y = float_of_int y };
       Lib.Selection.set_is_start value false;
       Lib.Selection.set_dragging value dragging;
@@ -806,6 +1027,20 @@ let recheck_hover_state renderer =
       end
   | None, _ | Some _, Some _ -> ()
 
+let selection_is_dragging renderer =
+  match renderer.selection with
+  | Some selection -> Lib.Selection.is_dragging selection
+  | None -> false
+
+let pointer_event_is_dragging = function
+  | Lib.Mouse_decoder.Drag -> true
+  | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up | Lib.Mouse_decoder.Move
+  | Lib.Mouse_decoder.Scroll -> false
+
+let pointer_event_is_motion = function
+  | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Drag -> true
+  | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up | Lib.Mouse_decoder.Scroll -> false
+
 let dispatch_pointer renderer (decoded : Lib.Mouse_decoder.event) =
   renderer.latest_pointer <-
     Some (decoded.Lib.Mouse_decoder.x, decoded.Lib.Mouse_decoder.y);
@@ -832,9 +1067,11 @@ let dispatch_pointer renderer (decoded : Lib.Mouse_decoder.event) =
   | ((Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up | Lib.Mouse_decoder.Move
      | Lib.Mouse_decoder.Drag) as source_kind) ->
       let kind = pointer_event_kind source_kind in
+      let x = decoded.Lib.Mouse_decoder.x in
+      let y = decoded.Lib.Mouse_decoder.y in
+      let is_left_button = Int.equal decoded.Lib.Mouse_decoder.button 0 in
       let target =
-        hit_target renderer ~x:decoded.Lib.Mouse_decoder.x
-          ~y:decoded.Lib.Mouse_decoder.y
+        hit_target renderer ~x ~y
       in
       let target_num = Option.map Renderable.num target in
       let same_element =
@@ -844,149 +1081,190 @@ let dispatch_pointer renderer (decoded : Lib.Mouse_decoder.event) =
         | None, Some _ | Some _, None -> false
       in
       renderer.last_over_num <- target_num;
-      if
-        (match source_kind with
-        | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Drag -> true
-        | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up
-        | Lib.Mouse_decoder.Scroll -> false)
-        && not same_element
-      then begin
-        Option.iter
-          (fun old_target ->
-            if
-              (match renderer.captured with
-              | Some captured -> captured != old_target
-              | None -> true)
-              && not (Renderable.is_destroyed old_target)
-            then
-              let event =
-                make_pointer_event ~kind:Renderable.Out ~decoded ~source:None
-                  ~target:(Some old_target) ~is_dragging:false
-              in
-              send_pointer_event renderer old_target event)
-          renderer.last_over;
-        Option.iter
-          (fun new_target ->
+      let captured = active_capture renderer in
+      let selection_route_target =
+        match target with
+        | Some _ -> target
+        | None -> renderer.selection_owner
+      in
+      let dispatch_target () =
+        match target with
+        | None ->
+            release_capture renderer;
+            renderer.last_over <- None;
+            renderer.last_over_num <- None;
+            Ok None
+        | Some target ->
+            if pointer_event_is_dragging source_kind && is_left_button then
+              capture renderer target
+            else release_capture renderer;
             let event =
-              make_pointer_event ~kind:Renderable.Over ~decoded
-                ~source:renderer.captured ~target:(Some new_target)
-                ~is_dragging:false
+              make_pointer_event ~kind ~decoded ~source:None ~target:(Some target)
+                ~is_dragging:(pointer_event_is_dragging source_kind)
             in
-            send_pointer_event renderer new_target event)
-          target;
-        renderer.last_over <- target
-      end;
-      (match renderer.captured with
-      | Some captured ->
-          (match source_kind with
-          | Lib.Mouse_decoder.Up ->
-              if Int.equal decoded.Lib.Mouse_decoder.button 0 then
-                update_selection renderer
-                  ~x:decoded.Lib.Mouse_decoder.x
-                  ~y:decoded.Lib.Mouse_decoder.y ~dragging:false;
-              let drag_end =
-                make_pointer_event ~kind:Renderable.Drag_end ~decoded
-                  ~source:None ~target:(Some captured) ~is_dragging:false
-              in
-              send_pointer_event renderer captured drag_end;
-              let up =
-                make_pointer_event ~kind:Renderable.Up ~decoded
-                  ~source:None ~target:(Some captured) ~is_dragging:false
-              in
-              send_pointer_event renderer captured up;
-              Option.iter
-                (fun current_target ->
-                  let drop =
-                    make_pointer_event ~kind:Renderable.Drop ~decoded
-                      ~source:(Some captured) ~target:(Some current_target)
-                      ~is_dragging:false
-                  in
-                  send_pointer_event renderer current_target drop)
-                target;
-              renderer.captured <- None;
-              renderer.last_over <- Some captured;
-              renderer.last_over_num <- Some (Renderable.num captured);
-              Render_context.Private.request_render renderer.context;
-              Ok true
-          | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Move
-          | Lib.Mouse_decoder.Drag ->
-              let is_drag =
-                match source_kind with Lib.Mouse_decoder.Drag -> true | _ -> false
-              in
-              if is_drag && Int.equal decoded.Lib.Mouse_decoder.button 0 then
-                update_selection renderer
-                  ~x:decoded.Lib.Mouse_decoder.x
-                  ~y:decoded.Lib.Mouse_decoder.y ~dragging:true;
-              let event =
-                make_pointer_event ~kind ~decoded ~source:None
-                  ~target:(Some captured) ~is_dragging:true
-              in
-              send_pointer_event renderer captured event;
-              Ok true
-          | Lib.Mouse_decoder.Scroll -> Ok false)
-      | None ->
-          if Int.equal decoded.Lib.Mouse_decoder.button 0 then
-            (match source_kind with
-            | Lib.Mouse_decoder.Drag ->
-                update_selection renderer
-                  ~x:decoded.Lib.Mouse_decoder.x
-                  ~y:decoded.Lib.Mouse_decoder.y ~dragging:true
-            | Lib.Mouse_decoder.Up ->
-                update_selection renderer
-                  ~x:decoded.Lib.Mouse_decoder.x
-                  ~y:decoded.Lib.Mouse_decoder.y ~dragging:false
-            | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Move
-            | Lib.Mouse_decoder.Scroll -> ());
-          (match target with
-          | None ->
-              renderer.captured <- None;
-              renderer.last_over <- None;
-              renderer.last_over_num <- None;
-              Ok true
-      | Some target ->
-              if Int.equal decoded.Lib.Mouse_decoder.button 0
-                 && not decoded.Lib.Mouse_decoder.modifiers.ctrl
-              then begin
-                (match source_kind with
-                | Lib.Mouse_decoder.Down ->
-                    begin_selection renderer target
-                      ~x:decoded.Lib.Mouse_decoder.x
-                      ~y:decoded.Lib.Mouse_decoder.y
-                | Lib.Mouse_decoder.Drag ->
-                    update_selection renderer
-                      ~x:decoded.Lib.Mouse_decoder.x
-                      ~y:decoded.Lib.Mouse_decoder.y ~dragging:true
-                | Lib.Mouse_decoder.Up ->
-                    update_selection renderer
-                      ~x:decoded.Lib.Mouse_decoder.x
-                      ~y:decoded.Lib.Mouse_decoder.y ~dragging:false
-                | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Scroll -> ());
-              end;
-              let event =
-                make_pointer_event ~kind ~decoded ~source:None ~target:(Some target)
-                  ~is_dragging:
-                    (match source_kind with
-                    | Lib.Mouse_decoder.Drag -> true
-                    | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up
-                    | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Scroll -> false)
-              in
-              if
-                (match source_kind with
-                | Lib.Mouse_decoder.Drag -> true
-                | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up
-                | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Scroll -> false)
-                && Int.equal decoded.Lib.Mouse_decoder.button 0
-              then
-                renderer.captured <- Some target;
-              send_pointer_event renderer target event;
-              (match source_kind with
-              | Lib.Mouse_decoder.Down
-                when Int.equal decoded.Lib.Mouse_decoder.button 0 ->
-                  Result.bind (focus_after_pointer_down renderer target event)
-                    (fun () -> Ok true)
+            send_pointer_event renderer target event;
+            let focus_result =
+              match source_kind with
+              | Lib.Mouse_decoder.Down when is_left_button ->
+                  focus_after_pointer_down renderer target event
               | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up
               | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Drag
-              | Lib.Mouse_decoder.Scroll -> Ok true)))
+              | Lib.Mouse_decoder.Scroll -> Ok ()
+            in
+            Result.map (fun () -> Some event) focus_result
+      in
+      let clear_selection_after_down event =
+        match source_kind with
+        | Lib.Mouse_decoder.Down when is_left_button ->
+            let default_prevented =
+              match event with
+              | None -> false
+              | Some event -> Renderable.mouse_default_prevented event
+            in
+            if not default_prevented then ignore (clear_selection renderer)
+        | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up
+        | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Drag
+        | Lib.Mouse_decoder.Scroll -> ()
+      in
+      let dispatch_regular () =
+        if pointer_event_is_motion source_kind && not same_element then begin
+          Option.iter
+            (fun old_target ->
+              if
+                (match captured with
+                | Some captured -> captured != old_target
+                | None -> true)
+                && not (Renderable.is_destroyed old_target)
+              then
+                let event =
+                  make_pointer_event ~kind:Renderable.Out ~decoded ~source:None
+                    ~target:(Some old_target) ~is_dragging:false
+                in
+                send_pointer_event renderer old_target event)
+            renderer.last_over;
+          Option.iter
+            (fun new_target ->
+              let event =
+                make_pointer_event ~kind:Renderable.Over ~decoded
+                  ~source:captured ~target:(Some new_target)
+                  ~is_dragging:false
+              in
+              send_pointer_event renderer new_target event)
+            target;
+          renderer.last_over <- target
+        end;
+        match captured with
+        | Some captured ->
+            (match source_kind with
+            | Lib.Mouse_decoder.Up ->
+                let drag_end =
+                  make_pointer_event ~kind:Renderable.Drag_end ~decoded
+                    ~source:None ~target:(Some captured) ~is_dragging:false
+                in
+                send_pointer_event renderer captured drag_end;
+                let up =
+                  make_pointer_event ~kind:Renderable.Up ~decoded
+                    ~source:None ~target:(Some captured) ~is_dragging:false
+                in
+                send_pointer_event renderer captured up;
+                if not (Renderable.is_destroyed captured) then
+                  Option.iter
+                    (fun current_target ->
+                      let drop =
+                        make_pointer_event ~kind:Renderable.Drop ~decoded
+                          ~source:(Some captured) ~target:(Some current_target)
+                          ~is_dragging:false
+                      in
+                      send_pointer_event renderer current_target drop)
+                    target;
+                release_capture renderer;
+                if Renderable.is_destroyed captured then begin
+                  (match renderer.last_over with
+                  | Some last_over when last_over == captured ->
+                      renderer.last_over <- None;
+                      renderer.last_over_num <- None
+                  | Some _ | None -> ())
+                end else begin
+                  renderer.last_over <- Some captured;
+                  renderer.last_over_num <- Some (Renderable.num captured)
+                end;
+                Render_context.Private.request_render renderer.context;
+                Result.bind (dispatch_target ()) (fun event ->
+                    clear_selection_after_down event;
+                    Ok true)
+            | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Move
+            | Lib.Mouse_decoder.Drag ->
+                let event =
+                  make_pointer_event ~kind ~decoded ~source:None
+                    ~target:(Some captured)
+                    ~is_dragging:(pointer_event_is_dragging source_kind)
+                in
+                send_pointer_event renderer captured event;
+                Ok true
+            | Lib.Mouse_decoder.Scroll -> Ok false)
+        | None ->
+            Result.bind (dispatch_target ()) (fun event ->
+                clear_selection_after_down event;
+                Ok true)
+      in
+      if
+        match source_kind with
+        | Lib.Mouse_decoder.Down ->
+            is_left_button
+            && not (selection_is_dragging renderer)
+            && not decoded.Lib.Mouse_decoder.modifiers.ctrl
+        | Lib.Mouse_decoder.Up | Lib.Mouse_decoder.Move
+        | Lib.Mouse_decoder.Drag | Lib.Mouse_decoder.Scroll -> false
+      then
+        match target with
+        | Some target ->
+            (match selection_owner target ~x ~y with
+            | Some _ ->
+                begin_selection renderer target ~x ~y;
+                let event =
+                  make_pointer_event ~kind:Renderable.Down ~decoded ~source:None
+                    ~target:(Some target) ~is_dragging:false
+                in
+                send_pointer_event renderer target event;
+                Result.bind (focus_after_pointer_down renderer target event)
+                  (fun () -> Ok true)
+            | None -> dispatch_regular ())
+        | None -> dispatch_regular ()
+      else
+        match source_kind with
+        | Lib.Mouse_decoder.Drag when selection_is_dragging renderer ->
+            update_selection renderer ~current_target:target ~x ~y ~dragging:true;
+            Option.iter
+              (fun target ->
+                let event =
+                  make_pointer_event ~kind:Renderable.Drag ~decoded ~source:None
+                    ~target:(Some target) ~is_dragging:true
+                in
+                send_pointer_event renderer target event)
+              selection_route_target;
+            Ok true
+        | Lib.Mouse_decoder.Up when selection_is_dragging renderer ->
+            Option.iter
+              (fun target ->
+                let event =
+                  make_pointer_event ~kind:Renderable.Up ~decoded ~source:None
+                    ~target:(Some target) ~is_dragging:true
+                in
+                send_pointer_event renderer target event)
+              selection_route_target;
+            update_selection renderer ~current_target:target ~x ~y ~dragging:false;
+            Ok true
+        | Lib.Mouse_decoder.Down when
+            is_left_button && decoded.Lib.Mouse_decoder.modifiers.ctrl ->
+            (match renderer.selection with
+            | Some selection ->
+                Lib.Selection.set_dragging selection true;
+                update_selection renderer ~current_target:target ~x ~y ~dragging:true;
+                Ok true
+            | None -> dispatch_regular ())
+        | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up
+        | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Drag
+        | Lib.Mouse_decoder.Scroll -> dispatch_regular ()
 
 let process_capability_response renderer bytes =
   let sequence = Bytes.to_string bytes in
@@ -1065,7 +1343,7 @@ let resize renderer ~width ~height =
     match Opentui_raw.Renderer.resize renderer.raw ~width ~height with
     | Error error -> Error (map_raw_error error)
     | Ok () ->
-      renderer.captured <- None;
+      release_capture renderer;
       ignore (clear_selection renderer);
         Render_context.Private.resize renderer.context ~width ~height;
         let geometry =
@@ -1154,7 +1432,7 @@ let destroy renderer =
       renderer.live_leases;
     renderer.live_leases <- [];
     renderer.pre_render_drivers <- [];
-    renderer.captured <- None;
+    release_capture renderer;
     ignore (clear_selection renderer);
     renderer.last_over <- None;
     renderer.last_over_num <- None;

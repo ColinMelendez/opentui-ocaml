@@ -59,6 +59,14 @@ let text_of_codepoints values =
     values;
   Stdlib.Buffer.contents output
 
+let text_codepoints fields =
+  let values =
+    List.concat_map
+      (fun field -> List.filter_map int_of_digits (split_on ':' field))
+      fields
+  in
+  text_of_codepoints values
+
 let valid_codepoint value =
   if value > 0 && value <= 0x10ffff
      && not (value >= 0xd800 && value <= 0xdfff)
@@ -160,13 +168,14 @@ let event_type value = match value with 2 -> K.Repeat, true | 3 -> K.Release, fa
 
 let parse_event_field value =
   match split_on ':' value with
-  | modifier :: event :: _ ->
-      (match int_of_digits modifier, int_of_digits event with
-      | Some modifier, Some event -> Some (modifier, event)
-      | Some modifier, None -> Some (modifier, 1)
-      | None, _ -> None)
-  | modifier :: [] -> Option.map (fun value -> value, 1) (int_of_digits modifier)
-  | [] -> None
+  | [ modifier; event ] ->
+      (match int_of_digits modifier with
+      | None -> None
+      | Some modifier ->
+          if String.length event = 0 then Some (modifier, 1)
+          else Option.map (fun event -> modifier, event) (int_of_digits event))
+  | [ modifier ] -> Option.map (fun value -> value, 1) (int_of_digits modifier)
+  | _ -> None
 
 let parse_special body terminator =
   match split_on ';' body with
@@ -202,7 +211,23 @@ let rec parse_unicode body =
           | _ -> None)
       | _ -> None)
   | first :: [] ->
-      (match int_of_digits first with Some code -> parse_unicode_values code None None "1" [] | None -> None)
+      (match split_on ':' first with
+      | code_text :: shifted_text :: base_text :: _ ->
+          (match int_of_digits code_text with
+          | Some code ->
+              parse_unicode_values code (int_of_digits shifted_text)
+                (int_of_digits base_text) "1" []
+          | None -> None)
+      | code_text :: shifted_text :: [] ->
+          (match int_of_digits code_text with
+          | Some code ->
+              parse_unicode_values code (int_of_digits shifted_text) None "1" []
+          | None -> None)
+      | code_text :: [] ->
+          (match int_of_digits code_text with
+          | Some code -> parse_unicode_values code None None "1" []
+          | None -> None)
+      | [] -> None)
   | _ -> None
 
 and parse_unicode_values code shifted base modifier_field text_fields =
@@ -214,7 +239,7 @@ and parse_unicode_values code shifted base modifier_field text_fields =
   match modifiers (match parse_event_field modifier_field with Some (wire, _) -> wire | None -> 1), parse_event_field modifier_field with
   | Some (modifier, option, super, hyper, caps_lock, num_lock), Some (_, event) ->
       let code_bytes = if code = 0 then None else Option.bind (valid_codepoint code) utf8 in
-      let explicit_text = text_of_codepoints (List.filter_map int_of_digits text_fields) in
+      let explicit_text = text_codepoints text_fields in
       if (code <> 0 && Option.is_none code_bytes)
          || (code = 0 && String.length explicit_text = 0) then None
       else

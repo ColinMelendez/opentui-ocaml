@@ -258,6 +258,9 @@ module Private : sig
   val remove_scheduler_wakeup : t -> scheduler_wakeup -> unit
   val set_selection_update : t -> (unit -> unit) -> unit
   val clear_hit_grid : t -> unit
+  val push_hit_scissor :
+    t -> x:int -> y:int -> width:int -> height:int -> unit
+  val pop_hit_scissor : t -> unit
   val add_hit_grid :
     t -> x:int -> y:int -> width:int -> height:int -> id:int -> unit
   val hit_grid_count : t -> int

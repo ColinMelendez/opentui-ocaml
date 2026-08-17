@@ -785,7 +785,7 @@ let can_reuse_renderable renderable =
      || not renderable.behavior.custom_scissor)
   && not renderable.behavior.filters_children
 
-let execute_render_command buffer ~delta_time = function
+let execute_render_command context buffer ~delta_time = function
   | Push_opacity opacity -> Buffer.push_opacity buffer opacity
   | Pop_opacity -> Buffer.pop_opacity buffer
   | Push_scissor rect ->
@@ -793,8 +793,19 @@ let execute_render_command buffer ~delta_time = function
       let y = Int32.of_float (Float.floor rect.y) in
       let width = Int32.of_float (Float.max 0.0 (Float.floor rect.width)) in
       let height = Int32.of_float (Float.max 0.0 (Float.floor rect.height)) in
-      Buffer.push_scissor_rect buffer ~x ~y ~width ~height
-  | Pop_scissor -> Buffer.pop_scissor_rect buffer
+      (match Buffer.push_scissor_rect buffer ~x ~y ~width ~height with
+      | Error error -> Error error
+      | Ok () ->
+          Render_context.Private.push_hit_scissor context
+            ~x:(Int32.to_int x) ~y:(Int32.to_int y) ~width:(Int32.to_int width)
+            ~height:(Int32.to_int height);
+          Ok ())
+  | Pop_scissor ->
+      (match Buffer.pop_scissor_rect buffer with
+      | Error error -> Error error
+      | Ok () ->
+          Render_context.Private.pop_hit_scissor context;
+          Ok ())
   | Render renderable ->
       if renderable.destroyed then Ok ()
       else
@@ -927,7 +938,7 @@ let render_root root buffer ~delta_time =
             let rec execute = function
               | [] -> Ok ()
               | command :: rest ->
-                  (match execute_render_command buffer ~delta_time command with
+                  (match execute_render_command root.context buffer ~delta_time command with
                   | Error error -> Error error
                   | Ok () -> execute rest)
             in
@@ -939,7 +950,7 @@ let render_root root buffer ~delta_time =
                   | Render renderable :: rest when renderable == root ->
                       execute rest
                   | command :: rest ->
-                      (match execute_render_command buffer ~delta_time command with
+                      (match execute_render_command root.context buffer ~delta_time command with
                       | Error error -> Error error
                       | Ok () -> execute_without_root rest)
                 in
