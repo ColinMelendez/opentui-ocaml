@@ -298,10 +298,12 @@ and the
 [pointer-dispatch feature record](major-features/in-progress/pointer-dispatch/feature.md).
 
 The [background feature record](major-features/in-progress/background/feature.md)
-defines the planned application-owned Eio executor pool used for selected
-CPU-heavy work. Its completion handlers return to the submitting domain and
-reuse existing renderer/event flows; it does not make retained or native state
-concurrently mutable.
+defines the application-owned Eio executor pool used for selected CPU-heavy
+work. `Platform.Eio_runtime.Background` binds submissions to an owner domain
+and Eio switch, runs only the typed work closure on a reusable executor domain,
+and returns completion to the owner. It does not make retained or native state
+concurrently mutable; consumer integrations add their own generations and
+lifetime checks.
 
 The [scheduler feature record](major-features/in-progress/scheduler/feature.md)
 defines the separate renderer-owned Eio clock, timer, render-request wakeup,

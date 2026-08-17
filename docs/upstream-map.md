@@ -51,7 +51,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | `index.ts` | `packages/opentui-core/src` Dune library boundary | Translated package boundary; no literal barrel module is introduced |
 | `node-assets.ts`, `node-asset-target.ts` | No OCaml module | Translated/non-applicable Node native and parser-asset discovery; the Eio-native package has no Node asset manifest |
 | `platform/assets.ts`, `platform/ffi.ts`, `platform/runtime.ts` | `packages/opentui-core/src/platform` and `packages/opentui-raw` | Translated Eio/Unix runtime and native boundary |
-| `platform/runtime-assets.node.ts`, `platform/runtime-assets.bun.ts`, `platform/worker*.ts` | [background feature record](major-features/in-progress/background/feature.md); no OCaml module yet | Node/Bun asset loaders and worker entry points are non-applicable; their CPU-isolation role is planned as an application-owned Eio executor pool |
+| `platform/runtime-assets.node.ts`, `platform/runtime-assets.bun.ts`, `platform/worker*.ts` | `packages/opentui-core/src/platform/eio_runtime/background.ml`; [background feature record](major-features/in-progress/background/feature.md) | Node/Bun asset loaders and worker entry points are non-applicable; their CPU-isolation role is translated to an application-owned Eio executor pool with owner-domain completion |
 
 ### Input and library modules
 
@@ -89,7 +89,7 @@ vendor trees, and test fixtures use the support-layout rows at the end.
 | `lib/selection.ts` | `packages/opentui-core/src/lib/selection.ml` | Active slice; generic selection geometry and text grouping |
 | `lib/singleton.ts` | Owner composition in `Renderer.t`, `Render_context.t`, `Data_paths.t`, `Env.t`, and injected services | Translated/non-applicable; no process-global singleton is introduced |
 | `lib/terminal-palette.ts` | `packages/opentui-core/src/lib/terminal_palette.ml`; renderer feed/query helpers in `src/renderer.ml` | Active slice; transport-neutral session seam |
-| `lib/tree-sitter-styled-text.ts`, `tree-sitter/*` | `packages/opentui-core/src/tree_sitter_styled_text.ml`; `packages/opentui-core/src/lib/tree_sitter_client.ml`, `tree_sitter_types.ml`, `tree_sitter_resolve_filetype.ml`; [background feature record](major-features/in-progress/background/feature.md) | Active typed synchronous seam; background highlighting through an application-owned Eio executor pool remains a separate planned feature, and no JS/WASM asset loader is claimed |
+| `lib/tree-sitter-styled-text.ts`, `tree-sitter/*` | `packages/opentui-core/src/tree_sitter_styled_text.ml`; `packages/opentui-core/src/lib/tree_sitter_client.ml`, `tree_sitter_types.ml`, `tree_sitter_resolve_filetype.ml`; `packages/opentui-core/src/platform/eio_runtime/background.ml`; [background feature record](major-features/in-progress/background/feature.md) | Active typed synchronous parser seam; the reusable background executor boundary is implemented but parser adoption remains pending, and no JS/WASM asset loader is claimed |
 | `lib/yoga.options.ts` | `packages/opentui-core/src/lib/yoga_options.ml` and `yoga.ml` | Active typed option parsers; invalid runtime strings return structured errors rather than silently defaulting |
 
 ### Text and renderables

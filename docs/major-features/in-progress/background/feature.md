@@ -1,6 +1,6 @@
 # Background CPU jobs
 
-Status: in progress.
+Status: implemented; consumer integrations remain in progress.
 
 This feature defines the small Eio boundary used to keep expensive,
 synchronous CPU work from blocking terminal input and rendering. It provides
@@ -101,15 +101,18 @@ module does not silently oversubscribe a single-core host.
 
 ### Submission contract
 
-The planned public shape is conceptually:
+The implemented public shape is:
 
 ```ocaml
 module Background : sig
   type t
+  type submitter
+  type job
 
   type error =
     | Invalid_worker_count of int
     | Closed
+    | Wrong_domain
 
   val create :
     sw:Eio.Switch.t ->
@@ -117,25 +120,40 @@ module Background : sig
     worker_count:int ->
     (t, error) result
 
-  val submit :
+  val bind :
     t ->
     sw:Eio.Switch.t ->
-    work:(unit -> ('value, 'error) result) ->
-    on_complete:(('value, 'error) result -> unit) ->
-    (unit, error) result
+    (submitter, error) result
+
+  val submit :
+    submitter ->
+    work:(unit -> ('value, 'work_error) result) ->
+    on_complete:(('value, 'work_error) result -> unit) ->
+    (job, error) result
+
+  val cancel : job -> unit
 end
 ```
 
-The exact names may change during implementation, but these semantics are
-normative:
+`create` accepts a positive worker count only when that count plus the
+submitting application domain is no greater than
+`Domain.recommended_domain_count ()`. The recommended starting value remains
+one worker. The pool is created immediately and its worker domains are owned
+by the supplied application switch. A single-domain host therefore reports
+`Invalid_worker_count 1` rather than silently oversubscribing itself.
 
-- `submit` starts an owner-domain Eio fiber;
-- that fiber calls `Eio.Executor_pool.submit` with CPU weight `1.0`;
-- only `work` runs on an executor domain;
-- after the executor result is available, the same owner-domain fiber invokes
-  `on_complete`;
-- the completion callback is never invoked from the executor domain; and
-- submission does not run or mutate the renderer by itself.
+`bind` makes the owner domain and submission switch explicit and installs a
+release hook that marks the submitter closed even when the switch finishes
+normally. `submit` starts two fibers on that binding switch: one owner-domain
+helper calls
+`Eio.Executor_pool.submit ~weight:1.0`, and one owner-domain completion fiber
+races the typed result against the job cancellation promise. Only `work` runs
+on an executor domain. The completion callback receives the exact
+`('value, 'work_error) result` returned by `work` and is never invoked from
+the executor domain. Submission does not run or mutate the renderer by
+itself. A submitter whose binding switch has been released, normally or by
+cancellation, returns `Closed`; calling it from another domain returns
+`Wrong_domain`.
 
 CPU weight is not initially public configuration. Background jobs are selected
 because they are CPU-heavy, so they consume one executor worker while running.
@@ -179,7 +197,11 @@ to identify in review.
 ### Completion and existing flows
 
 An executor result resolves the waiting Eio operation and wakes the submitting
-domain's normal scheduler. The resumed fiber invokes `on_complete` directly.
+domain's normal scheduler. The completion fiber invokes `on_complete` directly
+on that domain. Its small atomic job state gives cancellation a linearization
+point: cancellation before delivery suppresses the callback and releases its
+owner-domain captures when the fiber exits; cancellation after delivery has
+started cannot retract a callback already in progress.
 There is no new completion mailbox, renderer command queue, cross-domain event
 variant, or change to `Platform.Eio_runtime.Wakeup`.
 
@@ -227,20 +249,22 @@ results harmless even when a CPU operation cannot be interrupted promptly.
 ### Errors and cancellation
 
 Expected work failures use the worker function's typed result and are
-delivered to `on_complete`. `Background` does not erase a
-consumer error into a string or impose one error variant on unrelated
-features.
+delivered to `on_complete` unchanged. `Background` does not erase a consumer
+error into a string or impose one error variant on unrelated features.
 
-An unexpected exception from `work` is not converted into a recoverable
-feature error. It is re-raised by the owner-domain waiting fiber and follows
-the surrounding Eio switch's failure policy. Completion-callback exceptions
-likewise propagate from the owner-domain fiber. Eio cancellation exceptions
-retain their cancellation meaning.
+An unexpected exception from `work` is returned by Eio's executor primitive as
+an exception result and immediately re-raised by the owner-domain helper. It
+therefore follows the submitting switch's failure policy without a catch-all
+handler. Completion-callback exceptions likewise propagate from the
+owner-domain fiber. Eio cancellation exceptions retain their cancellation
+meaning.
 
-Cancelling the submission switch cancels the waiting fiber and prevents its
-completion callback. It does not promise forcible termination of a pure CPU or
-foreign operation already running on an executor. Correctness therefore
-depends on lifetime/generation validation, not prompt physical cancellation.
+Cancelling the submission switch cancels the owner helper and completion fiber
+and prevents a later completion callback. Calling `cancel` has the same
+callback-suppression guarantee for a job whose delivery has not started. None
+of these operations promises forcible termination of a pure CPU or foreign
+operation already running on an executor. Correctness therefore depends on
+lifetime/generation validation, not prompt physical cancellation.
 A future parser may additionally poll a cooperative cancellation flag, but
 that is not required by `Background`.
 
@@ -344,14 +368,15 @@ Tree-sitter fixtures should include small, medium, and large files plus a burst
 of edits where only the final generation is applied. Markdown background work
 is enabled only after similar measurements establish a useful threshold.
 
-## Planned implementation sequence
+## Implementation sequence
 
-1. Add `Platform.Eio_runtime.Background` around one application-owned
-   `Eio.Executor_pool`, with explicit switch lifetime and structured creation
-   errors.
-2. Add black-box Eio tests proving that work runs on another domain, completion
-   runs on the submitting domain, expected result errors are preserved, and
-   cancellation suppresses completion.
+1. `Platform.Eio_runtime.Background` implements one application-owned
+   `Eio.Executor_pool`, with explicit switch lifetime, owner-bound submitters,
+   and structured admission errors.
+2. Black-box Eio tests prove that work runs on another domain, completion
+   runs on the submitting domain, expected result errors are preserved,
+   cancellation suppresses completion, closed lifetimes reject submission, and
+   unexpected exceptions reach the appropriate switch.
 3. Change Tree-sitter request identity from one client-global generation to
    per-Code/per-buffer generations.
 4. Run Code highlighting through `Background` and implement one-running plus
@@ -368,8 +393,12 @@ is enabled only after similar measurements establish a useful threshold.
 
 - one application-owned background value reuses its executor domains and no
   consumer creates a private pool;
-- default guidance reserves the submitting Eio domain and starts with one CPU
-  worker rather than silently using every recommended domain;
+- positive worker counts are accepted only when the worker count plus the
+  submitting Eio domain is within `Domain.recommended_domain_count ()`, with
+  one CPU worker as the default guidance rather than silently using every
+  recommended domain;
+- `bind` creates an owner-domain submitter and closed application or submission
+  switches reject later binding and submission;
 - worker code runs on an executor domain and its completion callback runs on
   the submitting Eio domain;
 - worker inputs and outputs are owned ordinary OCaml data and no renderer,
@@ -377,8 +406,9 @@ is enabled only after similar measurements establish a useful threshold.
   code;
 - expected feature failures remain typed results, while unexpected worker and
   completion exceptions follow the surrounding Eio failure policy;
-- cancellation prevents a later owner callback without claiming that an
-  already-running CPU operation was forcibly terminated;
+- job or submission-switch cancellation prevents a later owner callback
+  without claiming that an already-running CPU operation was forcibly
+  terminated;
 - `Event_queue`, runtime `Wakeup`, event channels, renderer dispatch, and frame
   ordering are unchanged;
 - Code owns per-consumer generations and at most one running plus one latest

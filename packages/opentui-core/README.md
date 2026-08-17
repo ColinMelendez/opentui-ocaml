@@ -136,6 +136,13 @@ integer-width arithmetic is not a supported terminal use case.
 
 ## Parser-backed content
 
+`Platform.Eio_runtime.Background` provides one application-owned Eio executor
+pool for selected CPU-heavy work. Submitters are bound to an owner domain and
+switch: only the typed work closure crosses to a reusable executor domain, and
+completion returns to the owner. Cancellation suppresses callback delivery but
+does not claim to interrupt CPU work already running. Consumers remain
+responsible for generation and retained-object lifetime checks.
+
 `Renderables.Code` owns one native `Text_buffer_renderable` and accepts an
 application-registered `Lib.Tree_sitter_types.parser` through
 `Lib.Tree_sitter_client`. Requests are synchronous and generation-checked:
