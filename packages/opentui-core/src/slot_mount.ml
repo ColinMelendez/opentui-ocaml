@@ -28,6 +28,7 @@ type 'props t = {
   mutable mount_current_views : owned_view list;
   mutable mount_subscription : Slot.Private.subscription option;
   mutable mount_refreshing : bool;
+  mutable mount_refresh_pending : bool;
   mutable mount_destroyed : bool;
   mutable mount_cleaned : bool;
 }
@@ -444,13 +445,16 @@ let reconcile mount desired =
 let report_failures mount failures =
   List.iter (Plugin_host.Private.report (slot_host mount)) failures
 
-let refresh_internal mount =
-  if mount.mount_destroyed || Renderable.is_destroyed mount.mount_renderable then
+let rec refresh_internal mount =
+  if mount.mount_destroyed || Renderable.is_destroyed mount.mount_renderable then begin
+    mount.mount_refresh_pending <- false;
     [
       make_failure mount ~phase:Plugin_failure.Refresh ~origin:Plugin_failure.Host
         Plugin_failure.Host_closed;
     ]
+  end
   else if not (host_is_open mount) then begin
+    mount.mount_refresh_pending <- false;
     Option.iter Slot.Private.unsubscribe mount.mount_subscription;
     mount.mount_subscription <- None;
     let failures = cleanup_owned_views mount (all_old_views mount) in
@@ -560,8 +564,19 @@ let refresh_internal mount =
             mount.mount_current_views <- desired;
             ignore (Renderable.request_render mount.mount_renderable)));
     mount.mount_refreshing <- false;
-    !failures
+    let failures = !failures in
+    if mount.mount_refresh_pending then begin
+      mount.mount_refresh_pending <- false;
+      if mount.mount_destroyed || not (host_is_open mount) then failures
+      else failures @ refresh_internal mount
+    end else failures
   end
+
+let request_refresh mount =
+  if mount.mount_refreshing then begin
+    mount.mount_refresh_pending <- true;
+    []
+  end else refresh_internal mount
 
 let cleanup_mount mount =
   if not mount.mount_cleaned then begin
@@ -572,6 +587,7 @@ let cleanup_mount mount =
     mount.mount_states <- [];
     mount.mount_fallback_views <- None;
     mount.mount_current_views <- [];
+    mount.mount_refresh_pending <- false;
     report_failures mount failures
   end
 
@@ -626,13 +642,14 @@ let create ~renderer ~slot ~props ?(mode = Append) ?fallback ?placeholder () =
             mount_current_views = [];
             mount_subscription = None;
             mount_refreshing = false;
+            mount_refresh_pending = false;
             mount_destroyed = false;
             mount_cleaned = false;
           }
         in
         mount_ref := Some mount;
         (match
-           Slot.Private.subscribe slot ~notify:(fun () -> refresh_internal mount)
+           Slot.Private.subscribe slot ~notify:(fun () -> request_refresh mount)
          with
         | Error failure ->
             Renderable.destroy mount_renderable;

@@ -185,6 +185,76 @@ let test_props_refresh_replaces_views () =
   ignore (expect_host (Plugin.Host.close host));
   Core.Renderer.destroy renderer
 
+let test_reentrant_invalidation_is_deferred_and_coalesced () =
+  let renderer = expect_core (Core.Renderer.create ~width:16l ~height:4l) in
+  let context = Core.Renderer.context renderer in
+  let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
+  let slot, sink =
+    expect_failure
+      (Core.Slot.create ~host ~id:(expect_id "deferred-refresh-slot"))
+  in
+  let second_views = ref [] in
+  let third_views = ref [] in
+  let render_second _props =
+    let produced = make_view context ~id:"second" in
+    second_views := produced :: !second_views;
+    Ok (Some produced.view)
+  in
+  let render_third _props =
+    let produced = make_view context ~id:"third" in
+    third_views := produced :: !third_views;
+    Ok (Some produced.view)
+  in
+  let second =
+    install_contributor ~host ~sink ~id:"second-refresh-plugin" ~order:1
+      ~render:render_second
+  in
+  let third =
+    install_contributor ~host ~sink ~id:"third-refresh-plugin" ~order:2
+      ~render:render_third
+  in
+  let instances_to_remove = ref [ second; third ] in
+  let uninstalled = ref false in
+  let uninstall_results : (unit, Plugin.errors) result list ref = ref [] in
+  let render_first _props =
+    if not !uninstalled then begin
+      uninstalled := true;
+      let instances = !instances_to_remove in
+      instances_to_remove := [];
+      uninstall_results :=
+        List.map Plugin.Instance.uninstall instances
+    end;
+    let produced = make_view context ~id:"first" in
+    Ok (Some produced.view)
+  in
+  ignore
+    (install_contributor ~host ~sink ~id:"first-refresh-plugin" ~order:0
+       ~render:render_first);
+  let mount =
+    expect_mount (Core.Slot_mount.create ~renderer ~slot ~props:() ())
+  in
+  equal int 2 (List.length !uninstall_results);
+  List.iter
+    (function
+      | Ok () -> ()
+      | Error (first, _) ->
+          fail
+            ("re-entrant invalidation returned an error: "
+            ^ Core.Plugin_failure.message first))
+    !uninstall_results;
+  assert_child_ids (Core.Slot_mount.renderable mount) [ "first" ];
+  (match !second_views with
+  | produced :: _ ->
+      equal bool true (Core.Renderable.is_destroyed produced.renderable)
+  | [] -> fail "withdrawn plugin was not rendered during the original snapshot");
+  (match !third_views with
+  | produced :: _ ->
+      equal bool true (Core.Renderable.is_destroyed produced.renderable)
+  | [] -> fail "second withdrawn plugin was not rendered during the original snapshot");
+  Core.Slot_mount.destroy mount;
+  ignore (expect_host (Plugin.Host.close host));
+  Core.Renderer.destroy renderer
+
 let test_placeholder_for_failed_plugin () =
   let renderer = expect_core (Core.Renderer.create ~width:16l ~height:4l) in
   let context = Core.Renderer.context renderer in
@@ -376,6 +446,8 @@ let () =
         test_modes_and_fallback;
       test "props refresh replaces accepted views, including equal props"
         test_props_refresh_replaces_views;
+      test "re-entrant slot invalidation is deferred and coalesced"
+        test_reentrant_invalidation_is_deferred_and_coalesced;
       test "failed contributions render their placeholder"
         test_placeholder_for_failed_plugin;
       test "slot mounts and views enforce renderer ownership"

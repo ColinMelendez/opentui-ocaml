@@ -120,7 +120,8 @@ Implemented in the core package:
 - typed slots and contribution sinks with append, replace, and single-winner
   selection; and
 - renderer-owned `Slot_view`/`Slot_mount` lifecycle, fallback and placeholder
-  paths, order-preserving reuse, props refresh, and retained-tree ownership.
+  paths, order-preserving reuse, props refresh, retained-tree ownership, and
+  coalesced deferred invalidation while a mount is refreshing.
 
 Still intentionally deferred:
 
@@ -294,9 +295,10 @@ are distinct.
 
 `Instance.set_order` changes the order of every contribution from that plugin
 as one transaction. All slot entry orders change before affected mounts are
-notified, and each mount refreshes at most once. Plugin definitions and their
-order fields are immutable; the host never discovers changes by rereading
-caller-owned mutable records.
+notified, and each mount receives one initial refresh request. If that refresh
+causes private invalidations, the mount coalesces them into one deferred pass.
+Plugin definitions and their order fields are immutable; the host never
+discovers changes by rereading caller-owned mutable records.
 
 Uninstallation is idempotent and has an exact ownership order:
 
@@ -414,6 +416,12 @@ instance that synchronously withdrew itself and preserves the guarantee that
 uninstall destroys all views before plugin cleanup. Private invalidations that
 arrive while a mount is already refreshing only mark it pending and coalesce
 into one later host-driven refresh; they never recursively enter evaluation.
+The pending bit is consumed after the current contribution snapshot has
+finished committing, and the follow-up refresh is allowed to reconcile the
+withdrawal or replacement that caused the invalidation. If several private
+notifications arrive during either pass, they still produce one pending pass
+per logical refresh boundary rather than a nested refresh or a returned
+`Busy` failure.
 
 Slot-mount destruction unsubscribes first, deactivates active views, detaches
 and destroys every owned renderable, destroys any constructed fallback or
