@@ -153,7 +153,7 @@ let create_with_clock_option ~clock ~width ~height =
                   let context =
                     Render_context.Private.create
                       ~owner:(Render_context.Private.new_owner ()) ~width ~height
-                      ~capabilities:(Some capabilities)
+                      ~capabilities:(Some capabilities) ~clock
                   in
                   (match Renderable.Private.create_root context with
                   | Error error ->
@@ -178,9 +178,7 @@ let create_with_clock_option ~clock ~width ~height =
                                 Renderer_theme_mode.create ~clock
                                   ~query:(fun () -> theme_query_requested := true) ()
                             | None ->
-                                let manual_clock = Lib.Clock.manual () in
-                                Renderer_theme_mode.create
-                                  ~clock:(Lib.Clock.manual_clock manual_clock)
+                                Renderer_theme_mode.create_without_clock
                                   ~query:(fun () -> theme_query_requested := true) ()
                           in
                           Ok
@@ -392,6 +390,12 @@ let request_theme_query renderer =
 let wait_for_theme_mode renderer ~timeout_ms ~on_result =
   if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
   else if Int.compare timeout_ms 0 < 0 then Error Error.Invalid_argument
+  else if Int.compare timeout_ms 0 > 0 then
+    (match Render_context.clock renderer.context with
+    | Error error -> Error error
+    | Ok None -> Error Error.Unsupported
+    | Ok (Some _) ->
+        Ok (Renderer_theme_mode.wait_for renderer.theme_mode ~timeout_ms ~on_result))
   else Ok (Renderer_theme_mode.wait_for renderer.theme_mode ~timeout_ms ~on_result)
 
 let cancel_theme_waiter renderer waiter =

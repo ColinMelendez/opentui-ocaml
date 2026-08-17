@@ -74,6 +74,10 @@ val render_list_revision : t -> (int64, Error.t) result
     focused. *)
 val focused_num : t -> (int option, Error.t) result
 
+(** The optional owner-local clock capability. [None] means this context was
+    created for synchronous operation without timing services. *)
+val clock : t -> (Lib.Clock.t option, Error.t) result
+
 (** [request_render context] records one coalesced future render request. *)
 val request_render : t -> (unit, Error.t) result
 
@@ -191,11 +195,14 @@ val prepend_paste :
   t -> (Lib.Key_handler.paste_event -> unit) -> (Event_subscription.t, Error.t) result
 
 module Private : sig
+  type scheduler_wakeup
+
   (** Construction and mutation used by {!Renderer}. *)
   val new_owner : unit -> owner
   val create :
     owner:owner -> width:int32 -> height:int32 ->
-    capabilities:Terminal_capabilities.t option -> t
+    capabilities:Terminal_capabilities.t option ->
+    clock:Lib.Clock.t option -> t
   val set_capabilities : t -> Terminal_capabilities.t -> unit
   val set_palette : t -> Lib.Terminal_palette.normalized -> unit
   val set_theme_mode : t -> theme_mode -> unit
@@ -221,6 +228,8 @@ module Private : sig
   val request_live : t -> unit
   val drop_live : t -> unit
   val live_request_count : t -> int
+  val install_scheduler_wakeup : t -> (unit -> unit) -> scheduler_wakeup option
+  val remove_scheduler_wakeup : t -> scheduler_wakeup -> unit
   val clear_hit_grid : t -> unit
   val add_hit_grid :
     t -> x:int -> y:int -> width:int -> height:int -> id:int -> unit

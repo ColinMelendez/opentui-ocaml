@@ -4,7 +4,7 @@ type response = { handled : bool; changed_mode : mode option }
 type waiter = { id : int; mutable timer : Lib.Clock.timer option; mutable cancelled : bool }
 
 type t = {
-  clock : Lib.Clock.t;
+  clock : Lib.Clock.t option;
   query : unit -> unit;
   mutable current : mode option;
   mutable query_pending : bool;
@@ -19,14 +19,21 @@ type t = {
 let query_sequence = "\027]10;?\007\027]11;?\007"
 let mode_name = function Light -> "light" | Dark -> "dark"
 
-let create ~clock ~query () =
-  { clock; query; current = None; query_pending = true; foreground = None;
+let create_with_clock ~clock ~query () =
+  { clock; query; current = None; query_pending = false; foreground = None;
     background = None; refresh_timer = None; next_id = 1; waiters = []; disposed = false }
+
+let create ~clock ~query () = create_with_clock ~clock:(Some clock) ~query ()
+
+let create_without_clock ~query () =
+  create_with_clock ~clock:None ~query ()
 
 let mode owner = owner.current
 
 let clear_refresh owner =
-  Option.iter (Lib.Clock.cancel owner.clock) owner.refresh_timer;
+  (match owner.clock with
+  | None -> ()
+  | Some clock -> Option.iter (Lib.Clock.cancel clock) owner.refresh_timer);
   owner.refresh_timer <- None
 
 let complete_query owner =
@@ -46,7 +53,9 @@ let apply_mode owner next =
     List.iter
       (fun (waiter, callback) ->
         if not waiter.cancelled then begin
-          Option.iter (Lib.Clock.cancel owner.clock) waiter.timer;
+          (match owner.clock with
+          | None -> ()
+          | Some clock -> Option.iter (Lib.Clock.cancel clock) waiter.timer);
           callback (Some next)
         end)
       waiters
@@ -54,12 +63,17 @@ let apply_mode owner next =
   if changed then Some next else None
 
 let request owner =
-  if not owner.disposed && Option.is_none owner.refresh_timer then begin
+  if not owner.disposed && not owner.query_pending
+     && Option.is_none owner.refresh_timer then begin
     owner.query_pending <- true;
     owner.foreground <- None;
     owner.background <- None;
     owner.refresh_timer <-
-      Some (Lib.Clock.schedule owner.clock ~delay:0.25 (fun () -> complete_query owner));
+      (match owner.clock with
+      | None -> None
+      | Some clock ->
+          Some
+            (Lib.Clock.schedule clock ~delay:0.25 (fun () -> complete_query owner)));
     owner.query ()
   end
 
@@ -158,16 +172,32 @@ let wait_for owner ~timeout_ms ~on_result =
   let id = owner.next_id in
   owner.next_id <- id + 1;
   let waiter = { id; timer = None; cancelled = false } in
-  if owner.disposed || Option.is_some owner.current || Int.equal timeout_ms 0 then on_result owner.current
+  let immediate_without_clock =
+    Int.compare timeout_ms 0 > 0 && Option.is_none owner.clock
+  in
+  if owner.disposed || Option.is_some owner.current
+     || Int.equal timeout_ms 0 || immediate_without_clock then begin
+    waiter.cancelled <- true;
+    on_result owner.current
+  end
   else begin
     let timer =
       if Int.compare timeout_ms 0 > 0 then
-        Some (Lib.Clock.schedule owner.clock ~delay:(float_of_int timeout_ms /. 1000.0) (fun () ->
-            if not waiter.cancelled then begin
-              waiter.cancelled <- true;
-              owner.waiters <- List.filter (fun (entry, _) -> not (Int.equal entry.id id)) owner.waiters;
-              on_result owner.current
-            end))
+        (match owner.clock with
+        | None -> None
+        | Some clock ->
+            Some
+              (Lib.Clock.schedule clock
+                 ~delay:(float_of_int timeout_ms /. 1000.0)
+                 (fun () ->
+                   if not waiter.cancelled then begin
+                     waiter.cancelled <- true;
+                     owner.waiters <-
+                       List.filter
+                         (fun (entry, _) -> not (Int.equal entry.id id))
+                         owner.waiters;
+                     on_result owner.current
+                   end)))
       else None
     in
     waiter.timer <- timer;
@@ -178,7 +208,9 @@ let wait_for owner ~timeout_ms ~on_result =
 let cancel_wait owner waiter =
   if not waiter.cancelled then begin
     waiter.cancelled <- true;
-    Option.iter (Lib.Clock.cancel owner.clock) waiter.timer;
+    (match owner.clock with
+    | None -> ()
+    | Some clock -> Option.iter (Lib.Clock.cancel clock) waiter.timer);
     owner.waiters <- List.filter (fun (entry, _) -> not (Int.equal entry.id waiter.id)) owner.waiters
   end
 
@@ -193,7 +225,9 @@ let dispose owner =
     List.iter
       (fun (waiter, callback) ->
         waiter.cancelled <- true;
-        Option.iter (Lib.Clock.cancel owner.clock) waiter.timer;
+        (match owner.clock with
+        | None -> ()
+        | Some clock -> Option.iter (Lib.Clock.cancel clock) waiter.timer);
         callback owner.current)
       owner.waiters;
     owner.waiters <- []

@@ -47,8 +47,13 @@ type focused_renderable = {
 
 type live_control = Idle | Auto_started | Explicit_started
 
+type scheduler_wakeup_state = {
+  callback : unit -> unit;
+}
+
 type t = {
   owner : owner;
+  clock : Lib.Clock.t option;
   mutable width : int32;
   mutable height : int32;
   mutable frame_id : int64;
@@ -72,6 +77,7 @@ type t = {
   mutable current_hit_grid : int array;
   mutable next_hit_grid : int array;
   mutable closed : bool;
+  mutable scheduler_wakeup : scheduler_wakeup_state option;
   events : Renderer_events.t;
   key_handler : Lib.Key_handler.t;
 }
@@ -147,11 +153,25 @@ let focused_num context =
   | Ok () ->
       Ok (Option.map (fun focused -> focused.id) context.focused)
 
+let clock context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok context.clock
+
+let notify_scheduler context =
+  Option.iter (fun wakeup -> wakeup.callback ()) context.scheduler_wakeup
+
+let request_render_state context =
+  if not context.render_requested then begin
+    context.render_requested <- true;
+    notify_scheduler context
+  end
+
 let request_render context =
   match ensure_open context with
   | Error error -> Error error
   | Ok () ->
-      context.render_requested <- true;
+      request_render_state context;
       Ok ()
 
 let has_pending_render context =
@@ -361,6 +381,8 @@ let prepend_paste context callback =
   | Ok () -> Ok (Lib.Key_handler.prepend_paste context.key_handler callback)
 
 module Private = struct
+  type scheduler_wakeup = scheduler_wakeup_state
+
   let new_owner () = ref ()
 
   let grid_size ~width ~height =
@@ -386,7 +408,7 @@ module Private = struct
     { source = Keyboard; scope; kind; owner_num = error.owner_num;
       exception_value = error.exception_value }
 
-  let create ~owner ~width ~height ~capabilities =
+  let create ~owner ~width ~height ~capabilities ~clock =
     let events = Renderer_events.Private.create () in
     let key_handler =
       Lib.Key_handler.create ~on_error:(fun error ->
@@ -396,6 +418,7 @@ module Private = struct
     in
     {
       owner;
+      clock;
       width;
       height;
       frame_id = 0L;
@@ -422,6 +445,7 @@ module Private = struct
       current_hit_grid = create_hit_grid ~width ~height;
       next_hit_grid = create_hit_grid ~width ~height;
       closed = false;
+      scheduler_wakeup = None;
       events;
       key_handler;
     }
@@ -478,7 +502,7 @@ module Private = struct
   let layout_generation (context : t) = context.layout_generation
   let render_list_revision (context : t) = context.render_list_revision
 
-  let request_render context = context.render_requested <- true
+  let request_render context = request_render_state context
   let has_pending_render context = context.render_requested
 
   let clear_render_request context = context.render_requested <- false
@@ -526,18 +550,25 @@ module Private = struct
     Option.map (fun focused -> focused.id) context.focused
 
   let request_live context =
+    let was_live = Int.compare context.live_request_count 0 > 0 in
+    let was_pending = context.render_requested in
     context.live_request_count <- context.live_request_count + 1;
     context.render_requested <- true;
     (match context.live_control with
     | Idle -> context.live_control <- Auto_started
     | Auto_started | Explicit_started -> ())
+    ;
+    if not was_live || not was_pending then notify_scheduler context
 
   let drop_live context =
+    let was_live = Int.compare context.live_request_count 0 > 0 in
     context.live_request_count <- max 0 (context.live_request_count - 1);
     (match context.live_control with
     | Auto_started when Int.equal context.live_request_count 0 ->
         context.live_control <- Idle
-    | Idle | Auto_started | Explicit_started -> ())
+    | Idle | Auto_started | Explicit_started -> ());
+    if was_live && Int.equal context.live_request_count 0 then
+      notify_scheduler context
 
   let live_request_count context = context.live_request_count
 
@@ -548,6 +579,18 @@ module Private = struct
     match context.live_control with
     | Auto_started -> true
     | Idle | Explicit_started -> false
+
+  let install_scheduler_wakeup context callback =
+    if context.closed || Option.is_some context.scheduler_wakeup then None
+    else
+      let wakeup = { callback } in
+      context.scheduler_wakeup <- Some wakeup;
+      Some wakeup
+
+  let remove_scheduler_wakeup context wakeup =
+    match context.scheduler_wakeup with
+    | Some current when current == wakeup -> context.scheduler_wakeup <- None
+    | Some _ | None -> ()
 
   let clear_hit_grid context =
     Array.fill context.next_hit_grid 0 (Array.length context.next_hit_grid) 0;
@@ -586,6 +629,8 @@ module Private = struct
 
   let close context =
     if not context.closed then begin
+      notify_scheduler context;
+      context.scheduler_wakeup <- None;
       context.closed <- true;
       context.render_requested <- false;
       context.capabilities <- None;

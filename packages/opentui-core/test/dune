@@ -120,3 +120,8 @@
  (name test_visual_runtime)
  (modules test_visual_runtime)
  (libraries opentui-core eio_main windtrap))
+
+(test
+ (name test_renderer_scheduler)
+ (modules test_renderer_scheduler)
+ (libraries opentui-core eio_main windtrap))

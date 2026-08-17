@@ -2,6 +2,14 @@
 
 type timer
 
+val fresh_timer : unit -> timer
+(** [fresh_timer ()] creates a fresh opaque timer identity for a clock
+    implementation. *)
+
+val equal_timer : timer -> timer -> bool
+(** [equal_timer left right] compares timer identities without exposing their
+    representation. *)
+
 type t
 
 val create :

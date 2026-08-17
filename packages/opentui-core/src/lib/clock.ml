@@ -1,4 +1,4 @@
-type timer = int
+type timer = unit ref
 
 type t = {
   now_function : unit -> float;
@@ -13,8 +13,11 @@ let now clock = clock.now_function ()
 let schedule clock ~delay callback = clock.schedule_function ~delay callback
 let cancel clock timer = clock.cancel_function timer
 
+let fresh_timer () = ref ()
+let equal_timer left right = left == right
+
 type manual_timer = {
-  id : int;
+  id : timer;
   due : float;
   callback : unit -> unit;
   mutable cancelled : bool;
@@ -22,23 +25,21 @@ type manual_timer = {
 
 type manual = {
   mutable current : float;
-  mutable next_id : int;
   mutable timers : manual_timer list;
 }
 
-let manual () = { current = 0.0; next_id = 1; timers = [] }
+let manual () = { current = 0.0; timers = [] }
 
 let manual_clock owner =
   let schedule ~delay callback =
     let delay = if Float.compare delay 0.0 < 0 then 0.0 else delay in
-    let id = owner.next_id in
-    owner.next_id <- id + 1;
+    let id = fresh_timer () in
     owner.timers <- { id; due = owner.current +. delay; callback; cancelled = false } :: owner.timers;
     id
   in
   let cancel id =
     List.iter
-      (fun timer -> if Int.equal timer.id id then timer.cancelled <- true)
+      (fun timer -> if equal_timer timer.id id then timer.cancelled <- true)
       owner.timers
   in
   create ~now:(fun () -> owner.current) ~schedule ~cancel
@@ -58,7 +59,7 @@ let next_due owner =
     None owner.timers
 
 let remove_timer owner id =
-  owner.timers <- List.filter (fun timer -> not (Int.equal timer.id id)) owner.timers
+  owner.timers <- List.filter (fun timer -> not (equal_timer timer.id id)) owner.timers
 
 let run_due owner =
   let running = ref true in

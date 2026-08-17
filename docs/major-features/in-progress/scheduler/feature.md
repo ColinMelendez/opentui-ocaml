@@ -44,22 +44,21 @@ or teaching pure renderables about Eio resources.
 
 ## Current boundary
 
-`Renderer.request_render` sets a Boolean in `Render_context`.
+`Renderer.request_render` sets a coalesced Boolean in `Render_context`.
 `Renderer.request_live` increments a live count and also records a render
 request. `Renderer.render` is an explicit synchronous frame operation and
-accepts a caller-supplied delta. Those are useful portable primitives and
-remain so.
+accepts a caller-supplied delta. Those remain useful portable primitives.
 
-The missing operation is notification: changing the pending-render or live
-state does not wake an Eio fiber. The runtime `Wakeup` module is paired with
-terminal `Event_queue` and is deliberately single-domain; scheduler wakeups
-must not overload terminal-event queue semantics.
+The scheduler now installs a private owner-local notification callback on the
+context. The runtime `Wakeup` module remains paired with terminal
+`Event_queue` and is deliberately single-domain; scheduler wakeups do not
+overload terminal-event queue semantics.
 
-`Renderer.create_with_clock` currently supplies timing only to theme-mode
-state. Normal renderables cannot obtain a timer capability from their
-`Render_context`, and `Renderer.create` falls back to a manual clock that no
-runtime advances. The feature must make real-system and deterministic-manual
-timing explicit rather than claiming hidden timing from construction alone.
+`Renderer.create_with_clock` supplies an optional clock to both theme-mode
+state and the render context. `Renderer.create` has no clock capability and
+does not fabricate a manual clock whose time never advances. Deterministic
+manual timing is explicit at construction, while real-system timing is
+provided by `Eio_clock`.
 
 ## Active design
 
@@ -85,12 +84,15 @@ synchronized.
 `Lib.Clock.t` remains the capability exposed to owner-local services and
 renderables. The Eio adapter implements:
 
-- `now` from `Eio.Time.Mono.now`;
+- `now` from `Eio.Time.Mono.now`, converting the returned `Mtime.t` timestamp
+  to seconds relative to the adapter's creation timestamp;
 - one-shot `schedule` by forking a timer fiber under the scheduler switch; and
 - `cancel` by resolving a timer-local cancellation signal so a sleeping timer
   becomes inert promptly.
 
-Each timer has one opaque `Lib.Clock.timer` identity. Cancellation is
+Each timer has one opaque `Lib.Clock.timer` identity. The external adapter
+seam is limited to `Lib.Clock.fresh_timer` and `Lib.Clock.equal_timer`;
+implementations do not depend on the identity representation. Cancellation is
 idempotent. A callback is invoked at most once and only on the scheduler
 domain. A callback that cancels itself or another timer is safe. Scheduler
 shutdown cancels all outstanding timers before renderer-owned state is
@@ -117,6 +119,7 @@ The context invokes that wake callback when:
 
 - a render request changes from absent to pending;
 - live ownership changes from zero to positive; or
+- live ownership reaches zero; or
 - scheduler-facing state requires an immediate reconsideration of the loop.
 
 Repeated requests while already pending remain coalesced and need not create
@@ -129,16 +132,17 @@ Ordinary consumers continue to call `Renderable.request_render`,
 
 ### Frame loop
 
-The scheduler's caller-run operation conceptually has this contract:
+The scheduler's caller-run operation has this contract:
 
 ```ocaml
 val run :
   t ->
-  renderer:Renderer.t ->
-  ?frames_per_second:int ->
-  unit ->
   (unit, error) result
 ```
+
+The renderer and positive integer frame rate are bound by `create`; `run`
+takes only the resulting scheduler. `create` rejects
+`frames_per_second <= 0`.
 
 The exact module split may use `Eio_clock` and `Renderer_scheduler`, but the
 observable loop is:
@@ -150,19 +154,19 @@ observable loop is:
 4. Preserve any render request made during that frame for a later attempt.
 5. If live ownership remains positive, wait until the next frame deadline
    unless a new request requires an earlier permitted attempt.
-6. If no live owner and no request remain, return to the revision wait.
+6. If no live owner and no request remain, return to the state predicate wait.
 
-The first frame delta is measured from scheduler start to its first attempt;
-it is finite and nonnegative. Later deltas are measured between attempts, not
-between successful presentations. A skipped or failed native presentation
+The first active frame delta is exactly `0.0`. Later deltas are measured
+between attempts, not between successful presentations. When the renderer is
+idle, the scheduler clears its timing origin and deadline, so the first frame
+after an idle period is also `0.0`. A skipped or failed native presentation
 does not rewind time or replay updates.
 
-The default target rate is 60 frames per second. Construction validates a
-positive finite frame interval. Deadline calculation uses the monotonic clock
-and advances from the previous target so work duration does not accumulate as
-unbounded drift. If a frame overruns, the next attempt may proceed immediately
-and the following target is advanced to a future deadline rather than running
-an unlimited catch-up burst.
+The default target rate is 60 frames per second. Deadline calculation uses the
+monotonic clock and advances from the previous target so work duration does
+not accumulate as unbounded drift. If a frame overruns, the next attempt may
+proceed immediately and the following target is advanced repeatedly to a
+future deadline rather than running an unlimited catch-up burst.
 
 An ordinary pending render may wake an idle scheduler immediately. During
 continuous live rendering, requests remain coalesced into the next permitted
@@ -211,8 +215,10 @@ live ownership only when their state changes continuously.
 
 ### Errors and cancellation
 
-Invalid frame rates, duplicate attachment, a closed renderer, and renderer
-frame failures are structured scheduler errors with `message` and `pp`.
+Invalid frame rates, a renderer/Eio-clock mismatch, duplicate attachment, a
+closed renderer, and renderer frame failures are structured scheduler errors
+with `message` and `pp`. The renderer clock must be the cached capability
+returned by `Eio_clock.lib_clock` for the clock supplied to `create`.
 Expected cancellation from the surrounding switch exits without converting
 the cancellation into a renderer failure.
 
@@ -222,11 +228,13 @@ adapter does not catch every exception and continue with corrupted owner
 state. Feature callbacks that expose recoverable failures convert those at the
 feature boundary before scheduling.
 
-Scheduler teardown first stops wake and timer fibers, removes the context wake
-callback, and then permits renderer destruction. No timer callback may access
-a renderer after teardown. Renderer destruction remains idempotent and may
-also cause the loop to return a structured closed outcome when destruction is
-initiated externally.
+Timer cancellation races the Eio sleep against a timer-local cancellation
+promise and checks both the timer's cancelled state and the adapter's closed
+state before invoking the callback. Scheduler teardown signals waiters, closes
+the Eio clock (cancelling its timers), removes the tokenized context wake
+callback, and cancels the renderer-destruction subscription. No timer callback
+may access a renderer after teardown. Renderer destruction remains idempotent
+and closes the scheduler through that subscription.
 
 ## Consumer retrofits
 
@@ -275,23 +283,29 @@ This feature does not provide:
 - automatic animation registration; or
 - compatibility shims for JavaScript timer identifiers and globals.
 
-## Planned implementation sequence
+## Implementation sequence
 
-1. Add the Eio-backed `Lib.Clock` adapter with deterministic cancellation and
-   owner-domain callback tests.
-2. Add the scheduler revision/wakeup and private render-context notification
-   seam without changing terminal `Event_queue` or `Wakeup`.
-3. Add the caller-run paced frame loop and black-box tests for idle wake,
-   coalescing, live frames, measured deltas, cancellation, and teardown.
-4. Make scheduled renderer construction explicit while retaining explicit
-   synchronous/manual construction for tests and embedding.
-5. Retrofit theme-query timing to the Eio clock path.
-6. Retrofit ScrollBar arrow repetition and cancellation.
-7. Retrofit ScrollBox selection edge auto-scroll through live frames.
-8. Verify post effects under scheduler-measured deltas and explicit live
-   ownership.
-9. Expose the pre-render driver seam required by the separate animation
-   feature without implementing animation itself.
+1. **Complete in this slice:** add the Eio-backed `Lib.Clock` adapter with
+   deterministic cancellation and owner-domain callback tests.
+2. **Complete in this slice:** add the scheduler revision/wakeup and private
+   render-context notification seam without changing terminal `Event_queue` or
+   `Wakeup`.
+3. **Complete in this slice:** add the caller-run paced frame loop and
+   black-box tests for idle wake, coalescing, live frames, measured deltas,
+   cancellation, errors, and teardown.
+4. **Complete in this slice:** make scheduled renderer construction explicit
+   while retaining explicit synchronous/manual construction for tests and
+   embedding.
+5. **Available through the completed capability plumbing:** theme refresh and
+   timed waiters use an Eio clock when the renderer is created with one; the
+   no-clock renderer reports unsupported positive timed waits.
+6. **Pending follow-up:** retrofit ScrollBar arrow repetition and cancellation.
+7. **Pending follow-up:** retrofit ScrollBox selection edge auto-scroll through
+   live frames.
+8. **Pending follow-up:** verify post effects under scheduler-measured deltas
+   and explicit live ownership.
+9. **Pending follow-up:** expose the pre-render driver seam required by the
+   separate animation feature without implementing animation itself.
 
 ## Acceptance criteria
 
@@ -305,8 +319,9 @@ This feature does not provide:
   no notification is lost between predicate inspection and waiting;
 - live ownership drives paced frames until the aggregate count returns to
   zero, after which the loop becomes idle without polling;
-- frame deltas are finite, nonnegative, monotonic-attempt measurements and are
-  shared by pre-render drivers, retained updates, and post processes;
+- the first active frame delta is zero; later deltas are finite, nonnegative,
+  monotonic-attempt measurements and are shared by pre-render drivers, retained
+  updates, and post processes;
 - skipped or failed presentation does not rewind time or replay a pre-render
   update;
 - frame pacing avoids both cumulative work-duration drift and an unbounded
@@ -325,4 +340,4 @@ This feature does not provide:
 - no background pool, worker job, native handle synchronization, or general
   service manager is introduced by this feature; and
 - black-box Eio integration tests cover observable wake, pacing, cancellation,
-  timer, live, and consumer behavior.
+  timer, live, destruction, and renderer-error behavior.
