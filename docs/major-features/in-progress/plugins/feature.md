@@ -37,8 +37,8 @@ The first feature includes:
 - synchronous renderable view construction with activation and deactivation
   hooks;
 - structured operational errors plus a composable diagnostic reporter; and
-- exact ownership and teardown order for hosts, plugin instances, slot mounts,
-  views, and renderables.
+- exact ownership and renderer-bound teardown order for native hosts, future
+  framework roots, plugin instances, slot mounts, views, and renderables.
 
 It does not include a general dependency-injection container, a heterogeneous
 string-keyed registry, generic framework node types, a process-global plugin
@@ -52,7 +52,8 @@ nodes attached to a host tree, or Bun runtime transforms.
 | `vendor/opentui/packages/core/src/plugins/types.ts` | `packages/opentui-core/src/plugin.ml`, `slot.ml`, and private signatures | Plugin identity, installation, typed contributions, slot modes, views, and failures. |
 | `vendor/opentui/packages/core/src/plugins/registry.ts` | `packages/opentui-core/src/plugin_host.ml` and private slot storage | Installed-plugin ownership, ordering, transactions, invalidation, teardown, and reporting. |
 | `vendor/opentui/packages/core/src/plugins/core-slot.ts` | `packages/opentui-core/src/slot_mount.ml` | Core render-slot mount, selection modes, fallback, reconciliation, view lifecycle, and renderable ownership. |
-| `vendor/opentui/packages/{react,solid}/src/plugins/slot.tsx` | No direct OCaml module | Evidence for shared selection semantics; their generic node registry and framework error boundaries are not OCaml architecture. |
+| `vendor/opentui/packages/{react,solid}/src/plugins/slot.tsx` and renderer roots | Renderer pre-tree teardown attachment; no framework module in this feature | Evidence for shared selection semantics, framework-owned component identity, and automatic root disposal on direct renderer destruction. Their generic node types and error boundaries are not native OCaml slot architecture. |
+| `vendor/opentui/packages/core/src/renderer.ts` | `packages/opentui-core/src/renderer.ml` | A distinct pre-tree teardown phase needed before retained-root destruction; the existing OCaml destroy notification remains the later post-tree event. |
 | plugin examples and slot tests | `packages/opentui-core/test/test_plugins.ml` | Black-box installation, ordering, modes, view lifetime, hot replacement, failures, and teardown contracts. |
 | `vendor/opentui/packages/core/src/runtime-plugin*.ts` | No direct OCaml module | Deferred Bun-specific runtime import rewriting; separate platform feature if ever required. |
 
@@ -76,6 +77,18 @@ tests. This distinction matters:
   change at runtime, and order can change while installed;
 - React and Solid naturally get per-contribution mount/unmount lifecycle and
   subtree error boundaries from their frameworks;
+- React and Solid attach their framework roots to the renderer before
+  evaluating the application tree. Direct renderer destruction therefore
+  unmounts the framework roots, runs component/effect cleanup, and unregisters
+  plugin contributions without requiring a separate public root-unmount call;
+- the reference renderer emits that early destruction event before destroying
+  its retained root. Per-renderer registries then clear as a final safety sweep,
+  while the configured late `onDestroy` callback runs after retained-root
+  teardown;
+- framework slots own registry subscriptions and contribution bookkeeping, but
+  React or Solid owns the resulting component subtree. Reordering by plugin ID
+  preserves component identity; unregister/reload unmounts the old contribution
+  and a later registration may reuse the ID as a new instance;
 - the core demo's managed contributions use activation and deactivation to
   bound timers, but they destroy their retained nodes themselves when
   deactivated; this demonstrates a view-lifecycle need, not a need for plugin
@@ -137,6 +150,15 @@ explicit sum and distinct mounts if it needs that behavior.
 The first implementation fixes the output to `Renderable.t` through the
 `Slot_view` contract below. It does not introduce a generic node parameter only
 because the reference shares infrastructure with React and Solid.
+
+This native output boundary does not prevent a future React- or Solid-like
+renderer adapter. Such an adapter owns its framework component graph,
+subscriptions, and contribution values, then reconciles native renderables
+through its own root. It may reuse the selection rules in this document, but it
+must not wrap framework nodes in `Slot_view` or transfer their destruction
+authority to a native `Slot_mount`. The renderer teardown attachment described
+below is intentionally independent of `Slot_view`, so either a native plugin
+host or a framework root can acquire the same automatic lifetime guarantee.
 
 ### First-class plugin definitions and narrow capabilities
 
@@ -270,6 +292,12 @@ error pair-plus-tail when necessary. Repeated uninstall does not rerun
 callbacks and returns the recorded result. An instance is never republished
 after uninstall; the same plugin identifier may be installed later as a new
 instance with a new installation sequence.
+
+Hot reload is uninstall followed by installation of a new definition. It does
+not preserve contribution-view or framework-component identity across the
+reload. An asynchronous loader must invalidate its own load generation before
+uninstall and ignore a module value that arrives after cleanup, matching the
+reference React and Solid examples; loading remains outside the plugin kernel.
 
 ### Slot views and one renderable owner
 
@@ -410,17 +438,64 @@ contribution.
 
 ### Renderer lifetime and Eio capabilities
 
-A plugin host is renderer-bounded but not globally discoverable. Renderer
-destruction first freezes installation and order mutation, withdraws every
-installed contribution as one host transaction, refreshes live mounts so their
-views are destroyed while plugin resources remain valid, and then releases
-plugin scopes in reverse installation order. The retained renderable tree is
-destroyed afterward. Repeated host or renderer teardown is harmless.
+A plugin host is renderer-bounded but not globally discoverable. Explicit
+`Plugin.Host.close` remains useful for orderly application shutdown, but it is
+not the only cleanup path. The reference React and Solid adapters guarantee
+that `Renderer.destroy` alone disposes their public framework roots; an OCaml
+framework adapter must be able to make the same guarantee.
 
-The core plugin modules do not start fibers or acquire an Eio environment. If
-a host permits asynchronous plugin work, its capability record supplies a
-narrow spawn/switch capability whose lifetime is registered in the plugin
-scope. Async work still cannot be returned from a synchronous slot renderer.
+Before implementing plugins, `Renderer` therefore gains an owner-local
+pre-tree teardown attachment. Attaching returns an opaque, idempotent token
+that can be detached or explicitly closed. Attachments run once, in
+registration order, after ordinary renderer work and new attachments have been
+frozen but before `Renderable.destroy_recursively root`. A teardown callback
+retains the narrow authority needed to unmount or destroy its owned nodes while
+the tree is still valid; it does not render another frame or resume normal
+application mutation. New attachments are rejected after teardown starts. The
+existing OCaml `on_destroy`/`once_destroy` notification keeps its current later
+meaning and is not repurposed for callbacks that need a live retained tree.
+
+A framework adapter attaches its root cleanup before evaluating the application
+tree. Hosts created by that tree attach later. Direct renderer destruction then
+has this observable order:
+
+```text
+mark teardown started; freeze ordinary work and new attachments
+  -> dispose/unmount attached framework roots
+  -> framework effect cleanup explicitly uninstalls its registrations
+  -> close attached plugin hosts as a final safety sweep
+  -> withdraw any remaining contributions and destroy their native views
+  -> release plugin scopes in reverse installation order
+  -> destroy the retained renderable root
+  -> emit the existing late destroy notification and close native/context state
+```
+
+Native applications may explicitly close and detach a host before destroying
+the renderer; a future framework adapter may do the same for its root. Both
+paths invoke the same idempotent cleanup. Attachment callbacks continue after
+an individual reported failure so one faulty plugin or framework root cannot
+strand later owners; each callback reports its own domain failures rather than
+making `Renderer` understand plugin- or framework-specific error types. The
+host's stronger native invariant remains that mounted views are deactivated,
+detached, and destroyed while plugin-scope resources are still valid, even
+though the reference registry itself calls plugin `dispose` before notifying
+slot consumers.
+
+The core plugin modules do not start fibers, acquire an Eio environment, or
+drive `Renderer_scheduler`. A host may deliberately include owner-domain
+`Lib.Clock` and Eio spawn/switch operations in its typed capability record;
+every resulting timer, fiber, and cancellation action is registered in the
+plugin scope and ends during uninstall. UI work remains on the renderer owner
+domain and requests an ordinary frame through a narrow host capability.
+
+`Background.t` is a separate optional capability, not the plugin runtime. It is
+granted only to plugin phases that accept copied, owned inputs and satisfy an
+explicit `Worker_safe` contract. Completion returns to the owner domain and
+checks both instance generation and closed state before publishing state or
+requesting a frame. Uninstall invalidates the generation before cancelling the
+scope, so a late result is harmless even when worker cancellation cannot stop
+already-running CPU work. Async work still cannot be returned from a
+synchronous slot renderer.
 
 ### Bun runtime plugin support
 
@@ -465,6 +540,11 @@ consumer-visible:
 - The reference registry is recovered by `(renderer, key)` from a weak global
   map and requires repeated calls to reuse the same context object. OCaml hosts
   and slots are explicit values with no global lookup or context-identity rule.
+- The reference uses one early generic renderer event and listener registration
+  order to dispose framework roots before clearing registries. OCaml adds a
+  dedicated pre-tree teardown attachment with an opaque token and preserves the
+  existing later destroy notification, making the live-tree requirement
+  explicit without turning plugin cleanup into an event payload.
 - The reference permits mutable plugin order and rereads it during resolution.
   OCaml definitions are immutable and an installed instance changes order only
   through a transactional, result-returning operation.
@@ -472,6 +552,10 @@ consumer-visible:
   managed nodes. OCaml mounts own every attached node; per-view activation and
   deactivation preserve the practical lifecycle use case without split
   destruction authority or off-tree node retention.
+- The reference registry invokes plugin `dispose` before notifying slot
+  consumers that contributions disappeared. OCaml first withdraws
+  contributions and destroys their native views, then releases plugin-scope
+  resources, so view cleanup can safely use installation-lifetime resources.
 - Reference operations return callbacks/Booleans or throw, and the registry
   owns error listeners plus bounded history. OCaml controls return structured
   results and a composable reporter handles failures that have no direct
@@ -498,27 +582,33 @@ separate from installation intentionally matches the reference.
 
 ## Planned implementation sequence
 
-1. Implement validated plugin and slot identifiers, independently typed slot
+1. Add the renderer pre-tree teardown attachment and opaque idempotent token.
+   Preserve the existing late destroy notification, define registration-order
+   execution, and cover direct renderer destruction plus explicit detach/close.
+2. Implement validated plugin and slot identifiers, independently typed slot
    values/sinks, immutable plugin definitions, structured failure values, and
    the reporter capability.
-2. Implement `Plugin.Host`, unpublished installation scopes, staged typed
+3. Implement `Plugin.Host`, unpublished installation scopes, staged typed
    contributions, rollback cleanup, atomic multi-slot publication, instance
-   tokens, order changes, and terminal uninstallation.
-3. Add black-box host tests for duplicate IDs, multiple differently typed slot
+   tokens, order changes, terminal uninstallation, and renderer attachment.
+4. Add black-box host tests for duplicate IDs, multiple differently typed slot
    contributions, setup failure and rollback, ordering, order changes, hot
-   uninstall/reinstall, idempotency, reporter isolation, and renderer teardown.
-4. Implement `Slot_view` and `Slot_mount` with one renderable owner, activation
+   uninstall/reinstall, idempotency, reporter isolation, direct renderer
+   teardown, and the framework-root-before-host safety-sweep ordering.
+5. Implement `Slot_view` and `Slot_mount` with one renderable owner, activation
    and deactivation, snapshot refresh, lazy fallback/placeholder construction,
    view reuse on reorder, and fresh construction on props or activity changes.
-5. Add black-box mount tests for all modes, healthy output beside failures,
+6. Add black-box mount tests for all modes, healthy output beside failures,
    single-winner failure without runner-up, multiple mounts, props changes,
    node validation, structural re-entrancy rejection, lifecycle failures, and
    cleanup ordering.
-6. Integrate plugin-host teardown before retained-tree destruction and add a
-   small linked-plugin example that demonstrates multiple slots, order changes,
-   enable/disable, persistent plugin state, and visibility-bounded resources.
-7. Reassess dynamic loading only from a separate requirement; do not add
-   `Dynlink` or a generic node registry as a side effect of the slot feature.
+7. Add a small linked-plugin example that demonstrates multiple slots, order
+   changes, enable/disable, persistent plugin state, visibility-bounded
+   resources, owner-domain timer/fiber cleanup, and an optional copied
+   `Worker_safe` background phase whose stale completion is rejected.
+8. Reassess dynamic loading and a generic framework-slot adapter only from
+   separate requirements; do not add `Dynlink` or a generic node registry as a
+   side effect of the native slot feature.
 
 ## Acceptance criteria
 
@@ -558,7 +648,20 @@ separate from installation intentionally matches the reference.
 - renderer teardown freezes the host, withdraws all contributions, destroys
   mount views while plugin resources remain valid, and releases scopes before
   the retained tree becomes unusable;
-- the plugin kernel has no Eio or dynamic-loader dependency, while hosts can
-  explicitly grant renderer-bounded async capabilities; and
+- direct `Renderer.destroy` invokes attached framework-root cleanup before
+  attached host safety sweeps and retained-root destruction, while explicit
+  root/host close detaches the same idempotent cleanup path;
+- pre-tree attachments run once in registration order, one attachment failure
+  does not strand later owners, and the existing late destroy notification
+  still observes an already-destroyed retained tree;
+- order-only changes preserve framework component identity when an adapter keys
+  contributions by plugin ID, while unregister/reload removes the old component
+  and permits a new instance to reuse that ID;
+- the plugin kernel has no Eio, scheduler, background-executor, or
+  dynamic-loader dependency, while hosts can explicitly grant renderer-bounded
+  owner-domain capabilities;
+- optional background work accepts only copied, owned `Worker_safe` values and
+  a completion checks instance generation and closed state on the owner domain,
+  so uninstall makes late worker results harmless; and
 - Bun-specific runtime rewriting and any future OCaml dynamic loader remain
   separate from typed plugin installation and slot rendering.
