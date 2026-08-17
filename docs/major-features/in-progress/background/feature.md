@@ -8,6 +8,9 @@ This feature defines the small Eio boundary used to keep expensive,
 synchronous CPU work from blocking terminal input and rendering. It provides
 one application-owned pool of reusable OCaml domains and a submission
 operation whose completion handler resumes on the submitting Eio domain.
+The generic submission function does not make arbitrary OCaml closures safe to
+run on another domain; its intended inputs are isolated worker-safe functions
+over owned snapshots.
 
 Tree-sitter highlighting is the first executor-domain consumer. Large Markdown
 parses and copied-pixel image decoding remain possible later consumers when
@@ -162,6 +165,12 @@ itself. A submitter whose binding switch has been released, normally or by
 cancellation, returns `Closed`; calling it from another domain returns
 `Wrong_domain`.
 
+The `work` function is intentionally generic because the executor is reusable,
+not because every closure is admissible. Callers must supply an isolated,
+worker-safe computation over owned ordinary data; renderer values, Eio
+resources, native handles, callbacks, and concurrently accessed mutable state
+are outside the contract.
+
 CPU weight is not initially public configuration. Background jobs are selected
 because they are CPU-heavy, so they consume one executor worker while running.
 If later consumers have genuinely mixed I/O/CPU behavior, that work should
@@ -196,8 +205,9 @@ Worker closures must not capture or use:
   concurrently.
 
 The OCaml type system does not prove this closure property. The module
-documentation, consumer APIs, and integration tests make the ownership rule
-explicit. Feature APIs should accept an immutable input value separately from
+documentation and consumer APIs make the ownership rule explicit; current
+integration tests cover the implemented consumers, not arbitrary closure
+safety. Feature APIs should accept an immutable input value separately from
 the owner-domain application callback so accidental renderer capture is easy
 to identify in review.
 

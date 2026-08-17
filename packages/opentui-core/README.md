@@ -2,10 +2,11 @@
 
 `opentui-core` is the user-facing Eio-native OCaml library for terminal UI
 programs. It uses `opentui-raw` for checked calls to the Zig renderer. Its
-implemented source directories follow the matching directories in
+source directories follow the matching directories in
 `vendor/opentui/packages/core/src`; the active portable correspondence,
 translated platform mechanisms, and explicit exclusions are listed in the
 [core source mirror](../../docs/major-features/in-progress/core-source-mirror/feature.md).
+An active correspondence is not a claim of drop-in TypeScript API parity.
 Package-local tests, reference tools, and performance tools remain under this
 package.
 
@@ -50,9 +51,11 @@ handlers.
 `Lib.Terminal_capability_detection` owns upstream response recognition and
 bounded pixel-resolution parsing. `Renderer` also exposes transport-neutral
 terminal query strings, palette-response feeding, pixel-resolution state, and
-split-footer/render-geometry updates. The actual output writer, terminal
-setup, and asynchronous query scheduling remain application/Eio concerns; Core
-does not start terminal I/O or fibers.
+render geometry that can describe a split footer. The reference split-footer
+replay, external-output capture, and scrollback-surface APIs are intentionally
+not Core APIs: the Eio application and terminal-output layer owns that
+boundary. Terminal setup, output writing, and asynchronous query scheduling
+remain application/Eio concerns; Core does not start terminal I/O or fibers.
 
 ## Core foundations
 
@@ -66,8 +69,11 @@ and selection contracts.
 `Text_buffer` and `Text_buffer_view` retain native storage ownership while Core
 adds metadata, native selection/local-selection forwarding, selected-text
 extraction, viewport state, line-info, wrapping, tab indicators, truncation,
-and style hooks. `Native_span_feed` owns the Core-facing typed wrapper;
-`opentui-raw` continues to own foreign allocation and lifetime tokens.
+and style hooks. `Native_span_feed` is a reduced synchronous, copy-first
+wrapper over the raw ABI: it exposes copied payloads, reservations, draining,
+and explicit release, with no asynchronous `onData`/`onError`, backpressure, or
+`idle` surface. `opentui-raw` continues to own foreign allocation and lifetime
+tokens.
 `Edit_buffer`, `Editor_view`, `Syntax_style`, and
 `Lib.Extmarks`/`Lib.Extmarks_history` form the pure OCaml editing foundation.
 
@@ -75,8 +81,9 @@ The portable utility layer is also explicit and owner-local. `Lib.Ansi` builds
 validated terminal escapes; `Lib.Clock` supplies injectable one-shot timing;
 `Lib.Debounce` and `Lib.Queue` compose that clock/scheduler seam;
 `Lib.Data_paths`, `Lib.Env`, and `Lib.Validate_dir_name` keep path and
-environment state out of process globals; `Lib.Clipboard` owns injected host
-and OSC52 terminal backends; `Lib.Output_capture` owns bounded capture sinks;
+environment state out of process globals; `Lib.Clipboard` owns an injected
+synchronous host/OSC52 policy seam rather than upstream's asynchronous native
+host service; `Lib.Output_capture` owns bounded capture sinks;
 `Lib.Renderable_validations` and `Lib.Yoga_options` provide typed result-valued
 parsers; and `Renderer_theme_mode` owns theme queries through injected output
 and timing. These are translations of the reference effects, not global
@@ -136,8 +143,9 @@ measurement, wrapping, drawing, updates, and selection/copy. The line-number
 gutter consumes visual line sources from text-buffer/editor targets, including
 signs, colors, custom numbers, hiding, and scroll offsets.
 
-`Text_table` accepts typed per-column left, center, and right alignment, and
-Markdown pipe-table alignment markers are carried into that rendering policy.
+`Text_table` accepts typed per-column left, center, and right alignment.
+Propagating Markdown pipe-table alignment markers into that policy is an OCaml
+extension; it is not behavior provided by the reference Markdown renderable.
 
 The ASCII helper intentionally indexes OCaml Unicode code points instead of
 the reference JavaScript UTF-16 code units. Proportional allocation uses
@@ -159,6 +167,12 @@ queued behind admitted work; failed admission does not claim progress.
 Destroying either Code or its exposed renderable identity runs the same
 one-shot cancellation and internally owned syntax-style cleanup. Consumers
 remain responsible for their retained-object ownership.
+
+Although `Background.submit` is generically typed over a function, that
+function is not an arbitrary-closure escape hatch. The contract admits only
+isolated worker-safe work over owned snapshots; renderer, Eio resource,
+foreign-handle, callback, and concurrently mutated application state must stay
+on the owner domain.
 
 `Renderables.Code` owns one native `Text_buffer_renderable` and accepts an
 application-registered `Lib.Tree_sitter_types.parser` through
@@ -190,11 +204,14 @@ callback exceptions remain Eio switch failures. Markdown forwards
 `draw_unstyled_text = not streaming` to fenced Code children.
 
 `Renderables.Diff` parses unified hunks into typed lines and composes Code with
-line-number gutters in unified or split layout. `Renderables.Markdown` uses a
-typed block/inline parser and retains unchanged stable-prefix blocks across
-content updates; it renders headings, paragraphs, lists, blockquotes, fenced
-code, tables with parsed column alignment, links, HTML text, borders, and
-selection aggregation.
+line-number gutters in unified or split layout. It retains the portable
+syntax/default line styling but does not expose the reference's full mutable
+Diff styling option surface. `Renderables.Markdown` uses a typed block/inline
+parser and retains unchanged stable-prefix blocks across content updates; it
+renders headings, paragraphs, lists, blockquotes, fenced code, tables, links,
+HTML text, borders, and selection aggregation. Markdown pipe-table alignment
+is additionally projected into `Text_table` by this OCaml port; it is an
+extension rather than upstream parity.
 `Detect_links` and `Hast_styled_text` are typed supporting conversions.
 
 The OCaml boundary intentionally does not load the reference JavaScript
@@ -218,6 +235,11 @@ return structured errors. `Image.resize` accepts either dimension or both
 dimensions, and `Image.take_raw` enforces the native single-owner materialization
 rule before returning an explicitly owned pixel copy and closing the image
 owner.
+
+This deliberately omits the reference `ImageSource` URL, `Blob`, and
+`Response` shapes and the renderable's `loadPromise`. Path loading uses Eio
+direct style, and `Renderables.Image` reports through direct-style callbacks
+with immutable `Image.info` and structured load errors.
 
 `Renderables.Image` retains its source and exposes the truthful
 `Empty`/`Loading`/`Ready`/`Failed` state. A Path source is read asynchronously

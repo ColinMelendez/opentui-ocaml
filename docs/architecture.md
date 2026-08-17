@@ -8,6 +8,10 @@ the [source correspondence map](upstream-map.md). The contributor workflow
 for translating a reference feature into OCaml is in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
+“Active” and “translated” in the source map mean that the portable contract is
+implemented within a documented ownership boundary; they do not imply a
+drop-in TypeScript API or exact host-runtime parity.
+
 ## Terms
 
 | Term | Meaning in this repository |
@@ -15,7 +19,7 @@ for translating a reference feature into OCaml is in
 | Reference source | The OpenTUI source in `vendor/opentui`. It defines the behavior and source paths that the OCaml implementation follows. |
 | ABI | The C-compatible function and data representation used to call the Zig renderer. |
 | Retained UI tree | A tree whose nodes remain allocated and keep their identities while properties change between frames. |
-| Renderer | The `opentui-core.Renderer` owner of the retained root, frame buffers, render-context capabilities, frame lifecycle, terminal output, and renderer-level events. It corresponds to the reference `CliRenderer`. |
+| Renderer | The `opentui-core.Renderer` owner of the retained root, frame buffers, render-context capabilities, frame lifecycle, transport-neutral render geometry, and renderer-level events. It corresponds to the portable portion of the reference `CliRenderer`; Eio application/terminal output owns terminal setup, output replay, and stream integration. |
 | Render context | The capability view that gives a renderable access to renderer-owned dimensions, layout, events, input, focus, and render requests. It corresponds to the reference `RenderContext`. |
 | Renderable | A retained node that contributes visual output and participates in parent-child ownership, layout, lifecycle, and rendering. `Box`, `Text`, text editors, scrolling controls, selectors, `Slider`, framebuffer/font renderables, tables, and line-number composition are concrete renderables. |
 | Yoga | The layout engine used by `opentui-core` to calculate node positions and dimensions. |
@@ -79,10 +83,10 @@ lists every deliberate directory, module-name, effect, and platform difference.
 
 ```text
 src/
-├── renderer.ml              CliRenderer ownership, frame lifecycle, and output
+├── renderer.ml              CliRenderer ownership, frame lifecycle, geometry
 ├── render_context.ml        capabilities supplied to renderables
 ├── terminal_capabilities.ml capability snapshots and response state
-├── native_span_feed.ml       Core-owned typed span-feed composition
+├── native_span_feed.ml       synchronous copy-first raw-ABI span-feed wrapper
 ├── edit_buffer.ml            pure editing, cursor, history, and extmark state
 ├── editor_view.ml            visual-line and selection view over Edit_buffer
 ├── syntax_style.ml           syntax-style registration and resolution
@@ -99,7 +103,7 @@ src/
 │   ├── styled_text.ml
 │   ├── ansi.ml                  validated ANSI escape builders
 │   ├── clock.ml                 injected one-shot time/cancellation
-│   ├── clipboard.ml             injected host/OSC52 clipboard service
+│   ├── clipboard.ml             injected synchronous host/OSC52 policy seam
 │   ├── data_paths.ml            owner-local application paths
 │   ├── debounce.ml              clock-backed one-shot debounce
 │   ├── env.ml                   owner-local environment/config state
@@ -118,7 +122,7 @@ src/
 │   ├── key_decoder.ml
 │   ├── mouse_decoder.ml
 │   ├── terminal_palette.ml
-│   ├── render_geometry.ml
+│   ├── render_geometry.ml       transport-neutral, including split-footer geometry
 │   ├── objects_in_viewport.ml
 │   ├── selection.ml
 │   ├── extmarks.ml
@@ -171,10 +175,13 @@ src/
 ```
 
 Retained renderables and text-buffer modules occupy the reference directories
-recorded in the renderable-core feature record. The portable runtime paths are
-active; the [core source mirror](major-features/in-progress/core-source-mirror/feature.md)
-records the explicit animation, audio/audio-stream, and plugins/runtime-plugin
-exclusions and the non-applicable Node/Bun/JavaScript/WASM mechanisms.
+recorded in the renderable-core feature record. The portable runtime paths
+marked active are implemented within their documented boundaries; that status
+does not claim every reference option or host service. The [core source
+mirror](major-features/in-progress/core-source-mirror/feature.md) records the
+explicit animation, audio/audio-stream, and plugins/runtime-plugin exclusions,
+the non-applicable Node/Bun/JavaScript/WASM mechanisms, and the deliberate
+portable reductions.
 
 Parser-backed content stays below the retained renderable identity: `Code`
 owns one `Text_buffer_renderable`, `Diff` composes ordinary Code and gutter
@@ -202,10 +209,12 @@ the distinction between read, decode, and native-operation errors.
 `Renderables.Image` owns retained references and, when requested, an owner-local
 `Owned_buffer.t`. Its optional Eio switch is required only for Path sources:
 the owner fiber performs cooperative path I/O and generation/cancellation
-delivery, while native decode, retain, callbacks, drawing, and close remain on
-the owner domain. Thus a large decode can still occupy a frame, and no native
-image handle enters the background executor. It passes capability-selected
-protocol placement through the borrowed `Buffer.t` seam. `Post.Filters` and
+delivery, while native decode, retain, direct-style callbacks, drawing, and
+close remain on the owner domain. The port intentionally omits the reference
+URL/Blob/Response source shapes and `loadPromise`; thus a large decode can
+still occupy a frame, and no native image handle enters the background
+executor. It passes capability-selected protocol placement through the borrowed
+`Buffer.t` seam. `Post.Filters` and
 `Post.Effects` never own a buffer; they operate on a borrowed renderer surface
 through typed matrices or snapshots. Renderer post-process registrations are
 owner-local and removed by opaque IDs. `Console.t` is owned by `Renderer.t`, so
@@ -244,8 +253,10 @@ results, isolating expected handler failures while leaving programmer
 exceptions to the owner/Eio failure policy. Capability and palette
 response recognition, query-string construction, geometry updates, and native
 text-view selection forwarding, and the portable utility services are
-synchronous Core operations. Terminal setup and output writing remain
-Eio/application responsibilities. `Lib.Clock` makes one-shot timing
+synchronous Core operations. Split-footer geometry is transport-neutral; the
+reference external-output, replay, and scrollback surfaces are not Core APIs.
+Terminal setup and output writing remain Eio/application responsibilities.
+`Lib.Clock` makes one-shot timing
 injectable for debounce, queues, theme queries, and parser timeouts.
 
 ## Translating TypeScript concepts
@@ -265,20 +276,20 @@ TypeScript class syntax or JavaScript runtime mechanisms.
 | `RenderContext` / renderer reference | Explicit render-context capabilities retained by nodes; Eio capabilities remain at runtime/platform boundaries. |
 | Terminal capability snapshot and response | `Terminal_capabilities.t` is a copied Core value populated through `opentui-raw`; `Lib.Terminal_capability_detection` filters parser responses before synchronous renderer updates and shared notifications. |
 | Reference `RGBA` intent | `Lib.Rgba` is a pure intent-preserving value; `Color` is the separate raw-backed drawing bridge. |
-| Reference native span feed | `Native_span_feed` composes typed Core spans and reservations over the raw package's foreign lifetime tokens. |
+| Reference native span feed | `Native_span_feed` is a synchronous copy-first wrapper: typed Core spans and reservations are drained over the raw package's foreign lifetime tokens, without the reference async data/error/backpressure/idle surface. |
 | Reference text editor state | `Edit_buffer`, `Editor_view`, `Lib.Extmarks`, and `Syntax_style` are small composed domain modules; they do not inherit from renderables. |
 | Reference editor controls | `Edit_buffer_renderable` owns the edit/view/native-text synchronization; `Textarea` and `Input` add typed focus, placeholder, constraint, submit, and change contracts. |
 | Reference scrolling controls | `Scroll_box` owns the physical wrapper/viewport/content subtree and composes `Scroll_bar` and `Slider`; scroll acceleration remains a policy value rather than a hidden scheduler. |
 | Reference selection controls | `Select` and `Tab_select` use typed option records, directional keymaps, owner-local selection/item event channels, and the active optional ASCII-font composition path. |
-| Reference terminal palette and geometry services | `Lib.Terminal_palette` parses/normalizes palette responses and `Render_context` owns current palette, pixel resolution, and `Lib.Render_geometry`; actual I/O remains outside Core. |
+| Reference terminal palette and geometry services | `Lib.Terminal_palette` parses/normalizes palette responses and `Render_context` owns current palette, pixel resolution, and transport-neutral `Lib.Render_geometry`; split-footer output/replay and actual terminal I/O remain outside Core. |
 | Reference `Slider` renderable | `Renderables.Slider` composes a normal `Renderable.t` with typed value state and event channels. |
 | Reference `OptimizedBuffer` ownership | `Owned_buffer.t` owns standalone native storage; `Buffer.t` remains the borrowed renderer-surface view. Framebuffer/font/table renderables compose the two through checked draw seams. |
 | Reference ASCII font assets and renderable | `Ascii_font_spec` and generated `Lib.Ascii_font_data` provide typed measurement/raster helpers; `Renderables.Ascii_font` owns its retained framebuffer and translates JavaScript UTF-16 indexing to OCaml Unicode-codepoint indexing. |
 | Reference line-number and timing renderables | `Renderables.Line_number` consumes unified `Line_info` providers and owns only its internal gutter; `Renderables.Time_to_first_draw` records a monotonic first-draw timestamp. |
-| Reference `TextTable` and width helper | `Renderables.Text_table` owns native cell views plus one retained table identity, applies typed per-column alignment, and keeps aligned selection coordinates in cell-local space; `Text_table_width` implements the deterministic water-fill allocator. |
+| Reference `TextTable` and width helper | `Renderables.Text_table` owns native cell views plus one retained table identity, applies typed per-column alignment, and keeps aligned selection coordinates in cell-local space; `Text_table_width` implements the deterministic water-fill allocator. Markdown pipe-table alignment propagation is an OCaml extension, not reference `TextTable` behavior. |
 | Reference composition VNodes | `Renderables.Composition.Vnode` is an inert typed description. Instantiation attaches ordinary `Renderable.t` identities, so composition does not create a competing runtime tree; `V_renderable` supplies typed drawing callbacks, while `Constructs` includes Code and typed styled-text conveniences. |
-| Reference parser-backed content | `Renderables.Code`, `Renderables.Diff`, and `Renderables.Markdown` compose the existing text/style/line-number seams, including propagation of parsed pipe-table alignment into `Text_table`. `Lib.Tree_sitter_client` accepts typed parser functions and leaves per-Code generation/coalescing to the consumer; `Code` optionally uses the owner-bound Eio background executor for `Worker_safe` parsers. `Tree_sitter_styled_text`, `Detect_links`, and `Hast_styled_text` are typed conversion utilities. |
-| Reference utility singletons and host services | Owner composition in `Renderer`, `Render_context`, `Data_paths`, `Env`, `Clipboard`, `Output_capture`, `Stdin_parser`, and `Renderer_theme_mode`; injected clocks, schedulers, and sinks carry effects without a process-global singleton. |
+| Reference parser-backed content | `Renderables.Code`, `Renderables.Diff`, and `Renderables.Markdown` compose the existing text/style/line-number seams. Markdown's parsed pipe-table alignment propagation is an OCaml extension; Diff's styling surface is narrower than the reference's full mutable option set. `Lib.Tree_sitter_client` accepts typed parser functions and leaves per-Code generation/coalescing to the consumer; `Code` optionally uses the owner-bound Eio background executor for `Worker_safe` parsers. `Tree_sitter_styled_text`, `Detect_links`, and `Hast_styled_text` are typed conversion utilities. |
+| Reference utility singletons and host services | Owner composition in `Renderer`, `Render_context`, `Data_paths`, `Env`, `Clipboard`, `Output_capture`, `Stdin_parser`, and `Renderer_theme_mode`; injected clocks, schedulers, and sinks carry effects without a process-global singleton. `Clipboard` is a synchronous injected policy seam, not the reference asynchronous native host service. |
 | Reference JavaScript/Bun/Node/WASM loaders | Translated/non-applicable platform mechanisms. Typed parser, filesystem, terminal, and raw-ABI capabilities are injected by the Eio-native application boundary. |
 | `requestRender()` | Dirty-state invalidation plus a coalesced future-frame request, distinct from an explicit renderer frame/presentation operation. |
 
@@ -323,8 +334,10 @@ and the
 The [background feature record](major-features/in-progress/background/feature.md)
 defines the application-owned Eio executor pool used for selected CPU-heavy
 work. `Platform.Eio_runtime.Background` binds submissions to an owner domain
-and Eio switch, runs only the typed work closure on a reusable executor domain,
-and returns completion to the owner. Tree-sitter-backed `Code` uses that
+and Eio switch, runs only an explicitly worker-safe work closure over owned
+snapshots on a reusable executor domain, and returns completion to the owner.
+Its generic closure type is not an arbitrary-OCaml-closure safety guarantee.
+Tree-sitter-backed `Code` uses that
 boundary for explicitly `Worker_safe` parsers, with per-Code generations,
 coalesced latest snapshots, and owner-domain conversion/application; Markdown,
 Diff, and composition constructors only propagate the capability to their Code

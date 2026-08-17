@@ -6,6 +6,11 @@ repository implements the corresponding library in OCaml. The OCaml runtime
 uses Eio for terminal I/O, resource lifetime, and structured concurrency; the
 JavaScript runtime is not part of the OCaml execution path.
 
+The correspondence targets portable behavior and ownership contracts; it is
+not a drop-in TypeScript API mirror. Host-specific renderer output, clipboard,
+image-loading, and worker mechanisms are translated to explicit Eio or
+application seams, and the source map records where those translations stop.
+
 The reference OpenTUI source is checked out at [`vendor/opentui`](vendor/opentui/).
 The repository contains two OCaml packages:
 
@@ -115,3 +120,9 @@ Parser-backed `Code` can use the application-owned Eio background executor for
 worker-safe injected parsers. Its streaming mode has explicit initial/raw
 visibility and settled-highlight retention semantics, while parser callbacks
 remain owner-domain direct-style functions with typed context records.
+
+The Core port remains intentionally qualified: renderer split-footer,
+external-output, and scrollback replay surfaces belong to the Eio application
+and terminal-output boundary; clipboard is synchronous policy over injected
+backends; and Background accepts only isolated worker-safe computations rather
+than making arbitrary OCaml closures domain-safe.
