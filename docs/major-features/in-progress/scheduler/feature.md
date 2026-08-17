@@ -1,8 +1,7 @@
 # Renderer scheduler
 
-Status: implemented for the current renderer, clock, and consumer scope.
-Animation's pre-render driver attachment remains explicitly deferred to the
-animation feature.
+Status: implemented for the current renderer, clock, consumer, and animation
+driver scope.
 
 This feature defines the Eio-owned timing and frame-driving boundary for one
 renderer. It turns coalesced render requests and live-render ownership into
@@ -21,8 +20,8 @@ The retained renderer records coalesced render requests and aggregate live
 counts. The caller-run scheduler now consumes them through the Eio clock
 adapter. The scheduler-dependent reference behavior covered here includes
 scrollbar arrow repetition, ScrollBox edge auto-scroll, live-frame updates,
-theme-query timeouts, and ordered post/console rendering. Animation remains
-outside this feature and has no pre-render driver registry.
+theme-query timeouts, ordered post/console rendering, and the pre-render
+attachment consumed by `Animation.Engine`.
 
 The scheduler closes those gaps without making `Renderer.render` asynchronous
 or teaching pure renderables about Eio resources.
@@ -38,7 +37,7 @@ or teaching pure renderables about Eio resources.
 | `vendor/opentui/packages/core/src/renderables/ScrollBox.ts` | `Renderables.Scroll_box` and renderer selection routing | Acquire live ownership while edge auto-scroll is active and update from measured frame deltas. |
 | `vendor/opentui/packages/core/src/renderer-theme-mode.ts` | existing `Renderer_theme_mode` | Use the Eio-backed injected clock for refresh and waiter timeouts. |
 | `vendor/opentui/packages/core/src/post/effects.ts` | existing `Post.Effects` and renderer post-process callbacks | Receive measured deltas during frames while an explicit live owner keeps the loop active. |
-| `vendor/opentui/packages/core/src/animation/Timeline.ts` | future animation engine | Attach to the same pre-render frame-driver seam described by the animation feature, without moving timeline evaluation into this module. |
+| `vendor/opentui/packages/core/src/animation/Timeline.ts` | `Animation.Engine.attach` and the renderer pre-render seam | Supply the owner-local frame boundary without moving timeline evaluation into the scheduler module. |
 
 ## Current boundary
 
@@ -314,7 +313,8 @@ This feature does not provide:
 - a general task scheduler, actor runtime, or cross-domain mailbox;
 - arbitrary wall-clock cron or calendar scheduling;
 - hidden timers created by pure model modules;
-- automatic animation registration; or
+- process-global animation registration; explicit `Animation.Engine` ownership
+  belongs to the animation feature; or
 - compatibility shims for JavaScript timer identifiers and globals.
 
 ## Implementation sequence
@@ -339,8 +339,9 @@ This feature does not provide:
 8. **Complete:** run post effects before the diagnostic console with
    renderer-supplied deltas expressed in seconds; post registration remains
    passive.
-9. **Explicitly deferred:** animation has no pre-render driver registry or
-   animation surface in this feature.
+9. **Complete at the boundary:** the renderer exposes the pre-render and
+   teardown seams consumed by `Animation.Engine`; timeline ownership and
+   evaluation remain documented in the animation feature.
 
 ## Acceptance criteria
 

@@ -1,6 +1,7 @@
 # Audio streams
 
-Status: in progress.
+Status: in progress; the owner-domain lifecycle kernel is implemented, while
+demuxing, native decoding, and transport integrations remain.
 
 This feature defines the first audio boundary for the OCaml port: streaming
 encoded audio into a native decoder and mixer, with demuxing, metadata,
@@ -9,11 +10,14 @@ corresponds primarily to the stream portion of the pinned reference
 implementation in `vendor/opentui/packages/core/src/audio.ts` and
 `vendor/opentui/packages/core/src/audio-stream`.
 
-No OCaml audio module or audio ABI exists yet. This record is the design plan
-that must precede implementation. It intentionally does not claim that the
-whole reference `Audio` surface belongs in this first feature. Sound loading,
-voices, capture, recording, taps, and device management need their own
-contracts after the stream/native ownership boundary is stable.
+The first OCaml slice is implemented in
+`packages/opentui-core/src/audio_stream.ml`. It intentionally stops above
+decoding and playback: it owns the Eio scope, encoded-source attempts,
+cancellation, retries, metadata, terminal events, and generation checks. This
+record remains the design plan for the native/demuxer follow-up. It does not
+claim that the whole reference `Audio` surface belongs in this first feature.
+Sound loading, voices, capture, recording, taps, and device management need
+their own contracts after the stream/native ownership boundary is stable.
 
 ## Purpose and scope
 
@@ -54,11 +58,30 @@ The demuxer, option validation, metadata parser, and event vocabulary must
 remain usable without Eio so that their behavior can be tested and reasoned
 about independently of fibers and I/O.
 
+## Current milestone
+
+Implemented in the core package:
+
+- explicit owner and engine capabilities bound to one Eio switch and domain;
+- typed encoded-source connectors with metadata and data events;
+- cancellation-safe attempt generations and stale-result suppression;
+- bounded retry policy with reconnecting, ended, error, and disposed events;
+- owner-local event delivery, terminal cleanup, statistics, and idempotent close.
+
+Not yet implemented:
+
+- demuxers, ICY metadata framing, and an HTTP/URL connector;
+- native decoder, ring-buffer, playback, and mixer/group controls; and
+- the raw audio ABI and the complete reference stream control surface.
+
+The rest of this document describes the target native/demuxer extension. New
+work must preserve the ownership and generation invariants of this milestone.
+
 ## Reference correspondence
 
 | Reference source | Planned OCaml location | Responsibility |
 | --- | --- | --- |
-| `vendor/opentui/packages/core/src/audio.ts` stream types and `AudioStream` | `packages/opentui-core/src/audio.ml` | Minimal engine owner, stream owner, lifecycle, retry policy, controls, statistics, and typed events. |
+| `vendor/opentui/packages/core/src/audio.ts` stream types and `AudioStream` | `packages/opentui-core/src/audio_stream.ml` | Owner-domain stream lifecycle, retry policy, statistics, and typed events; native controls remain a follow-up. |
 | `vendor/opentui/packages/core/src/audio-stream/demuxer.ts` | `packages/opentui-core/src/audio_stream/demuxer.ml` | Generic demuxer and connector-selection contracts. |
 | `vendor/opentui/packages/core/src/audio-stream/icy/demuxer.ts` | `packages/opentui-core/src/audio_stream/icy/demuxer.ml` | ICY interval framing and metadata block handling. |
 | `vendor/opentui/packages/core/src/audio-stream/icy/metadata.ts` | `packages/opentui-core/src/audio_stream/icy/metadata.ml` | Bounded ICY metadata parsing. |
@@ -97,12 +120,14 @@ example need not reproduce the spectrum panel to validate this feature.
 
 ## Assessment of the current implementation
 
-The repository currently has no `audio`, `audio_stream`, demuxer, or audio
-test module. The raw package's selected ABI deliberately excludes audio; its
-ABI documentation names audio as outside the current boundary. The vendored
-native build already contains the reference miniaudio dependency and imports
+The repository has an implemented `audio_stream` lifecycle module and focused
+owner-domain tests. The raw package's selected ABI still deliberately excludes
+audio; its ABI documentation names audio as outside the current boundary. The
+vendored native build contains the reference miniaudio dependency and imports
 the reference audio implementation, but the local probe, header, stubs, and
-OCaml bindings do not expose those functions.
+OCaml bindings do not expose those functions. The current module therefore
+accepts a typed encoded-source connector and records bytes; it does not pretend
+to decode or play them.
 
 The repository now has implemented Eio owner-domain clocks and a
 `Renderer_scheduler`, plus the application-owned `Background` executor. Those
@@ -117,11 +142,12 @@ design is normative for this feature: producer scheduling may be deferred by
 the audio runtime, but event delivery after scheduling uses the ordinary
 owner-local typed channel contract.
 
-There is therefore no partial implementation to preserve. The first work is
-an ownership and ABI decision, followed by pure demuxer behavior and then the
-Eio/native integration.
+The remaining implementation starts with the ownership and ABI decision,
+followed by pure demuxer behavior and then Eio/native integration. The existing
+owner-domain lifecycle is the seam those additions must consume rather than
+replace.
 
-## Active design
+## Target design after the lifecycle kernel
 
 ### Relationship to renderer scheduling and Background
 
@@ -155,7 +181,7 @@ UI, it may notify an owner-domain UI callback; that callback may issue a normal
 renderer request, while audio remains unaware of and does not drive the
 renderer loop.
 
-### Native ownership and the raw boundary
+### Planned native ownership and the raw boundary
 
 Audio decoding and mixing remain below `opentui-core`. The raw package owns
 the native audio engine, stream handles, decoder worker, ring buffer, and
@@ -700,6 +726,9 @@ match the reference and are not porting differences.
 
 ## Planned implementation sequence
 
+0. **Complete:** establish the owner-domain lifecycle kernel in
+   `packages/opentui-core/src/audio_stream.ml`, including cancellation,
+   generations, retries, terminal events, and engine child cleanup.
 1. Freeze the selected native audio ABI and the minimal core engine ownership
    model. Establish the application-owned audio scope with its dedicated Eio
    switch and monotonic clock, explicitly separate from `Renderer_scheduler`

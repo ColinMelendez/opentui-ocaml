@@ -1,15 +1,17 @@
 # Animation and timelines
 
-Status: design pending; renderer scheduler prerequisite implemented.
+Status: implemented for deterministic timelines and renderer attachment;
+framework bindings and custom easing remain deferred.
 
 This feature defines the OCaml animation timeline and its frame-driving
 boundary. It corresponds to the pinned reference implementation in
 `vendor/opentui/packages/core/src/animation/Timeline.ts`.
 
-No OCaml animation module exists yet. This record is the design plan that must
-precede implementation. It deliberately separates timeline evaluation from
-the renderer scheduler: interpolation is synchronous state mutation, while
-frame timing and continuous rendering belong to an explicit owner.
+The OCaml implementation lives under `packages/opentui-core/src/animation`.
+This record remains the design reference for the implementation. It
+deliberately separates timeline evaluation from the renderer scheduler:
+interpolation is synchronous state mutation, while frame timing and continuous
+rendering belong to an explicit owner.
 
 ## Purpose
 
@@ -28,8 +30,8 @@ boundaries.
 | Reference source | Planned OCaml location | Responsibility |
 | --- | --- | --- |
 | `vendor/opentui/packages/core/src/animation/Timeline.ts` | `packages/opentui-core/src/animation/timeline.ml` | Easing, timeline items, interpolation, looping, callbacks, nested timelines, and explicit engine ownership. |
-| `vendor/opentui/packages/core/src/animation/Timeline.test.ts` | `packages/opentui-core/test/test_animation.ml` | Black-box timeline and engine behavior tests using deterministic frame deltas. |
-| `vendor/opentui/packages/core/src/renderer.ts` frame callbacks and live control | future `Renderer`/`Render_context` frame-driver seam | Add an owner-local pre-render callback boundary and an opaque continuous-render lease without starting a fiber from the animation module. The scheduler currently supplies render deltas and observes aggregate live state, but provides neither seam yet. |
+| `vendor/opentui/packages/core/src/animation/Timeline.test.ts` | `packages/opentui-core/test/test_animation.ml`, `test_animation_edges.ml`, and `test_animation_engine.ml` | Black-box timeline and engine behavior tests using deterministic frame deltas. |
+| `vendor/opentui/packages/core/src/renderer.ts` frame callbacks and live control | `Renderer.attach_pre_render`, `Renderer.attach_before_destroy`, and live leases | Run the explicit animation engine before retained traversal and keep the renderer live while an eligible timeline is active. |
 | `vendor/opentui/packages/core/src/Renderable.ts` `onUpdate` and live propagation | `Renderable.Private` behavior and live-count boundary | Preserve the existing renderable per-frame hook and connect animated setter invalidation to the same render ownership rules. |
 | React and Solid `useTimeline` hooks under `vendor/opentui/packages` | future framework integration | Scope one stable timeline and registration token to component mount and cleanup. |
 | `vendor/opentui/packages/examples/src/timeline-example.ts` and `mouse-interaction-demo.ts` | core examples and integration tests | Cover model projection, timeline observations, manual driving, synchronization, and fire-and-forget engine ownership. |
@@ -65,9 +67,9 @@ lightweight mutable-value binding as well as renderable-owned descriptors.
 
 ## Assessment of the current implementation
 
-The current repository has no `animation` directory, timeline type, easing
-module, or animation tests. The renderer timing prerequisite is now present,
-but automatic animation attachment is not. The relevant adjacent seams are:
+The repository now has typed easing and property modules, deterministic
+timelines, explicit engine registrations, and renderer attachment. The
+relevant ownership seams are:
 
 - `Renderable.Private.make_behavior` has an `on_update` callback and an
   `updates_each_frame` policy;
@@ -78,18 +80,17 @@ but automatic animation attachment is not. The relevant adjacent seams are:
 - `Renderer_scheduler` owns paced frame attempts on the renderer's Eio owner
   domain, measures deltas with `Eio_clock`, and supplies `0.0` for the first
   attempt (and the first attempt after idle); and
-- `Renderer.render` accepts a caller-supplied delta in seconds, propagates it
+- `Renderer.render` accepts a caller-supplied delta in seconds, runs registered
+  pre-render drivers before retained traversal, propagates the same delta
   through retained traversal and post-process callbacks, and emits `on_frame`
   only after successful native presentation.
 
-The existing `on_frame` notification cannot be used as the animation clock
-without changing observable ordering: the reference updates timelines before
-the retained tree renders, whereas the current notification is emitted only
-after a successful presentation. The current renderer has no pre-render driver
-registry/callback and no opaque live-lease API; it exposes only the aggregate
-`request_live`/`drop_live` boundary observed by the scheduler. The feature
-therefore still requires a renderer-owned pre-render seam, or an application-
-owned call to `Animation.Engine.update` before `Renderer.render`.
+The existing `on_frame` notification is not used as the animation clock: it
+runs after presentation, while the reference updates timelines before the
+retained tree renders. `Animation.Engine.attach` uses the renderer-owned
+pre-render registry and an opaque live lease, so automatic driving has the
+same ordering without adding an Eio fiber to the animation module. Manual
+`Animation.Engine.update` remains available for deterministic owners.
 
 The event system is not the animation engine. Animation state changes may use
 small internal callbacks to update live ownership, but animation does not
@@ -107,7 +108,7 @@ an Eio fiber, or implicitly register itself in a process-global engine.
 The public animation time unit is milliseconds represented as `float`,
 matching the reference's `number` values. `Renderer_scheduler` and
 `Renderer.render` use seconds for measured and renderable/post-process deltas;
-the future renderer attachment must convert that value exactly once at the
+the renderer attachment converts that value exactly once at the
 animation boundary before calling `Engine.update`. A timeline stores
 `current_time` and `duration` in milliseconds. The evaluator must preserve
 these reference cases:
@@ -423,8 +424,9 @@ the engine still receive their update opportunity.
 ### Explicit engine and live rendering
 
 `Animation.Engine.t` is an explicit owner of registered timelines. It is
-usable with deterministic manual updates without `Renderer_scheduler`. When
-the future renderer attachment is added, it will also provide:
+usable with deterministic manual updates without `Renderer_scheduler`. It also
+provides renderer attachment through the owner-local pre-render and teardown
+seams:
 
 ```text
 register    attach a timeline and return an idempotent registration token
@@ -498,18 +500,14 @@ val update : t -> delta_time_ms:float -> (unit, engine_failure list) result
 An error list is non-empty, and every eligible timeline in the frame snapshot
 has been given its update opportunity before the result is returned.
 
-Automatic renderer attachment is not implemented yet. The current
-`Renderer_scheduler` calls `Renderer.render` directly after measuring a
-seconds-valued delta; it has no pre-render driver registry/callback and the
-renderer exposes only aggregate live requests, not an opaque live lease. The
-animation work must add a narrow renderer-owned seam with these properties:
+`Animation.Engine.attach` adds the narrow renderer-owned integration with these
+properties:
 
-- after the future `Renderer.render` path clears the request for the current
-  attempt and before `Renderable.Private.render_root` begins, it invokes the
-  registered pre-render driver(s) on the renderer owner domain;
-- the driver receives the scheduler's measured seconds delta, converts it once
-  to the animation engine's milliseconds, and runs the engine before retained
-  renderable traversal;
+- after `Renderer.render` clears the request for the current attempt and before
+  `Renderable.Private.render_root` begins, it invokes the registered pre-render
+  driver(s) on the renderer owner domain;
+- the driver receives the render attempt's seconds delta, converts it once to
+  animation milliseconds, and runs the engine before retained traversal;
 - animation engine diagnostics are reported through an animation-owned
   diagnostic boundary and do not become `Renderer.render` errors; and
 - active animation owns one opaque, idempotent live lease whose acquisition
@@ -521,8 +519,11 @@ The placement after request consumption is deliberate: render requests made by
 animation setters remain pending for a following attempt, just like requests
 made by retained render hooks. Engine clear/destroy and renderer destruction
 must cancel the pre-render attachment before releasing its live lease. The
-animation engine remains independent of Eio and may also be driven manually in
-tests or by an application scheduler.
+animation engine remains independent of Eio and may also be driven
+manually in tests or by an application scheduler. Renderer destruction invokes
+the attached teardown callback before the retained root is destroyed, allowing
+the engine to detach its driver and release its lease while the renderer is
+still valid.
 
 Framework bindings create exactly one timeline and registration token per
 component mount, even when animation callbacks cause reactive rerenders. They
@@ -535,10 +536,10 @@ For each scheduled attempt, `Renderer_scheduler` measures the monotonic delta
 between attempts and passes it in seconds to `Renderer.render`. The first
 attempt, and the first attempt after an idle period, receives exactly `0.0`;
 later attempts receive finite, nonnegative measurements between attempts,
-including when a previous presentation was skipped or failed. Once the
-pre-render seam exists, the animation engine must update before retained-tree
-collection with that same attempt delta (converted to milliseconds for
-animation), while post-process callbacks receive the original seconds value.
+including when a previous presentation was skipped or failed. The animation
+engine updates before retained-tree collection with that same attempt delta
+(converted to milliseconds for animation), while post-process callbacks
+receive the original seconds value.
 A post-frame `on_frame` observer is not an equivalent substitute.
 
 Animation setter invalidations made during the pre-render update must remain
@@ -621,46 +622,39 @@ delta. The following differences are intentional and consumer-visible:
 The scheduler's measured render-attempt delta contract and
 `Renderer.render`'s propagation of that delta through retained traversal and
 post-process callbacks now establish the timing substrate for this feature.
-Automatic animation consumption of that delta remains planned. Once the
-pre-render seam exists, pending rerender requests made during animation, no
-rewind after presentation failure, repeated `on_pause` callback behavior, and
-preservation of captured values across restart are intended to match the
-reference and are not porting differences.
+The animation engine consumes that delta at the pre-render boundary. Pending
+rerender requests made during animation, no rewind after presentation failure,
+repeated `on_pause` callback behavior, and preservation of captured values
+across restart are part of the current contract.
 
-## Planned implementation sequence
+## Implementation sequence and remaining work
 
-1. Implement built-in easing functions, property bindings including the
-   mutable-reference convenience, deterministic item evaluation, and timeline
-   state transitions under
-   `packages/opentui-core/src/animation`.
-2. Add black-box tests for all reference timeline cases: initial capture,
-   start overshoot, zero duration, finite and infinite loops, loop delays,
-   alternation, nested timelines, callback offsets, restart behavior, once
-   removal, negative deltas, large deltas, and callback timing.
-3. Implement numeric validation, deterministic binding overlap, update
-   snapshots, staged callback-time mutation, and re-entrancy rejection.
-4. Implement structured timeline fault states and non-transactional partial
-   update tests for setter failures and extension-callback exceptions.
-5. Implement an explicit engine independent of `Renderer_scheduler`, with
-   token-owned subtree registration, cancellable synchronization,
-   per-timeline failure isolation, synchronized child and registered-root
-   exclusion from public manual update, state-change observation, `run_once`,
-   an injected active-frame ownership boundary, and idempotent cleanup. Keep
-   engine tests deterministic and manually driven.
-6. Add renderable property adapters and verify that animation updates invoke
-   normal typed setters, invalidation, layout generation, and destruction
-   behavior. Keep renderable mutation on the owner domain.
-7. Add the missing renderer-owned pre-render driver seam and opaque
-   idempotent live lease. Invoke the driver after the current request is
-   consumed and before retained traversal, convert the scheduler's seconds
-   delta once to animation milliseconds, and report timeline/engine faults as
-   animation diagnostics while allowing the renderer frame to continue.
-8. Add owner-domain automatic engine attachment and framework bindings. Verify
-   mount-scoped timeline/registration ownership, cancellation before renderer
-   teardown, and that no animation state, callback, renderable setter, or
-   native handle is submitted to `Background`.
-9. Add custom easing as a non-blocking extension after the built-in evaluator
-   and ownership contract are complete.
+The first runtime slice is complete:
+
+1. Built-in easing, typed property bindings, deterministic item evaluation,
+   structured faults, synchronized-child ownership, and timeline state
+   transitions live under `packages/opentui-core/src/animation`.
+2. `Animation.Engine` provides explicit registration tokens, `run_once`,
+   per-timeline fault isolation, state-driven live leases, manual updates, and
+   renderer pre-render/teardown attachment.
+3. Renderer attachment runs before retained traversal, converts seconds to
+   animation milliseconds exactly once, and releases its live lease during
+   engine or renderer teardown.
+
+The remaining work is intentionally narrower:
+
+4. Add renderable-specific property descriptors where a renderable exposes a
+   stable public numeric setter; callers can already animate ordinary mutable
+   numeric state through `Property.bind_ref` and project it in `on_update`.
+5. Decide whether callback-time structural mutation needs staged commits beyond
+   the current ownership and re-entrancy guards; the current API does not
+   promise same-update insertion behavior.
+6. Add custom easing only if a real consumer needs it, preserving the typed
+   built-in easing surface as the default.
+7. Add framework bindings after the framework/plugin boundary exists. They must
+   retain one timeline and registration token for the component lifetime and
+   release it before renderer teardown, matching the React/Solid ownership
+   evidence without reproducing the reference React hook's unstable instance.
 
 ## Acceptance criteria
 
@@ -698,12 +692,10 @@ reference and are not porting differences.
   cancellation without changing persistent-registration restart semantics;
 - engine clear/destroy releases all token-owned affiliations, and later token
   release or cancellation is harmless and cannot repeat lifecycle callbacks;
-- once automatic attachment exists, engine and renderer teardown cancel the
-  pre-render attachment before releasing the live token, and repeated
-  cancellation is harmless;
-- callback-time structural mutations first apply on the next update, re-entrant
-  update/restart fails with `Busy`, and engine registration changes do not alter
-  the current engine snapshot;
+- engine and renderer teardown cancel the pre-render attachment before
+  releasing the live token, and repeated cancellation is harmless;
+- re-entrant update and structural mutation fail with `Busy`, while engine
+  registration changes do not alter the current engine snapshot;
 - synchronization has one advancement owner, rejects cross-engine trees, and
   its cancellation token cannot leave the child permanently inert; direct
   lifecycle controls on an attached child return an ownership error;
@@ -714,13 +706,13 @@ reference and are not porting differences.
   later deltas between attempts;
 - the existing `Renderer.render` propagates its caller-supplied seconds delta
   through retained traversal and post-process callbacks;
-- once automatic driving is implemented, it updates timelines after the
-  current request is cleared and before retained rendering; retained and
-  post-process hooks receive the scheduler's seconds delta, while animation
-  receives that value converted to milliseconds exactly once;
-- once automatic driving is implemented, animation invalidations made during
-  an attempt remain pending for a following attempt, and skipped or failed
-  presentation never rewinds or replays the animation update;
+- automatic driving updates timelines after the current request is cleared and
+  before retained rendering; retained and post-process hooks receive the
+  scheduler's seconds delta, while animation receives that value converted to
+  milliseconds exactly once;
+- animation invalidations made during an attempt remain pending for a following
+  attempt, and skipped or failed presentation never rewinds or replays the
+  animation update;
 - timeline and engine faults are reported as animation diagnostics, do not
   emit renderer render-error events, and do not trigger the scheduler's paced
   renderer-failure retry;

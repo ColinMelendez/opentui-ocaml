@@ -1,6 +1,7 @@
 # Plugins and render slots
 
-Status: in progress.
+Status: in progress; the native host, typed slots, slot views, and retained
+mount are implemented. Framework adapters and dynamic loading remain.
 
 This feature defines the portable plugin and named-slot system corresponding
 to the pinned reference implementation under
@@ -15,8 +16,9 @@ OCaml feature likewise does not include dynamic module loading. A compiled
 plugin definition is a first-class value; `Dynlink` or another loader, if ever
 required, needs its own versioning, trust, and platform design.
 
-No OCaml plugin or slot module exists yet. This record is the design plan that
-must precede implementation.
+The first OCaml implementation lives in `plugin.ml`, `plugin_host.ml`,
+`slot.ml`, `slot_view.ml`, and `slot_mount.ml`. This record remains the design
+reference for the framework-adapter and dynamic-loading follow-up.
 
 ## Purpose and scope
 
@@ -54,15 +56,16 @@ nodes attached to a host tree, or Bun runtime transforms.
 | `vendor/opentui/packages/core/src/plugins/core-slot.ts` | `packages/opentui-core/src/slot_mount.ml` | Core render-slot mount, selection modes, fallback, reconciliation, view lifecycle, and renderable ownership. |
 | `vendor/opentui/packages/{react,solid}/src/plugins/slot.tsx` and renderer roots | Renderer pre-tree teardown attachment; no framework module in this feature | Evidence for shared selection semantics, framework-owned component identity, and automatic root disposal on direct renderer destruction. Their generic node types and error boundaries are not native OCaml slot architecture. |
 | `vendor/opentui/packages/core/src/renderer.ts` | `packages/opentui-core/src/renderer.ml` | A distinct pre-tree teardown phase needed before retained-root destruction; the existing OCaml destroy notification remains the later post-tree event. |
-| plugin examples and slot tests | `packages/opentui-core/test/test_plugins.ml` | Black-box installation, ordering, modes, view lifetime, hot replacement, failures, and teardown contracts. |
+| plugin examples and slot tests | `packages/opentui-core/test/test_plugins.ml`, `test_slot_mount.ml`, and `test_plugin_lifetime.ml` | Black-box installation, ordering, modes, view lifetime, hot replacement, failures, and teardown contracts. |
 | `vendor/opentui/packages/core/src/runtime-plugin*.ts` | No direct OCaml module | Deferred Bun-specific runtime import rewriting; separate platform feature if ever required. |
 
 ## Assessment of reference usage and the current repository
 
-The current OCaml repository has no plugin host, slot contribution, slot mount,
-or plugin tests. The retained renderable spine supplies the common node and
-parent/child ownership needed by a mount, but not cross-slot plugin
-installation or contribution invalidation.
+The repository now has a renderer-bounded plugin host, typed contribution
+sinks, slot views, and a retained `Slot_mount`. The retained renderable spine
+supplies the common node and parent/child ownership needed by the mount. The
+framework-specific component graph and dynamic module loader remain outside
+this kernel.
 
 Repository-wide inspection of the pinned reference found no production use of
 the slot plugin system inside OpenTUI itself. Outside its implementation, the
@@ -105,6 +108,25 @@ The design therefore preserves demonstrated behavior without copying the
 multi-framework TypeScript abstraction into OCaml. The event-system design may
 implement private owner-local invalidation, but plugins do not become a new
 renderer-wide event variant.
+
+## Current milestone
+
+Implemented in the core package:
+
+- validated plugin IDs, structured failures, reporters, and immutable
+  first-class definitions;
+- transactional installation scopes with multi-slot publication, rollback,
+  ordering, uninstallation, and renderer-destruction cleanup;
+- typed slots and contribution sinks with append, replace, and single-winner
+  selection; and
+- renderer-owned `Slot_view`/`Slot_mount` lifecycle, fallback and placeholder
+  paths, order-preserving reuse, props refresh, and retained-tree ownership.
+
+Still intentionally deferred:
+
+- React- or Solid-like framework roots and component reconciliation;
+- dynamic loading, ABI/version negotiation, and runtime transforms; and
+- asynchronous slot renderers or a generic heterogeneous node registry.
 
 ## Active design
 
@@ -444,8 +466,8 @@ not the only cleanup path. The reference React and Solid adapters guarantee
 that `Renderer.destroy` alone disposes their public framework roots; an OCaml
 framework adapter must be able to make the same guarantee.
 
-Before implementing plugins, `Renderer` therefore gains an owner-local
-pre-tree teardown attachment. Attaching returns an opaque, idempotent token
+The implementation uses an owner-local pre-tree teardown attachment on
+`Renderer`. Attaching returns an opaque, idempotent token
 that can be detached or explicitly closed. Attachments run once, in
 registration order, after ordinary renderer work and new attachments have been
 frozen but before `Renderable.destroy_recursively root`. A teardown callback
@@ -580,35 +602,25 @@ then installation sequence, ordering changes preserve active view identity,
 single-winner does not try a runner-up after failure, and module loading is
 separate from installation intentionally matches the reference.
 
-## Planned implementation sequence
+## Implementation sequence and remaining work
 
-1. Add the renderer pre-tree teardown attachment and opaque idempotent token.
-   Preserve the existing late destroy notification, define registration-order
-   execution, and cover direct renderer destruction plus explicit detach/close.
-2. Implement validated plugin and slot identifiers, independently typed slot
-   values/sinks, immutable plugin definitions, structured failure values, and
-   the reporter capability.
-3. Implement `Plugin.Host`, unpublished installation scopes, staged typed
-   contributions, rollback cleanup, atomic multi-slot publication, instance
-   tokens, order changes, terminal uninstallation, and renderer attachment.
-4. Add black-box host tests for duplicate IDs, multiple differently typed slot
-   contributions, setup failure and rollback, ordering, order changes, hot
-   uninstall/reinstall, idempotency, reporter isolation, direct renderer
-   teardown, and the framework-root-before-host safety-sweep ordering.
-5. Implement `Slot_view` and `Slot_mount` with one renderable owner, activation
-   and deactivation, snapshot refresh, lazy fallback/placeholder construction,
-   view reuse on reorder, and fresh construction on props or activity changes.
-6. Add black-box mount tests for all modes, healthy output beside failures,
-   single-winner failure without runner-up, multiple mounts, props changes,
-   node validation, structural re-entrancy rejection, lifecycle failures, and
-   cleanup ordering.
-7. Add a small linked-plugin example that demonstrates multiple slots, order
-   changes, enable/disable, persistent plugin state, visibility-bounded
-   resources, owner-domain timer/fiber cleanup, and an optional copied
-   `Worker_safe` background phase whose stale completion is rejected.
-8. Reassess dynamic loading and a generic framework-slot adapter only from
-   separate requirements; do not add `Dynlink` or a generic node registry as a
-   side effect of the native slot feature.
+The native plugin kernel is complete through the first six planned steps:
+renderer teardown attachment, typed identity and failures, transactional host
+installation, host/lifetime tests, `Slot_view` ownership, and `Slot_mount`
+reconciliation tests.
+
+Remaining work is deliberately separate:
+
+1. Add a small linked-plugin example covering multiple slots, order changes,
+   enable/disable, persistent plugin state, visibility-bounded resources, and
+   owner-domain cleanup.
+2. Reassess a React- or Solid-like framework adapter from actual integration
+   requirements. It must own its component graph and root, reuse the slot
+   selection semantics, and attach root cleanup before host safety sweeps; it
+   must not transfer framework-node destruction to `Slot_mount`.
+3. Reassess dynamic loading only with an explicit ABI, trust, capability, and
+   unloading design. Do not add `Dynlink` or a generic node registry as a side
+   effect of the native slot feature.
 
 ## Acceptance criteria
 
