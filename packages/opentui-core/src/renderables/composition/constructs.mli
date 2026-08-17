@@ -44,10 +44,12 @@ val code :
   ?base_highlight:string ->
   ?on_highlight:
     (Lib.Tree_sitter_types.highlight list ->
+    Code.highlight_context ->
     (Lib.Tree_sitter_types.highlight list, Lib.Tree_sitter_types.parser_error)
     result) ->
   ?on_chunks:
     (Lib.Styled_text.t ->
+    Code.chunks_context ->
     (Lib.Styled_text.t, Lib.Tree_sitter_types.parser_error) result) ->
   child list ->
   Vnode.t

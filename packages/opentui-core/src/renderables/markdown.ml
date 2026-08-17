@@ -182,6 +182,7 @@ let render_token markdown token index =
         ?tree_sitter_client:markdown.tree_sitter_client
         ?background:markdown.background
         ~syntax_style:markdown.syntax_style ~conceal:markdown.conceal_code
+        ~draw_unstyled_text:(not markdown.streaming)
         ~streaming:markdown.streaming ~wrap_mode:markdown.wrap_mode ()
       |> Result.map (fun code ->
              {

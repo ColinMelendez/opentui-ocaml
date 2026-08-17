@@ -142,6 +142,11 @@
  (libraries opentui-core eio_main windtrap))
 
 (test
+ (name test_code_streaming)
+ (modules test_code_streaming)
+ (libraries opentui-core eio_main windtrap))
+
+(test
  (name test_image_loading)
  (modules test_image_loading)
  (libraries opentui-core eio_main windtrap))

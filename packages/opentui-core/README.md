@@ -175,6 +175,20 @@ If the latest queued snapshot cannot be re-admitted from a completion, Code
 runs that resolved worker-safe snapshot synchronously on the owner rather than
 losing the current generation.
 
+Code's `streaming` option is behavioral: the initial parser generation shows
+`initial_styled_text` or raw content only when `draw_unstyled_text` permits it;
+with that option disabled and no settled result, the buffer stays empty while
+highlighting runs. After a streaming result settles, later updates retain the
+last settled highlighted buffer while the current parse and one latest pending
+snapshot run. Non-streaming generations apply the draw policy independently.
+`highlighting_done` is a read-only promise for the current generation;
+superseded, synchronous, fallback, and destroyed generations all settle it.
+`on_highlight` and `on_chunks` receive typed owner-domain context records
+containing content, filetype, syntax style, and final highlights where
+applicable. Typed callback errors use Code's plain-text fallback; unexpected
+callback exceptions remain Eio switch failures. Markdown forwards
+`draw_unstyled_text = not streaming` to fenced Code children.
+
 `Renderables.Diff` parses unified hunks into typed lines and composes Code with
 line-number gutters in unified or split layout. `Renderables.Markdown` uses a
 typed block/inline parser and retains unchanged stable-prefix blocks across

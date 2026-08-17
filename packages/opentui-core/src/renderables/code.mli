@@ -7,6 +7,19 @@ type highlight_state =
     background executor or is the one latest snapshot queued behind admitted
     work. Failed admission does not enter [Pending]. *)
 
+type highlight_context = {
+  content : string;
+  filetype : string;
+  syntax_style : Syntax_style.t;
+}
+
+type chunks_context = {
+  content : string;
+  filetype : string;
+  syntax_style : Syntax_style.t;
+  highlights : Lib.Tree_sitter_types.highlight list;
+}
+
 type t
 
 val create :
@@ -23,8 +36,13 @@ val create :
   ?streaming:bool ->
   ?initial_styled_text:Lib.Styled_text.t ->
   ?base_highlight:string ->
-  ?on_highlight:(Lib.Tree_sitter_types.highlight list -> (Lib.Tree_sitter_types.highlight list, Lib.Tree_sitter_types.parser_error) result) ->
-  ?on_chunks:(Lib.Styled_text.t -> (Lib.Styled_text.t, Lib.Tree_sitter_types.parser_error) result) ->
+  ?on_highlight:(Lib.Tree_sitter_types.highlight list ->
+    highlight_context ->
+    (Lib.Tree_sitter_types.highlight list, Lib.Tree_sitter_types.parser_error)
+    result) ->
+  ?on_chunks:(Lib.Styled_text.t ->
+    chunks_context ->
+    (Lib.Styled_text.t, Lib.Tree_sitter_types.parser_error) result) ->
   unit ->
   (t, Error.t) result
 
@@ -46,6 +64,7 @@ val streaming : t -> bool
 val set_streaming : t -> bool -> (unit, Error.t) result
 val highlights : t -> Lib.Tree_sitter_types.highlight list
 val highlight_state : t -> highlight_state
+val highlighting_done : t -> unit Eio.Promise.t
 val refresh : t -> (unit, Error.t) result
 val line_info : t -> (Text_buffer_view.line_info, Error.t) result
 val logical_line_info : t -> (Text_buffer_view.line_info, Error.t) result

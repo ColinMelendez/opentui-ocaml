@@ -303,13 +303,24 @@ its own serialization; it cannot rely on `Tree_sitter_client`'s owner-domain
 registry table for synchronization. Parser registration/removal and client
 lifecycle remain owner-domain operations.
 
-`Code` owns the generation and at-most-one-running/one-pending policy. Plain
-text may be installed immediately according to `draw_unstyled_text`; the final
-highlight result is applied only if the Code owner is alive and its generation
-is still current. Two Code renderables sharing one client do not invalidate
-each other's generations. `Markdown`, `Diff`, and composition Code
-constructors propagate the optional submitter to the Code instances they own;
-Markdown's own parser and retained-child rebuild remain synchronous.
+`Code` owns the generation and at-most-one-running/one-pending policy. Its
+streaming mode shows initial unstyled content only when
+`draw_unstyled_text` allows it, keeps the last settled highlighted buffer
+visible across later streaming updates, and coalesces bursts to the latest
+content. With no settled result and unstyled drawing disabled, the buffer does
+not expose raw or stale source while highlighting runs. Non-streaming updates
+apply that visibility policy for each generation. The read-only
+`highlighting_done` promise represents the current generation and resolves on
+synchronous/plain/fallback completion, supersession, or destruction. Context
+records pass content, filetype, syntax style, and final highlights to direct-
+style owner callbacks; typed callback errors fall back, while unexpected
+exceptions remain switch failures. The final highlight result is applied only
+if the Code owner is alive and its generation is still current. Two Code
+renderables sharing one client do not invalidate each other's generations.
+`Markdown`, `Diff`, and composition Code constructors propagate the optional
+submitter to the Code instances they own; Markdown's own parser and
+retained-child rebuild remain synchronous, and streaming Markdown passes
+`draw_unstyled_text = false` to fenced Code children.
 
 Code registers one cleanup callback through the underlying renderable's
 `once_destroyed` event before highlighting begins. Destroying through either

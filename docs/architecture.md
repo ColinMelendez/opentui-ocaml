@@ -185,6 +185,15 @@ owner-domain parser registry and pure runner; `Code` can submit explicitly
 while `Owner_only` parsers remain synchronous. It does not load JavaScript
 workers, WASM grammars, or claim a language parser that the application has
 not registered; unresolved filetypes become explicit Code fallback states.
+Code's streaming mode applies initial visibility through `draw_unstyled_text`,
+retains the last settled highlighted buffer across later streaming updates,
+and keeps at most one latest pending snapshot. Non-streaming generations apply
+the visibility policy independently. Its current-generation settlement is an
+Eio promise that also resolves when work is superseded or Code is destroyed;
+callback contexts remain owner-domain direct-style records, and typed callback
+errors fall back to plain text while unexpected exceptions follow Eio failure
+semantics. Markdown forwards the inverse streaming flag as the fenced Code
+draw policy.
 
 Images and post-processing stay below the same retained identity boundary.
 `Image.t` is a synchronous, callback-free owner of native decoder handles. It

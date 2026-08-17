@@ -110,3 +110,8 @@ The package overview is in [`packages/README.md`](packages/README.md). The
 architecture contract and source correspondence rules are in
 [`docs/architecture.md`](docs/architecture.md) and
 the [source correspondence map](docs/upstream-map.md).
+
+Parser-backed `Code` can use the application-owned Eio background executor for
+worker-safe injected parsers. Its streaming mode has explicit initial/raw
+visibility and settled-highlight retention semantics, while parser callbacks
+remain owner-domain direct-style functions with typed context records.

@@ -88,7 +88,8 @@ let () =
             Ok (highlight_for content)
           in
           register client (parser ~worker_safety:Types.Worker_safe highlight);
-          let on_highlight highlights =
+          let on_highlight highlights context =
+            ignore context;
             ignore highlights;
             Atomic.set completion_domains
               ((Domain.self () :> int) :: Atomic.get completion_domains);
@@ -145,7 +146,8 @@ let () =
             Ok (highlight_for content)
           in
           register client (parser ~worker_safety:Types.Worker_safe highlight);
-          let on_highlight highlights =
+          let on_highlight highlights context =
+            ignore context;
             ignore (Atomic.fetch_and_add callback_calls 1);
             Ok highlights
           in
@@ -204,7 +206,8 @@ let () =
             Ok (highlight_for content)
           in
           register client (parser ~worker_safety:Types.Worker_safe highlight);
-          let on_highlight highlights =
+          let on_highlight highlights context =
+            ignore context;
             ignore (Atomic.fetch_and_add callback_calls 1);
             Ok highlights
           in
@@ -249,7 +252,8 @@ let () =
             Ok []
           in
           register client (parser ~worker_safety:Types.Worker_safe highlight);
-          let on_highlight highlights =
+          let on_highlight highlights context =
+            ignore context;
             ignore highlights;
             ignore (Atomic.fetch_and_add callback_calls 1);
             Ok highlights
@@ -339,7 +343,8 @@ let () =
             Ok []
           in
           register client (parser ~worker_safety:Types.Owner_only highlight);
-          let on_highlight highlights =
+          let on_highlight highlights context =
+            ignore context;
             Atomic.set completion_domain (Some (Domain.self () :> int));
             Ok highlights
           in

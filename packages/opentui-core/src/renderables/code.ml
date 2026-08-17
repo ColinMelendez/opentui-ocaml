@@ -4,6 +4,24 @@ module Background = Platform.Eio_runtime.Background
 
 type highlight_state = Idle | Pending | Applied | Fallback of Types.parser_error
 
+type highlight_context = {
+  content : string;
+  filetype : string;
+  syntax_style : Syntax_style.t;
+}
+
+type chunks_context = {
+  content : string;
+  filetype : string;
+  syntax_style : Syntax_style.t;
+  highlights : Types.highlight list;
+}
+
+type settlement = {
+  promise : unit Eio.Promise.t;
+  resolver : unit Eio.Promise.u;
+}
+
 type request =
   | Plain of {
       generation : int;
@@ -38,10 +56,13 @@ type t = {
   initial_styled_text : Styled.t option;
   mutable base_highlight : string option;
   on_highlight :
-    (Types.highlight list -> (Types.highlight list, Types.parser_error) result)
+    (Types.highlight list ->
+    highlight_context ->
+    (Types.highlight list, Types.parser_error) result)
     option;
   on_chunks :
-    (Styled.t -> (Styled.t, Types.parser_error) result) option;
+    (Styled.t -> chunks_context -> (Styled.t, Types.parser_error) result)
+    option;
   mutable highlights : Types.highlight list;
   mutable line_sources : int array option;
   mutable state : highlight_state;
@@ -49,6 +70,8 @@ type t = {
   mutable generation : int;
   mutable running : Background.job option;
   mutable pending : request option;
+  mutable settlement : settlement;
+  mutable has_settled_rendered_content : bool;
   mutable destroyed : bool;
 }
 
@@ -64,9 +87,21 @@ let streaming code = code.streaming
 let highlights code = code.highlights
 let highlight_state code = code.state
 
+let make_settlement () =
+  let promise, resolver = Eio.Promise.create () in
+  { promise; resolver }
+
+let resolve_settlement settlement =
+  ignore (Eio.Promise.try_resolve settlement.resolver ())
+
+let replace_settlement code =
+  resolve_settlement code.settlement;
+  code.settlement <- make_settlement ()
+
 let settle code state =
   code.state <- state;
-  code.settled_state <- state
+  code.settled_state <- state;
+  resolve_settlement code.settlement
 
 let ensure_alive code =
   if code.destroyed || Renderable.is_destroyed (as_renderable code) then
@@ -106,6 +141,7 @@ let apply_content code ~generation styled =
     match Text_buffer_renderable.set_styled_text code.text_buffer_renderable styled with
     | Error error -> Error error
     | Ok () ->
+        code.has_settled_rendered_content <- true;
         ignore (Renderable.request_render (as_renderable code));
         Ok ()
 
@@ -131,7 +167,7 @@ let apply_plain code ~generation ~content =
         settle code Idle;
         Ok ()
 
-let apply_highlights code ~generation ~content highlights =
+let apply_highlights code ~generation ~content ~filetype highlights =
   if not (is_current code generation) then Ok ()
   else
     let apply_chunks highlights styled =
@@ -158,7 +194,15 @@ let apply_highlights code ~generation ~content highlights =
       match code.on_chunks with
       | None -> apply_chunks highlights styled
       | Some callback ->
-          (match callback styled with
+          let context =
+            {
+              content;
+              filetype;
+              syntax_style = code.syntax_style;
+              highlights;
+            }
+          in
+          (match callback styled context with
           | Error error ->
               if is_current code generation then
                 apply_fallback code ~generation ~content error
@@ -170,7 +214,14 @@ let apply_highlights code ~generation ~content highlights =
     match code.on_highlight with
     | None -> apply_converted highlights (convert highlights)
     | Some callback ->
-        (match callback highlights with
+        let context =
+          {
+            content;
+            filetype;
+            syntax_style = code.syntax_style;
+          }
+        in
+        (match callback highlights context with
         | Error error ->
             if is_current code generation then
               apply_fallback code ~generation ~content error
@@ -188,12 +239,35 @@ let background_error = function
 
 let owned_string value = String.sub value 0 (String.length value)
 
+let clear_unsettled_content code =
+  code.has_settled_rendered_content <- false;
+  Result.bind
+    (Text_buffer_renderable.clear code.text_buffer_renderable)
+    (fun () -> Renderable.request_render (as_renderable code))
+
+let show_unstyled_content code =
+  code.has_settled_rendered_content <- false;
+  let styled =
+    match code.initial_styled_text with
+    | Some initial when not (String.equal code.content "") -> initial
+    | Some _ | None -> Styled.of_string code.content
+  in
+  Result.bind
+    (Text_buffer_renderable.set_styled_text code.text_buffer_renderable styled)
+    (fun () -> Renderable.request_render (as_renderable code))
+
+let prepare_highlight_visibility code =
+  if code.streaming && code.has_settled_rendered_content then Ok ()
+  else if code.draw_unstyled_text then show_unstyled_content code
+  else clear_unsettled_content code
+
 let cleanup code =
   if not code.destroyed then begin
     code.destroyed <- true;
     code.pending <- None;
     Option.iter Background.cancel code.running;
     code.running <- None;
+    resolve_settlement code.settlement;
     if code.owns_syntax_style then begin
       code.owns_syntax_style <- false;
       Syntax_style.destroy code.syntax_style
@@ -221,16 +295,29 @@ let run_request_on_owner code request =
     | Fallback { generation; content; error } ->
         apply_fallback code ~generation ~content error
     | Highlight { generation; content; parser } ->
+        let filetype =
+          match code.filetype with
+          | Some value -> value
+          | None -> parser.Types.filetype
+        in
         (match Lib.Tree_sitter_client.run_parser parser ~content with
         | Error error -> apply_fallback code ~generation ~content error
-        | Ok highlights -> apply_highlights code ~generation ~content highlights)
+        | Ok highlights ->
+            apply_highlights code ~generation ~content ~filetype highlights)
 
-let clear_failed_pending_state code request application_error =
+let settle_after_application_error code request application_error =
   ignore application_error;
-  if is_current code (request_generation request) then
-    match code.state with
-    | Pending -> code.state <- code.settled_state
-    | Idle | Applied | Fallback _ -> ()
+  if is_current code (request_generation request) then begin
+    code.state <- code.settled_state;
+    resolve_settlement code.settlement
+  end
+
+let abort_inflight code =
+  if not code.destroyed then begin
+    code.pending <- None;
+    code.state <- code.settled_state;
+    resolve_settlement code.settlement
+  end
 
 let rec start_pending code =
   if code.destroyed || Option.is_some code.running then ()
@@ -239,36 +326,58 @@ let rec start_pending code =
     | None -> ()
     | Some request ->
         code.pending <- None;
-        (match start_request code request with
-        | Ok () -> ()
-        | Error (Admission_error admission_error) ->
-            ignore admission_error;
-            (match run_request_on_owner code request with
-            | Ok () -> ()
-            | Error application_error ->
-                clear_failed_pending_state code request application_error)
-        | Error (Application_error application_error) ->
-            clear_failed_pending_state code request application_error)
+        let completed = ref false in
+        Fun.protect
+          ~finally:(fun () -> if not !completed then abort_inflight code)
+          (fun () ->
+            match start_request code request with
+            | Ok () -> completed := true
+            | Error (Admission_error _) ->
+                (match run_request_on_owner code request with
+                | Ok () -> completed := true
+                | Error application_error ->
+                    settle_after_application_error code request application_error;
+                    completed := true)
+            | Error (Application_error application_error) ->
+                settle_after_application_error code request application_error;
+                completed := true)
 
 and finish_request code request result =
   code.running <- None;
-  (match request with
-  | Plain { generation; content } -> ignore (apply_plain code ~generation ~content)
-  | Fallback { generation; content; error } ->
-      ignore (apply_fallback code ~generation ~content error)
-  | Highlight { generation; content; _ } ->
-      (match result with
-      | Error error -> ignore (apply_fallback code ~generation ~content error)
-      | Ok highlights -> ignore (apply_highlights code ~generation ~content highlights)));
-  start_pending code
+  let completed = ref false in
+  Fun.protect
+    ~finally:(fun () -> if not !completed then abort_inflight code)
+    (fun () ->
+      let application_result =
+        match request with
+        | Plain { generation; content } -> apply_plain code ~generation ~content
+        | Fallback { generation; content; error } ->
+            apply_fallback code ~generation ~content error
+        | Highlight { generation; content; parser } ->
+            let filetype =
+              match code.filetype with
+              | Some value -> value
+              | None -> parser.Types.filetype
+            in
+            (match result with
+            | Error error -> apply_fallback code ~generation ~content error
+            | Ok highlights ->
+                apply_highlights code ~generation ~content ~filetype highlights)
+      in
+      (match application_result with
+      | Ok () -> ()
+      | Error application_error ->
+          settle_after_application_error code request application_error);
+      completed := true;
+      start_pending code)
 
 and start_request code request =
   if not (is_current code (request_generation request)) then Ok ()
   else
     match request with
     | Highlight { generation; content; parser } ->
-        (match code.background, parser.Types.worker_safety with
-        | Some submitter, Types.Worker_safe ->
+        (match parser.Types.worker_safety, code.background with
+        | Types.Worker_safe, Some submitter ->
             let owned_content = owned_string content in
             let work () =
               Lib.Tree_sitter_client.run_parser parser ~content:owned_content
@@ -280,9 +389,7 @@ and start_request code request =
                 if is_current code generation then code.state <- Pending;
                 Ok ()
             | Error error -> Error (Admission_error (background_error error)))
-        | background, worker_safety ->
-            ignore background;
-            ignore worker_safety;
+        | Types.Owner_only, _ | Types.Worker_safe, None ->
             Result.map_error
               (fun error -> Application_error error)
               (run_request_on_owner code request))
@@ -321,19 +428,43 @@ let refresh code =
   | Ok () ->
       code.generation <- code.generation + 1;
       let generation = code.generation in
-      code.line_sources <- None;
+      replace_settlement code;
       let request = request_for code ~generation in
-      (match code.running with
-      | Some running ->
-          ignore running;
-          code.pending <- Some request;
-          code.state <- Pending;
-          Ok ()
-      | None ->
-          (match start_request code request with
-          | Ok () -> Ok ()
-          | Error (Admission_error error) | Error (Application_error error) ->
-              Error error))
+      let retains_rendered_content =
+        match request with
+        | Highlight _ -> code.streaming && code.has_settled_rendered_content
+        | Plain _ | Fallback _ -> false
+      in
+      if not retains_rendered_content then code.line_sources <- None;
+      let visibility_result =
+        match request with
+        | Highlight _ -> prepare_highlight_visibility code
+        | Plain _ | Fallback _ -> Ok ()
+      in
+      (match visibility_result with
+      | Error error ->
+          abort_inflight code;
+          Error error
+      | Ok () ->
+          (match code.running, request with
+          | Some _, Highlight _ ->
+              code.pending <- Some request;
+              code.state <- Pending;
+              Ok ()
+          | (Some _, (Plain _ | Fallback _)) | None, _ ->
+              let completed = ref false in
+              Fun.protect
+                ~finally:(fun () -> if not !completed then abort_inflight code)
+                (fun () ->
+                  match start_request code request with
+                  | Ok () ->
+                      completed := true;
+                      Ok ()
+                  | Error (Admission_error error)
+                  | Error (Application_error error) ->
+                      abort_inflight code;
+                      completed := true;
+                      Error error)))
 
 let create context ?id ?(content = "") ?filetype ?syntax_style
     ?tree_sitter_client ?background ?(wrap_mode = Text_buffer_view.Word)
@@ -375,6 +506,8 @@ let create context ?id ?(content = "") ?filetype ?syntax_style
           generation = 0;
           running = None;
           pending = None;
+          settlement = make_settlement ();
+          has_settled_rendered_content = false;
           destroyed = false;
         }
       in
@@ -448,6 +581,8 @@ let set_streaming code value =
   | Error error -> Error error
   | Ok () when Bool.equal code.streaming value -> Ok ()
   | Ok () -> code.streaming <- value; refresh code
+
+let highlighting_done code = code.settlement.promise
 
 let line_info code =
   map_line_info code
