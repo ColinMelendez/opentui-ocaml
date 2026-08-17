@@ -150,3 +150,18 @@
  (name test_image_loading)
  (modules test_image_loading)
  (libraries opentui-core eio_main windtrap))
+
+(test
+ (name test_animation)
+ (modules test_animation)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_animation_edges)
+ (modules test_animation_edges)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_animation_engine)
+ (modules test_animation_engine)
+ (libraries opentui-core windtrap))
