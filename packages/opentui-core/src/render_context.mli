@@ -15,6 +15,11 @@ type frame_event = Renderer_events.frame_event = {
   frame_id : int64;
 }
 
+type render_error_event = Renderer_events.render_error_event = {
+  error : Error.t;
+  renderable_num : int option;
+}
+
 type capabilities_event = Renderer_events.capabilities_event
 type palette_event = Renderer_events.palette_event
 type theme_mode = Renderer_theme_mode.mode
@@ -115,6 +120,23 @@ val once_frame :
 
 val prepend_frame :
   t -> (frame_event -> unit) -> (Event_subscription.t, Error.t) result
+
+(** A failed frame attempt is reported with no renderable attribution unless a
+    future renderer traversal can establish one without guessing. A callback
+    may return a typed recoverable error without blocking later callbacks.
+    Programmer exceptions follow the surrounding owner/Eio failure policy. *)
+val on_render_error :
+  t ->
+  (render_error_event -> (unit, Error.t) result) ->
+  (Event_subscription.t, Error.t) result
+val once_render_error :
+  t ->
+  (render_error_event -> (unit, Error.t) result) ->
+  (Event_subscription.t, Error.t) result
+val prepend_render_error :
+  t ->
+  (render_error_event -> (unit, Error.t) result) ->
+  (Event_subscription.t, Error.t) result
 
 val on_capabilities :
   t -> (capabilities_event -> unit) -> (Event_subscription.t, Error.t) result

@@ -38,6 +38,11 @@ type frame_event = Render_context.frame_event = {
   frame_id : int64;
 }
 
+type render_error_event = Render_context.render_error_event = {
+  error : Error.t;
+  renderable_num : int option;
+}
+
 type capabilities_event = Render_context.capabilities_event
 type palette_event = Render_context.palette_event
 type theme_mode = Render_context.theme_mode
@@ -277,6 +282,17 @@ let apply_post_processes renderer ~delta_time =
     renderer.post_processes;
   !result
 
+let report_render_error renderer error =
+  ignore
+    (Renderer_events.Private.emit_render_error
+       (Render_context.Private.events renderer.context)
+       { Renderer_events.error; renderable_num = None })
+
+let failed_frame renderer error =
+  Render_context.Private.request_render renderer.context;
+  report_render_error renderer error;
+  Error error
+
 let width renderer = Render_context.width renderer.context
 let height renderer = Render_context.height renderer.context
 let terminal_width renderer = Render_context.terminal_width renderer.context
@@ -342,6 +358,15 @@ let once_frame renderer callback =
 
 let prepend_frame renderer callback =
   Render_context.prepend_frame renderer.context callback
+
+let on_render_error renderer callback =
+  Render_context.on_render_error renderer.context callback
+
+let once_render_error renderer callback =
+  Render_context.once_render_error renderer.context callback
+
+let prepend_render_error renderer callback =
+  Render_context.prepend_render_error renderer.context callback
 
 let on_capabilities renderer callback =
   Render_context.on_capabilities renderer.context callback
@@ -983,26 +1008,18 @@ let render ?(delta_time = 0.0) renderer ~force =
        Renderable.Private.render_root renderer.root renderer.next_buffer
          ~delta_time
      with
-    | Error error ->
-        Render_context.Private.request_render renderer.context;
-        Error error
+    | Error error -> failed_frame renderer error
     | Ok () ->
         (match apply_post_processes renderer ~delta_time with
-        | Error error ->
-            Render_context.Private.request_render renderer.context;
-            Error error
+        | Error error -> failed_frame renderer error
         | Ok () ->
             (match Console.render renderer.console renderer.next_buffer with
-            | Error error ->
-                Render_context.Private.request_render renderer.context;
-                Error error
+            | Error error -> failed_frame renderer error
             | Ok () ->
                 let native_force = force || renderer.force_full_repaint in
                 let result = Opentui_raw.Renderer.render renderer.raw ~force:native_force in
                 match result with
-                | Error error ->
-                    Render_context.Private.request_render renderer.context;
-                    Error (map_raw_error error)
+                | Error error -> failed_frame renderer (map_raw_error error)
                 | Ok Opentui_raw.Renderer.Rendered ->
                     renderer.force_full_repaint <- false;
                     Render_context.Private.commit_hit_grid renderer.context;

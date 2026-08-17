@@ -222,18 +222,22 @@ cooperative file I/O before handing bytes to that synchronous decoder.
 
 An application fiber calls the synchronous renderer and parser operations. The
 renderer exposes explicit frame execution and presentation boundaries, so an
-application may decide when to present a frame. That operation is not the semantic
-replacement for reference `requestRender()`: a scheduler added above this
-boundary must keep dirty-state invalidation, coalesced frame requests, timing,
-and presentation distinct. This boundary keeps scheduling and terminal
-resource lifetime out of per-cell rendering operations while allowing Eio to
-own the surrounding application runtime. Capability and palette response
-recognition, query-string construction, geometry updates, and native text-view
-selection forwarding, and the portable utility services are synchronous Core
-operations. Terminal setup, output writing, and asynchronous query scheduling
-remain Eio/application responsibilities. `Lib.Clock` makes one-shot timing
-injectable for debounce, queues, theme queries, and parser timeouts; the
-application still owns the frame/update loop.
+application may either present explicitly or attach the owner-domain Eio
+scheduler. That scheduler is the semantic adapter for coalesced frame
+requests, live pacing, and recoverable render-error retries; it does not own
+the renderer's clock or terminal output. This boundary keeps scheduling and
+terminal resource lifetime out of per-cell rendering operations while allowing
+Eio to own the surrounding application runtime. Clock and scheduler mutation
+is owner-domain checked, including closure; portable clock callbacks fail
+loudly on affinity misuse because their callback shape cannot return a
+structured error. Render-error subscriptions instead expose typed callback
+results, isolating expected handler failures while leaving programmer
+exceptions to the owner/Eio failure policy. Capability and palette
+response recognition, query-string construction, geometry updates, and native
+text-view selection forwarding, and the portable utility services are
+synchronous Core operations. Terminal setup and output writing remain
+Eio/application responsibilities. `Lib.Clock` makes one-shot timing
+injectable for debounce, queues, theme queries, and parser timeouts.
 
 ## Translating TypeScript concepts
 

@@ -7,6 +7,11 @@ type frame_event = {
   frame_id : int64;
 }
 
+type render_error_event = {
+  error : Error.t;
+  renderable_num : int option;
+}
+
 type capabilities_event = Terminal_capabilities.t
 type palette_event = Lib.Terminal_palette.normalized
 type theme_mode_event = Renderer_theme_mode.mode
@@ -34,6 +39,7 @@ type handler_error = {
 type t = {
   resize : resize_event Event_kernel.t;
   frame : frame_event Event_kernel.t;
+  render_error : render_error_event Event_kernel.t;
   capabilities : capabilities_event Event_kernel.t;
   palette : palette_event Event_kernel.t;
   theme_mode : theme_mode_event Event_kernel.t;
@@ -49,6 +55,19 @@ let prepend_resize events callback = Event_kernel.prepend events.resize callback
 let on_frame events callback = Event_kernel.on events.frame callback
 let once_frame events callback = Event_kernel.once events.frame callback
 let prepend_frame events callback = Event_kernel.prepend events.frame callback
+let adapt_render_error_callback callback event =
+  match callback event with
+  | Ok () -> ()
+  | Error error -> ignore error
+
+let on_render_error events callback =
+  Event_kernel.on events.render_error (adapt_render_error_callback callback)
+
+let once_render_error events callback =
+  Event_kernel.once events.render_error (adapt_render_error_callback callback)
+
+let prepend_render_error events callback =
+  Event_kernel.prepend events.render_error (adapt_render_error_callback callback)
 let on_capabilities events callback =
   Event_kernel.on events.capabilities callback
 let once_capabilities events callback =
@@ -80,6 +99,7 @@ module Private = struct
     {
       resize = Event_kernel.create ();
       frame = Event_kernel.create ();
+      render_error = Event_kernel.create ();
       capabilities = Event_kernel.create ();
       palette = Event_kernel.create ();
       theme_mode = Event_kernel.create ();
@@ -91,6 +111,7 @@ module Private = struct
 
   let emit_resize events event = Event_kernel.emit events.resize event
   let emit_frame events event = Event_kernel.emit events.frame event
+  let emit_render_error events event = Event_kernel.emit events.render_error event
   let emit_capabilities events event = Event_kernel.emit events.capabilities event
   let emit_palette events event = Event_kernel.emit events.palette event
   let emit_theme_mode events event = Event_kernel.emit events.theme_mode event
@@ -102,6 +123,7 @@ module Private = struct
   let clear events =
     Event_kernel.clear events.resize;
     Event_kernel.clear events.frame;
+    Event_kernel.clear events.render_error;
     Event_kernel.clear events.capabilities;
     Event_kernel.clear events.palette;
     Event_kernel.clear events.theme_mode;

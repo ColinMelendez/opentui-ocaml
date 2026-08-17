@@ -181,7 +181,7 @@ let apply_highlights code ~generation ~content highlights =
 
 let background_error = function
   | Background.Closed -> Error.Closed
-  | Background.Wrong_domain -> Error.Owner_mismatch
+  | Background.Wrong_domain -> Error.Wrong_domain
   | Background.Invalid_worker_count count ->
       ignore count;
       Error.Invalid_argument

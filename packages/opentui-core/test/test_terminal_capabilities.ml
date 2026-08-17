@@ -112,6 +112,22 @@ let () =
           | Renderer.Failed -> fail "forced capability frame failed");
           equal bool false (expect_ok (Renderer.has_pending_render renderer));
           Renderer.destroy renderer);
+      test "terminal resize invalidates cached pixel resolution" (fun () ->
+          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          equal bool true
+            (expect_ok
+               (Renderer.handle_input renderer
+                  (response "\027[4;720;1280t")));
+          (match expect_ok (Renderer.pixel_resolution renderer) with
+          | Some resolution ->
+              equal int32 1280l resolution.width;
+              equal int32 720l resolution.height
+          | None -> fail "pixel resolution response was not cached");
+          ignore (expect_ok (Renderer.resize renderer ~width:3l ~height:2l));
+          (match expect_ok (Renderer.pixel_resolution renderer) with
+          | None -> ()
+          | Some _ -> fail "resize retained stale pixel resolution");
+          Renderer.destroy renderer);
       test "capability responses are consumed without reaching key handlers"
         (fun () ->
           let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in

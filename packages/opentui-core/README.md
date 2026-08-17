@@ -82,6 +82,16 @@ parsers; and `Renderer_theme_mode` owns theme queries through injected output
 and timing. These are translations of the reference effects, not global
 singletons.
 
+The optional Eio renderer scheduler attaches one owner-domain frame loop to a
+renderer. It checks clock/switch affinity, preserves the coalesced request
+after a failed frame, emits a typed render-error event, and retries at the
+configured cadence. Closing the scheduler detaches frame driving without
+closing the clock; the Eio switch that created the clock owns its lifetime.
+Public close operations reject wrong-domain mutation with structured errors.
+Render-error handlers return typed results, so recoverable handler failures do
+not block later handlers; unexpected exceptions retain the surrounding Eio
+failure policy.
+
 ## Interactive renderables
 
 The interactive controls are composed from the retained `Renderable.t` spine

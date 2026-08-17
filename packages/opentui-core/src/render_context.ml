@@ -9,6 +9,11 @@ type frame_event = Renderer_events.frame_event = {
   frame_id : int64;
 }
 
+type render_error_event = Renderer_events.render_error_event = {
+  error : Error.t;
+  renderable_num : int option;
+}
+
 type capabilities_event = Renderer_events.capabilities_event
 type palette_event = Renderer_events.palette_event
 type theme_mode = Renderer_theme_mode.mode
@@ -216,6 +221,21 @@ let prepend_frame context callback =
   match ensure_open context with
   | Error error -> Error error
   | Ok () -> Ok (Renderer_events.prepend_frame context.events callback)
+
+let on_render_error context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.on_render_error context.events callback)
+
+let once_render_error context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.once_render_error context.events callback)
+
+let prepend_render_error context callback =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok (Renderer_events.prepend_render_error context.events callback)
 
 let on_capabilities context callback =
   match ensure_open context with
@@ -484,6 +504,10 @@ module Private = struct
   let resize context ~width ~height =
     context.width <- width;
     context.height <- height;
+    (* Pixel dimensions describe the terminal geometry at which the previous
+       protocol query was answered. A terminal resize invalidates that cache;
+       the session may issue a fresh query later. *)
+    context.pixel_resolution <- None;
     context.render_geometry <-
       Lib.Render_geometry.calculate context.screen_mode
         ~terminal_width:(Int32.to_int width)

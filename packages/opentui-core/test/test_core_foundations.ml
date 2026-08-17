@@ -292,6 +292,29 @@ let () =
           | Some None -> fail "waiter received no theme mode"
           | None -> fail "theme waiter was not completed");
           Core.Renderer_theme_mode.cancel_wait theme waiter);
+      test "theme disposal cancels waiters before user callbacks" (fun () ->
+          let manual = Lib.Clock.manual () in
+          let theme =
+            Core.Renderer_theme_mode.create
+              ~clock:(Lib.Clock.manual_clock manual) ~query:(fun () -> ()) ()
+          in
+          let callback_calls = ref 0 in
+          let waiter =
+            Core.Renderer_theme_mode.wait_for theme ~timeout_ms:100
+              ~on_result:(fun _ ->
+                incr callback_calls;
+                raise (Failure "disposed theme waiter was invoked"))
+          in
+          Core.Renderer_theme_mode.dispose theme;
+          equal int 0 !callback_calls;
+          let reentrant_calls = ref 0 in
+          let reentrant_waiter =
+            Core.Renderer_theme_mode.wait_for theme ~timeout_ms:0
+              ~on_result:(fun _ -> incr reentrant_calls)
+          in
+          equal int 0 !reentrant_calls;
+          Core.Renderer_theme_mode.cancel_wait theme waiter;
+          Core.Renderer_theme_mode.cancel_wait theme reentrant_waiter);
       test "viewport culling retains overlap and orders by z" (fun () ->
           let viewport : Lib.Objects_in_viewport.viewport =
             { x = 0.0; y = 0.0; width = 10.0; height = 4.0 }

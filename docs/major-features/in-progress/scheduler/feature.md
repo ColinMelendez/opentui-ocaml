@@ -210,12 +210,32 @@ live ownership only when their state changes continuously.
 
 ### Errors and cancellation
 
-Invalid frame rates, a renderer/Eio-clock mismatch, duplicate attachment, a
-closed renderer, and renderer frame failures are structured scheduler errors
-with `message` and `pp`. The renderer clock must be the cached capability
-returned by `Eio_clock.lib_clock` for the clock supplied to `create`.
-Expected cancellation from the surrounding switch exits without converting
-the cancellation into a renderer failure.
+Invalid frame rates, wrong owner-domain use, switch affinity mismatches, a
+renderer/Eio-clock capability mismatch, duplicate attachment, and a closed
+renderer are structured scheduler errors with `message` and `pp`. The
+renderer clock must be the cached capability returned by
+`Eio_clock.lib_clock` for the clock supplied to `create`, and both the clock
+and scheduler must be used from their creating domain. Public clock and
+scheduler closure return `Wrong_domain` without mutation when called
+elsewhere. The portable `Lib.Clock` callbacks cannot return affinity errors,
+so wrong-domain schedule, cancellation, and time access fail loudly as
+programmer misuse; `Eio_clock.check_owner` remains the structured admission
+check. Creating or retrieving the cached portable capability is owner-only as
+well.
+
+Renderable, post-process, console, and native presentation failures are not
+scheduler-fatal. `Renderer` emits a typed render-error event containing the
+structured `Error.t` and an optional renderable number. The current synchronous
+pipeline cannot attribute every failure, so it reports `None` rather than
+guessing. Render-error subscribers return `(unit, Error.t) result` and run in
+registration order. A typed callback error is recorded only as a recoverable
+handler outcome and then ignored; it does not block later subscribers or frame
+recovery.
+Unexpected programmer exceptions are not caught; they follow the surrounding
+owner/Eio failure policy. The scheduler preserves the failed frame's coalesced
+request and retries at the configured frame cadence. Expected cancellation
+from the surrounding switch exits without converting the cancellation into a
+renderer failure.
 
 Timer callbacks are owner-local extension points. Unexpected callback
 exceptions follow the surrounding Eio switch's failure policy; the clock
@@ -225,11 +245,18 @@ feature boundary before scheduling.
 
 Timer cancellation races the Eio sleep against a timer-local cancellation
 promise and checks both the timer's cancelled state and the adapter's closed
-state before invoking the callback. Scheduler teardown signals waiters, closes
-the Eio clock (cancelling its timers), removes the tokenized context wake
-callback, and cancels the renderer-destruction subscription. No timer callback
-may access a renderer after teardown. Renderer destruction remains idempotent
-and closes the scheduler through that subscription.
+state before invoking the callback. Scheduler teardown signals waiters, removes
+the tokenized context wake callback, and cancels the renderer-destruction
+subscription. It does not close the Eio clock: the explicit clock-owning
+switch remains responsible for clock lifetime, so timers and theme waiters
+remain valid after scheduler detachment. No timer callback may access a
+renderer after teardown. Renderer destruction remains idempotent and closes
+the scheduler through a private owner-lifetime teardown path. Public close is
+owner-domain checked; switch release and renderer destruction use the private
+unchecked path because those callbacks already run inside the established
+owner lifetime. The switch-release callback uses an indirection cleared by
+scheduler close, so a long-lived switch does not retain the closed renderer
+tree.
 
 ## Consumer retrofits
 
@@ -320,6 +347,10 @@ This feature does not provide:
   callback at most once on the scheduler domain;
 - timer cancellation and scheduler teardown are idempotent and prevent later
   callbacks from reaching destroyed owner state;
+- closing a scheduler leaves its shared clock capability and theme timing
+  usable until the explicit clock-owning switch closes;
+- wrong-domain and wrong-switch scheduler creation/use are rejected as
+  structured errors;
 - render requests wake an idle loop without entering terminal `Event_queue`;
 - repeated requests coalesce, requests made during a frame remain pending, and
   no notification is lost between predicate inspection and waiting;
@@ -328,6 +359,8 @@ This feature does not provide:
 - the first active frame delta is zero; later deltas are finite, nonnegative,
   monotonic-attempt measurements and are shared by retained updates and post
   processes;
+- failed frame attempts emit structured renderer errors, continue at a paced
+  retry interval, and allow a later successful frame without a hot loop;
 - skipped or failed presentation does not rewind time or replay a retained
   update;
 - frame pacing avoids both cumulative work-duration drift and an unbounded

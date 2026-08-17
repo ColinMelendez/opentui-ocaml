@@ -212,6 +212,18 @@ let test_invalid_and_closed_lifecycle () =
       fail "a submitter escaped its closed application owner");
   Eio.Switch.run @@ fun application_sw ->
   let background = make_background env application_sw in
+  let submitter = expect_background (Background.bind background ~sw:application_sw) in
+  let wrong_domain =
+    Eio.Domain_manager.run (Eio.Stdenv.domain_mgr env) (fun () ->
+        Background.submit submitter ~work:(fun () -> Ok ())
+          ~on_complete:(fun value -> ignore value))
+  in
+  (match wrong_domain with
+  | Error Background.Wrong_domain -> ()
+  | Error error -> fail (Background.message error)
+  | Ok job ->
+      Background.cancel job;
+      fail "background accepted a submission from another domain");
   let escaped_submitter =
     Eio.Switch.run @@ fun submission_sw ->
     expect_background (Background.bind background ~sw:submission_sw)

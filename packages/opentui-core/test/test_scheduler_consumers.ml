@@ -13,6 +13,11 @@ let expect_ok result =
   | Ok value -> value
   | Error error -> fail (Core.Error.message error)
 
+let close_eio_clock clock =
+  match Eio_clock.close clock with
+  | Ok () -> ()
+  | Error error -> fail (Eio_clock.message error)
+
 let modifiers = { Mouse.shift = false; alt = false; ctrl = false }
 
 let mouse_event kind target =
@@ -208,7 +213,7 @@ let test_eio_theme_waiter_and_refresh_coalescing () =
   | Some _ -> ()
   | None -> fail "theme query did not reopen after the refresh window");
   Renderer.destroy renderer;
-  Eio_clock.close eio_clock
+  close_eio_clock eio_clock
 
 let () =
   run "opentui-core-scheduler-consumers"

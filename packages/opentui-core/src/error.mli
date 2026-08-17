@@ -5,6 +5,7 @@ type t =
   | Destroyed
   | Missing_async_lifetime
   | Invalid_argument
+  | Wrong_domain
   | Owner_mismatch
   | Not_child
   | Invalid_anchor

@@ -175,8 +175,13 @@ let wait_for owner ~timeout_ms ~on_result =
   let immediate_without_clock =
     Int.compare timeout_ms 0 > 0 && Option.is_none owner.clock
   in
-  if owner.disposed || Option.is_some owner.current
-     || Int.equal timeout_ms 0 || immediate_without_clock then begin
+  if owner.disposed then begin
+    (* Disposal is a lifetime boundary, not a final theme result. A waiter
+       registered re-entrantly during teardown is inert and receives no
+       callback. *)
+    waiter.cancelled <- true
+  end else if Option.is_some owner.current || Int.equal timeout_ms 0
+             || immediate_without_clock then begin
     waiter.cancelled <- true;
     on_result owner.current
   end
@@ -222,13 +227,17 @@ let dispose owner =
   if not owner.disposed then begin
     owner.disposed <- true;
     cancel_refresh owner;
+    (* Detach and cancel every waiter before crossing the lifetime boundary.
+       No user callback runs from disposal: callbacks may register another
+       waiter or raise while the renderer is tearing down. *)
+    let waiters = owner.waiters in
+    owner.waiters <- [];
     List.iter
       (fun (waiter, callback) ->
+        ignore callback;
         waiter.cancelled <- true;
         (match owner.clock with
         | None -> ()
-        | Some clock -> Option.iter (Lib.Clock.cancel clock) waiter.timer);
-        callback owner.current)
-      owner.waiters;
-    owner.waiters <- []
+        | Some clock -> Option.iter (Lib.Clock.cancel clock) waiter.timer))
+      waiters
   end

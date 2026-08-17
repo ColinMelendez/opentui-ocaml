@@ -3,6 +3,7 @@ type t =
   | Destroyed
   | Missing_async_lifetime
   | Invalid_argument
+  | Wrong_domain
   | Owner_mismatch
   | Not_child
   | Invalid_anchor
@@ -18,6 +19,7 @@ let message error =
   | Missing_async_lifetime ->
       "an asynchronous source requires an owner Eio switch"
   | Invalid_argument -> "an argument is invalid"
+  | Wrong_domain -> "the operation must run in its owner Eio domain"
   | Owner_mismatch -> "the renderable belongs to another renderer"
   | Not_child -> "the value is not a direct child"
   | Invalid_anchor -> "the insertion anchor is invalid"

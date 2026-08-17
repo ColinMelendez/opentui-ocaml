@@ -24,6 +24,11 @@ type frame_event = Render_context.frame_event = {
   frame_id : int64;
 }
 
+type render_error_event = Render_context.render_error_event = {
+  error : Error.t;
+  renderable_num : int option;
+}
+
 type capabilities_event = Render_context.capabilities_event
 type palette_event = Render_context.palette_event
 type theme_mode = Render_context.theme_mode
@@ -124,6 +129,24 @@ val once_frame :
   t -> (frame_event -> unit) -> (Event_subscription.t, Error.t) result
 val prepend_frame :
   t -> (frame_event -> unit) -> (Event_subscription.t, Error.t) result
+
+(** Register for recoverable frame failures. A callback may return a typed
+    recoverable error without blocking later callbacks or scheduler recovery.
+    Programmer exceptions follow the surrounding owner/Eio failure policy.
+    [renderable_num] is [None] when the synchronous pipeline cannot attribute
+    the failure without guessing. *)
+val on_render_error :
+  t ->
+  (render_error_event -> (unit, Error.t) result) ->
+  (Event_subscription.t, Error.t) result
+val once_render_error :
+  t ->
+  (render_error_event -> (unit, Error.t) result) ->
+  (Event_subscription.t, Error.t) result
+val prepend_render_error :
+  t ->
+  (render_error_event -> (unit, Error.t) result) ->
+  (Event_subscription.t, Error.t) result
 
 val on_capabilities :
   t -> (capabilities_event -> unit) -> (Event_subscription.t, Error.t) result

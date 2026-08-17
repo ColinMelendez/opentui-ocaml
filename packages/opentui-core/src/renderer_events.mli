@@ -10,6 +10,11 @@ type frame_event = {
   frame_id : int64;
 }
 
+type render_error_event = {
+  error : Error.t;
+  renderable_num : int option;
+}
+
 type capabilities_event = Terminal_capabilities.t
 type palette_event = Lib.Terminal_palette.normalized
 type theme_mode_event = Renderer_theme_mode.mode
@@ -40,6 +45,12 @@ val prepend_resize : t -> (resize_event -> unit) -> Event_subscription.t
 val on_frame : t -> (frame_event -> unit) -> Event_subscription.t
 val once_frame : t -> (frame_event -> unit) -> Event_subscription.t
 val prepend_frame : t -> (frame_event -> unit) -> Event_subscription.t
+val on_render_error :
+  t -> (render_error_event -> (unit, Error.t) result) -> Event_subscription.t
+val once_render_error :
+  t -> (render_error_event -> (unit, Error.t) result) -> Event_subscription.t
+val prepend_render_error :
+  t -> (render_error_event -> (unit, Error.t) result) -> Event_subscription.t
 val on_capabilities : t -> (capabilities_event -> unit) -> Event_subscription.t
 val once_capabilities : t -> (capabilities_event -> unit) -> Event_subscription.t
 val prepend_capabilities :
@@ -67,6 +78,7 @@ module Private : sig
   val create : unit -> t
   val emit_resize : t -> resize_event -> bool
   val emit_frame : t -> frame_event -> bool
+  val emit_render_error : t -> render_error_event -> bool
   val emit_capabilities : t -> capabilities_event -> bool
   val emit_palette : t -> palette_event -> bool
   val emit_theme_mode : t -> theme_mode_event -> bool

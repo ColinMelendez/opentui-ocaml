@@ -5,6 +5,8 @@ type t
 type error =
   | Closed
   | Missing_clock
+  | Wrong_domain
+  | Switch_mismatch
   | Clock_mismatch
   | Already_attached
   | Already_running
@@ -26,8 +28,13 @@ val create :
 
 val run : t -> (unit, error) result
 (** [run] consumes requests and drives live frames on the caller's Eio fiber.
-    It returns when [close] is called, the renderer is destroyed, or a frame
-    fails. *)
+    Recoverable renderer frame failures are emitted through the renderer's
+    render-error event and retried at the configured frame cadence. The
+    operation returns when [close] is called, the renderer is destroyed, or a
+    structural scheduler error occurs. It must run in the clock's owner domain. *)
 
-val close : t -> unit
-(** [close] idempotently stops the scheduler without destroying its renderer. *)
+val close : t -> (unit, error) result
+(** [close] idempotently stops the scheduler without destroying its renderer or
+    closing its Eio clock when called from the owner domain. Wrong-domain calls
+    return [Wrong_domain] without mutation. The clock remains owned by the
+    switch supplied to {!Eio_clock.create}. *)
