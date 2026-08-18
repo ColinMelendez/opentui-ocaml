@@ -378,6 +378,7 @@ let create_with_clock_option ~clock ~width ~height =
                     Render_context.Private.create
                       ~owner:(Render_context.Private.new_owner ()) ~width ~height
                       ~capabilities:(Some capabilities) ~clock
+                      ~hit_grid:(Opentui_raw.Renderer.hit_grid raw)
                   in
                   (match Renderable.Private.create_root context with
                   | Error error ->
@@ -488,6 +489,13 @@ let apply_post_processes renderer ~delta_time =
     renderer.post_processes;
   !result
 
+let reset_failed_frame renderer =
+  Render_context.Private.abort_hit_grid renderer.context;
+  ignore (Buffer.clear renderer.next_buffer ~background:Color.black);
+  ignore (Buffer.clear_scissor_rects renderer.next_buffer);
+  ignore (Buffer.clear_opacity renderer.next_buffer);
+  renderer.force_full_repaint <- true
+
 let report_render_error renderer error =
   ignore
     (Renderer_events.Private.emit_render_error
@@ -495,6 +503,7 @@ let report_render_error renderer error =
        { Renderer_events.error; renderable_num = None })
 
 let failed_frame renderer error =
+  reset_failed_frame renderer;
   Render_context.Private.request_render renderer.context;
   report_render_error renderer error;
   Error error
@@ -877,7 +886,8 @@ let send_pointer_event renderer target event =
 let release_capture renderer =
   Option.iter Event_subscription.cancel renderer.captured_destroy_subscription;
   renderer.captured_destroy_subscription <- None;
-  renderer.captured <- None
+  renderer.captured <- None;
+  Render_context.Private.set_captured_num renderer.context None
 
 let release_destroyed_capture renderer target =
   match renderer.captured with
@@ -900,7 +910,9 @@ let capture renderer target =
     | Error _ -> ()
     | Ok subscription ->
         renderer.captured <- Some target;
-        renderer.captured_destroy_subscription <- Some subscription
+        renderer.captured_destroy_subscription <- Some subscription;
+        Render_context.Private.set_captured_num renderer.context
+          (Some (Renderable.num target))
 
 let active_capture renderer =
   match renderer.captured with
@@ -1379,38 +1391,59 @@ let render ?(delta_time = 0.0) renderer ~force =
   else if not (Float.is_finite delta_time) || Float.compare delta_time 0.0 < 0 then
     Error Error.Invalid_argument
   else begin
-    Render_context.Private.clear_render_request renderer.context;
-    let frame_id = Render_context.Private.advance_frame renderer.context in
-    List.iter
-      (fun driver -> if driver.active then driver.callback delta_time)
-      renderer.pre_render_drivers;
-    (match
-       Renderable.Private.render_root renderer.root renderer.next_buffer
-         ~delta_time
-     with
-    | Error error -> failed_frame renderer error
-    | Ok () ->
-        (match apply_post_processes renderer ~delta_time with
-        | Error error -> failed_frame renderer error
-        | Ok () ->
-            (match Console.render renderer.console renderer.next_buffer with
-            | Error error -> failed_frame renderer error
-            | Ok () ->
-                let native_force = force || renderer.force_full_repaint in
-                let result = Opentui_raw.Renderer.render renderer.raw ~force:native_force in
-                match result with
-                | Error error -> failed_frame renderer (map_raw_error error)
-                | Ok Opentui_raw.Renderer.Rendered ->
-                    renderer.force_full_repaint <- false;
-                    Render_context.Private.commit_hit_grid renderer.context;
-                    recheck_hover_state renderer;
-                    ignore
-                      (Renderer_events.Private.emit_frame
-                         (Render_context.Private.events renderer.context)
-                         { Render_context.frame_id });
-                    Ok Rendered
-                | Ok Opentui_raw.Renderer.Skipped -> Ok Skipped
-                | Ok Opentui_raw.Renderer.Failed -> Ok Failed)))
+    let frame_finished = ref false in
+    Fun.protect
+      ~finally:(fun () ->
+        if not !frame_finished then begin
+          reset_failed_frame renderer;
+          Render_context.Private.request_render renderer.context
+        end)
+      (fun () ->
+        Render_context.Private.clear_render_request renderer.context;
+        let frame_id = Render_context.Private.advance_frame renderer.context in
+        List.iter
+          (fun driver -> if driver.active then driver.callback delta_time)
+          renderer.pre_render_drivers;
+        let result =
+          match
+            Renderable.Private.render_root renderer.root renderer.next_buffer
+              ~delta_time
+          with
+          | Error error -> failed_frame renderer error
+          | Ok () ->
+              (match apply_post_processes renderer ~delta_time with
+              | Error error -> failed_frame renderer error
+              | Ok () ->
+                  (match Console.render renderer.console renderer.next_buffer with
+                  | Error error -> failed_frame renderer error
+                  | Ok () ->
+                      let native_force = force || renderer.force_full_repaint in
+                      let native_result =
+                        Opentui_raw.Renderer.render renderer.raw ~force:native_force
+                      in
+                      match native_result with
+                      | Error error -> failed_frame renderer (map_raw_error error)
+                      | Ok Opentui_raw.Renderer.Rendered ->
+                          renderer.force_full_repaint <- false;
+                          if Render_context.Private.hit_grid_dirty renderer.context then
+                            recheck_hover_state renderer;
+                          ignore
+                            (Renderer_events.Private.emit_frame
+                               (Render_context.Private.events renderer.context)
+                               { Render_context.frame_id });
+                          Ok Rendered
+                      | Ok Opentui_raw.Renderer.Skipped ->
+                          Render_context.Private.abort_hit_grid renderer.context;
+                          Render_context.Private.request_render renderer.context;
+                          Ok Skipped
+                      | Ok Opentui_raw.Renderer.Failed ->
+                          Render_context.Private.abort_hit_grid renderer.context;
+                          renderer.force_full_repaint <- true;
+                          Render_context.Private.request_render renderer.context;
+                          Ok Failed))
+        in
+        frame_finished := true;
+        result)
   end
 
 let destroy renderer =

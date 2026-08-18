@@ -483,6 +483,51 @@ comptime {
         fn (opentui.NativeHandle, bool) callconv(.c) u8,
         "render",
     );
+    expectType(
+        @TypeOf(opentui.addToHitGrid),
+        fn (opentui.NativeHandle, i32, i32, u32, u32, u32) callconv(.c) void,
+        "addToHitGrid",
+    );
+    expectType(
+        @TypeOf(opentui.clearCurrentHitGrid),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "clearCurrentHitGrid",
+    );
+    expectType(
+        @TypeOf(opentui.clearNextHitGrid),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "clearNextHitGrid",
+    );
+    expectType(
+        @TypeOf(opentui.hitGridPushScissorRect),
+        fn (opentui.NativeHandle, i32, i32, u32, u32) callconv(.c) void,
+        "hitGridPushScissorRect",
+    );
+    expectType(
+        @TypeOf(opentui.hitGridPopScissorRect),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "hitGridPopScissorRect",
+    );
+    expectType(
+        @TypeOf(opentui.hitGridClearScissorRects),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "hitGridClearScissorRects",
+    );
+    expectType(
+        @TypeOf(opentui.addToCurrentHitGridClipped),
+        fn (opentui.NativeHandle, i32, i32, u32, u32, u32) callconv(.c) void,
+        "addToCurrentHitGridClipped",
+    );
+    expectType(
+        @TypeOf(opentui.checkHit),
+        fn (opentui.NativeHandle, u32, u32) callconv(.c) u32,
+        "checkHit",
+    );
+    expectType(
+        @TypeOf(opentui.getHitGridDirty),
+        fn (opentui.NativeHandle) callconv(.c) bool,
+        "getHitGridDirty",
+    );
     const render_status = @typeInfo(@TypeOf(opentui.CliRenderer.render)).@"fn".return_type.?;
     expectEnumValue(@as(render_status, .rendered), 0, "RenderStatus.rendered");
     expectEnumValue(@as(render_status, .skipped), 1, "RenderStatus.skipped");

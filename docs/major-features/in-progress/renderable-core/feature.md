@@ -18,6 +18,10 @@ remain the [`keyboard-dispatch`](../keyboard-dispatch/feature.md) and
 [`pointer-dispatch`](../pointer-dispatch/feature.md) records; this feature
 owns the retained objects those systems dispatch through.
 
+Native hit-grid storage, clipping, commit, and lookup are specified in the
+[`native-hit-grid`](../native-hit-grid/feature.md) record; this feature owns
+the retained render traversal that produces its native entries.
+
 ## Reference correspondence
 
 | Reference source | OCaml port location | Responsibility |

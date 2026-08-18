@@ -64,7 +64,10 @@ let () =
           ignore (expect_ok (Renderer.render renderer ~force:true));
           equal (float 0.0001) 4.0 (Renderable.width child);
           equal (float 0.0001) 2.0 (Renderable.height child);
-          equal int 1 (Context.Private.hit_grid_count context);
+          equal bool true
+            (match expect_ok (Renderer.hit_test renderer ~x:1 ~y:1) with
+            | Some found -> found == child
+            | None -> false);
           Renderer.destroy renderer;
           equal bool true (Renderable.is_destroyed root);
           equal bool true (Renderable.is_destroyed child);

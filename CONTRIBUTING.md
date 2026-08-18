@@ -98,7 +98,7 @@ the [source correspondence map](docs/upstream-map.md).
 | Private <code>ByteQueue</code> in <code>core/src/lib/stdin-parser.ts</code> | <code>packages/opentui-core/src/lib/byte_queue.ml</code> | The parser's pending-prefix storage keeps its bounded capacity, growth, compaction, and copy semantics. |
 | OCaml input handoff with no direct reference file | <code>packages/opentui-core/src/lib/input_coordinator.ml</code> and <code>packages/opentui-core/src/lib/event_queue.ml</code> | These adapters receive typed events from <code>Stdin_parser</code>, retain the claimed event order, and never turn backpressure into loss. |
 | <code>core/src/lib/KeyHandler.ts</code> (<code>KeyHandler</code> and <code>InternalKeyHandler</code>) | <code>docs/major-features/in-progress/keyboard-dispatch/feature.md</code>; <code>packages/opentui-core/src/lib/key_handler.ml</code> | <code>Lib.Key_handler</code> replaces <code>EventEmitter</code> mechanics while preserving global-before-local dispatch, prevention, propagation, snapshot iteration, cleanup, and handler-error reporting. Kitty press/repeat/release distinctions and their metadata are decoded at the parser boundary; malformed frames and future protocol extensions remain parser work. |
-| Reference renderable and renderer pointer dispatch | <code>docs/major-features/in-progress/pointer-dispatch/feature.md</code>; <code>packages/opentui-core/src/renderer.ml</code>, <code>packages/opentui-core/src/render_context.ml</code>, and <code>packages/opentui-core/src/renderable.ml</code> | <code>Renderer.handle_input</code> uses the committed layout hit grid and routes typed mouse events through the retained tree. Hover, capture, derived drag/drop, focus-on-down, selection, and handler-error policy are renderer-owned; native scissor-aware hit-grid storage remains a separate native-seam task. |
+| Reference renderable and renderer pointer dispatch | <code>docs/major-features/in-progress/pointer-dispatch/feature.md</code> and <code>docs/major-features/in-progress/native-hit-grid/feature.md</code>; <code>packages/opentui-core/src/renderer.ml</code>, <code>packages/opentui-core/src/render_context.ml</code>, and <code>packages/opentui-core/src/renderable.ml</code> | <code>Renderer.handle_input</code> uses the native renderer's committed layout hit grid and routes typed mouse events through the retained tree. Hover, capture, derived drag/drop, focus-on-down, selection, and handler-error policy are renderer-owned; native storage, clipping, commit, and lookup remain below the typed raw capability. |
 | <code>core/src/platform/*</code> | <code>packages/opentui-core/src/platform</code> | The reference platform directory contains runtime, FFI, worker, and asset support. The OCaml package splits Eio flow logic from Unix terminal setup into <code>eio_runtime</code> and <code>eio_unix_runtime</code>; the map records this as an OCaml-specific boundary rather than inventing reference subdirectories. |
 | <code>core/src/testing</code>, <code>core/src/tests</code>, and <code>core/src/benchmark</code> | <code>packages/opentui-core/test</code>, <code>packages/opentui-core/reference</code>, and <code>packages/opentui-core/bench</code> | Behavior checks, reference comparisons, and performance workloads remain package-local and discoverable beside the implementation. |
 | <code>packages/react</code> and <code>packages/solid</code> | No OCaml package selected | Any future reactive bridge must update the existing retained tree. It must not introduce a second required render tree or change the imperative core contract. |
@@ -153,11 +153,12 @@ Each stage has one job:
   coalescing class. Keys, paste, responses, button events, and scroll events are
   not coalesced and report <code>Full</code> instead of being dropped.
 - Pointer input decoded by <code>Stdin_parser</code> reaches
-  <code>Renderer.handle_input</code>, which hit-tests the committed layout grid
-  and routes typed mouse events from the target toward the root. A handler may
-  stop that route; otherwise dispatch continues. Hover, capture, focus-on-down,
-  and derived drag/drop policy belong to the renderer, while selection and
-  native scissor-aware hit-grid storage remain separate feature work.
+  <code>Renderer.handle_input</code>, which hit-tests the native renderer's
+  committed layout grid and routes typed mouse events from the target toward
+  the root. A handler may stop that route; otherwise dispatch continues.
+  Hover, capture, focus-on-down, and derived drag/drop policy belong to the
+  renderer, while selection remains renderer/renderable policy and native
+  hit-grid storage is specified by the <code>native-hit-grid</code> feature.
 - <code>Renderer</code> frame and presentation operations do not start fibers.
   The application may choose when to drain events and when to present a frame.
   Do not describe that explicit presentation as the equivalent of reference

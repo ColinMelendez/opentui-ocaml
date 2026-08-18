@@ -50,13 +50,6 @@ type focused_renderable = {
   blur : unit -> unit;
 }
 
-type hit_rect = {
-  x : int;
-  y : int;
-  width : int;
-  height : int;
-}
-
 type live_control = Idle | Auto_started | Explicit_started
 
 type scheduler_wakeup_state = {
@@ -83,12 +76,8 @@ type t = {
   mutable lifecycle_passes : lifecycle_pass list;
   mutable focused : focused_renderable option;
   mutable live_request_count : int;
-  mutable hit_grid_count : int;
-  mutable hit_grid_width : int;
-  mutable hit_grid_height : int;
-  mutable current_hit_grid : int array;
-  mutable next_hit_grid : int array;
-  mutable hit_scissors : hit_rect list;
+  hit_grid : Opentui_raw.Renderer.Hit_grid.t;
+  mutable captured_num : int option;
   mutable closed : bool;
   mutable scheduler_wakeup : scheduler_wakeup_state option;
   mutable selection_update : (unit -> unit) option;
@@ -421,14 +410,6 @@ module Private = struct
 
   let new_owner () = ref ()
 
-  let grid_size ~width ~height =
-    let width = Int32.to_int width in
-    let height = Int32.to_int height in
-    width * height
-
-  let create_hit_grid ~width ~height =
-    Array.make (grid_size ~width ~height) 0
-
   let handler_error_of_key_error (error : Lib.Key_handler.handler_error) =
     let scope =
       match error.scope with
@@ -444,7 +425,7 @@ module Private = struct
     { source = Keyboard; scope; kind; owner_num = error.owner_num;
       exception_value = error.exception_value }
 
-  let create ~owner ~width ~height ~capabilities ~clock =
+  let create ~owner ~width ~height ~capabilities ~clock ~hit_grid =
     let events = Renderer_events.Private.create () in
     let key_handler =
       Lib.Key_handler.create ~on_error:(fun error ->
@@ -475,12 +456,8 @@ module Private = struct
       lifecycle_passes = [];
       focused = None;
       live_request_count = 0;
-      hit_grid_count = 0;
-      hit_grid_width = Int32.to_int width;
-      hit_grid_height = Int32.to_int height;
-      current_hit_grid = create_hit_grid ~width ~height;
-      next_hit_grid = create_hit_grid ~width ~height;
-      hit_scissors = [];
+      hit_grid;
+      captured_num = None;
       closed = false;
       scheduler_wakeup = None;
       selection_update = None;
@@ -522,12 +499,8 @@ module Private = struct
         ~terminal_width:(Int32.to_int width)
         ~terminal_height:(Int32.to_int height)
         ~footer_height:context.footer_height;
-    context.hit_grid_width <- Int32.to_int width;
-    context.hit_grid_height <- Int32.to_int height;
-    context.current_hit_grid <- create_hit_grid ~width ~height;
-    context.next_hit_grid <- create_hit_grid ~width ~height;
-    context.hit_grid_count <- 0;
-    context.hit_scissors <- []
+    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
+      context.hit_grid
 
   let advance_frame context =
     context.frame_id <- Int64.add context.frame_id 1L;
@@ -638,79 +611,53 @@ module Private = struct
   let set_selection_update context callback =
     if not context.closed then context.selection_update <- Some callback
 
-  let clear_hit_grid context =
-    Array.fill context.next_hit_grid 0 (Array.length context.next_hit_grid) 0;
-    context.hit_grid_count <- 0;
-    context.hit_scissors <- []
-
-  let intersect_hit_rect left right =
-    let left_x = max left.x right.x in
-    let top_y = max left.y right.y in
-    let right_x = min (left.x + left.width) (right.x + right.width) in
-    let bottom_y = min (left.y + left.height) (right.y + right.height) in
-    if Int.compare left_x right_x >= 0 || Int.compare top_y bottom_y >= 0 then
-      None
-    else
-      Some
-        { x = left_x;
-          y = top_y;
-          width = right_x - left_x;
-          height = bottom_y - top_y }
+  let clear_hit_grid_scissors context =
+    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
+      context.hit_grid
 
   let push_hit_scissor context ~x ~y ~width ~height =
-    context.hit_scissors <- { x; y; width; height } :: context.hit_scissors
+    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_push_scissor_rect_unchecked
+      context.hit_grid ~x:(Int32.of_int x) ~y:(Int32.of_int y)
+      ~width:(Int32.of_int (max 0 width))
+      ~height:(Int32.of_int (max 0 height))
 
   let pop_hit_scissor context =
-    match context.hit_scissors with
-    | [] -> ()
-    | _ :: rest -> context.hit_scissors <- rest
+    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_pop_scissor_rect_unchecked
+      context.hit_grid
 
   let add_hit_grid context ~x ~y ~width ~height ~id =
-    context.hit_grid_count <- context.hit_grid_count + 1;
-    let renderable_rect =
-      { x; y; width = max 0 width; height = max 0 height }
-    in
-    let clipped_by_scissors =
-      List.fold_left
-        (fun current scissor ->
-          match current with
-          | None -> None
-          | Some rect -> intersect_hit_rect rect scissor)
-        (Some renderable_rect) context.hit_scissors
-    in
-    match clipped_by_scissors with
-    | None -> ()
-    | Some rect ->
-        let screen =
-          { x = 0; y = 0; width = context.hit_grid_width;
-            height = context.hit_grid_height }
-        in
-        (match intersect_hit_rect rect screen with
-        | None -> ()
-        | Some clipped ->
-            for row = clipped.y to clipped.y + clipped.height - 1 do
-              let offset = (row * context.hit_grid_width) + clipped.x in
-              Array.fill context.next_hit_grid offset clipped.width id
-            done)
-
-  let hit_grid_count context = context.hit_grid_count
-
-  let commit_hit_grid context =
-    let previous = context.current_hit_grid in
-    context.current_hit_grid <- context.next_hit_grid;
-    context.next_hit_grid <- previous;
-    Array.fill context.next_hit_grid 0 (Array.length context.next_hit_grid) 0
+    match context.captured_num with
+    | Some captured when Int.equal captured id -> ()
+    | Some _ | None ->
+        Opentui_raw.Renderer.Hit_grid.Private.add_to_hit_grid_unchecked
+          context.hit_grid ~x:(Int32.of_int x) ~y:(Int32.of_int y)
+          ~width:(Int32.of_int (max 0 width))
+          ~height:(Int32.of_int (max 0 height)) ~id:(Int32.of_int (max 0 id))
 
   let hit_test context ~x ~y =
     if Int.compare x 0 < 0 || Int.compare y 0 < 0
-       || Int.compare x context.hit_grid_width >= 0
-       || Int.compare y context.hit_grid_height >= 0
+       || Int.compare x (Int32.to_int context.width) >= 0
+       || Int.compare y (Int32.to_int context.height) >= 0
     then None
     else
       let id =
-        context.current_hit_grid.((y * context.hit_grid_width) + x)
+        Opentui_raw.Renderer.Hit_grid.Private.check_hit_unchecked
+          context.hit_grid ~x:(Int32.of_int x) ~y:(Int32.of_int y)
       in
       if Int.equal id 0 then None else Some id
+
+  let abort_hit_grid context =
+    Opentui_raw.Renderer.Hit_grid.Private.clear_next_hit_grid_unchecked
+      context.hit_grid;
+    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
+      context.hit_grid
+
+  let hit_grid_dirty context =
+    Opentui_raw.Renderer.Hit_grid.Private.get_hit_grid_dirty_unchecked
+      context.hit_grid
+
+  let set_captured_num context num =
+    if not context.closed then context.captured_num <- num
 
   let close context =
     if not context.closed then begin
@@ -727,12 +674,7 @@ module Private = struct
       context.focused <- None;
       context.live_request_count <- 0;
       context.live_control <- Idle;
-      context.hit_grid_count <- 0;
-      context.hit_grid_width <- 0;
-      context.hit_grid_height <- 0;
-      context.current_hit_grid <- [||];
-      context.next_hit_grid <- [||];
-      context.hit_scissors <- [];
+      context.captured_num <- None;
       Renderer_events.Private.clear context.events;
       Lib.Key_handler.clear context.key_handler
     end

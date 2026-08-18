@@ -1,0 +1,16 @@
+--- renderer.zig
++++ renderer.zig
+@@ -2841,0 +2842,5 @@
++
++    /// Clear nextHitGrid when Core aborts before native render owns frame cleanup.
++    pub fn clearNextHitGrid(self: *CliRenderer) void {
++        @memset(self.nextHitGrid, 0);
++    }
+--- lib.zig
++++ lib.zig
+@@ -1638,0 +1639,5 @@
++
++export fn clearNextHitGrid(renderer_handle: NativeHandle) void {
++    const object_ptr = acquireRenderer(renderer_handle) orelse return;
++    object_ptr.clearNextHitGrid();
++}

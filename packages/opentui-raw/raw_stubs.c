@@ -1,4 +1,5 @@
 #include <caml/alloc.h>
+#include <caml/fail.h>
 #include <caml/memory.h>
 #include <caml/mlvalues.h>
 
@@ -52,12 +53,28 @@ static value make_status_count(int status, uint32_t count) {
   CAMLreturn(result);
 }
 
+static value make_status_bool(int status, bool flag) {
+  CAMLparam0();
+  CAMLlocal3(result, status_value, flag_value);
+
+  status_value = Val_int(status);
+  flag_value = Val_bool(flag);
+  result = caml_alloc_tuple(2);
+  Store_field(result, 0, status_value);
+  Store_field(result, 1, flag_value);
+  CAMLreturn(result);
+}
+
 static bool buffer_is_valid(opentui_native_handle handle) {
   return handle != 0 && getBufferWidth(handle) != 0;
 }
 
 static bool optimized_buffer_is_valid(opentui_native_handle handle) {
   return buffer_is_valid(handle);
+}
+
+static bool renderer_is_valid(opentui_native_handle handle) {
+  return handle != 0 && getCurrentBuffer(handle) != 0;
 }
 
 static bool read_int32_array(
@@ -268,6 +285,389 @@ CAMLprim value opentui_raw_renderer_render(value handle_value, value force_value
   }
 
   CAMLreturn(Val_int((int)render(handle, Bool_val(force_value))));
+}
+
+static value renderer_add_to_hit_grid_impl(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  CAMLparam5(handle_value, x_value, y_value, width_value, height_value);
+  CAMLxparam1(id_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t width = Int32_val(width_value);
+  int32_t height = Int32_val(height_value);
+  int32_t id = Int32_val(id_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (width < 0 || height < 0 || id < 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  addToHitGrid(
+      handle,
+      Int32_val(x_value),
+      Int32_val(y_value),
+      (uint32_t)width,
+      (uint32_t)height,
+      (uint32_t)id);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_add_to_hit_grid(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  return renderer_add_to_hit_grid_impl(
+      handle_value, x_value, y_value, width_value, height_value, id_value);
+}
+
+CAMLprim value opentui_raw_renderer_add_to_hit_grid_bytecode(
+    value *arguments,
+    int argument_count) {
+  if (argument_count != 6) {
+    return Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT);
+  }
+  return renderer_add_to_hit_grid_impl(
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5]);
+}
+
+static value renderer_add_to_hit_grid_unchecked_impl(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  CAMLparam5(handle_value, x_value, y_value, width_value, height_value);
+  CAMLxparam1(id_value);
+
+  addToHitGrid(
+      (opentui_native_handle)Int32_val(handle_value),
+      Int32_val(x_value),
+      Int32_val(y_value),
+      (uint32_t)Int32_val(width_value),
+      (uint32_t)Int32_val(height_value),
+      (uint32_t)Int32_val(id_value));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_renderer_add_to_hit_grid_unchecked(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  return renderer_add_to_hit_grid_unchecked_impl(
+      handle_value, x_value, y_value, width_value, height_value, id_value);
+}
+
+CAMLprim value opentui_raw_renderer_add_to_hit_grid_unchecked_bytecode(
+    value *arguments,
+    int argument_count) {
+  if (argument_count != 6) {
+    caml_invalid_argument("opentui_raw_renderer_add_to_hit_grid_unchecked");
+  }
+  return renderer_add_to_hit_grid_unchecked_impl(
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5]);
+}
+
+CAMLprim value opentui_raw_renderer_clear_current_hit_grid(value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  clearCurrentHitGrid(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_clear_current_hit_grid_unchecked(
+    value handle_value) {
+  CAMLparam1(handle_value);
+
+  clearCurrentHitGrid((opentui_native_handle)Int32_val(handle_value));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_renderer_clear_next_hit_grid(value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  clearNextHitGrid(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_clear_next_hit_grid_unchecked(
+    value handle_value) {
+  CAMLparam1(handle_value);
+
+  clearNextHitGrid((opentui_native_handle)Int32_val(handle_value));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_renderer_hit_grid_push_scissor_rect(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value) {
+  CAMLparam5(handle_value, x_value, y_value, width_value, height_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t width = Int32_val(width_value);
+  int32_t height = Int32_val(height_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (width < 0 || height < 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  hitGridPushScissorRect(
+      handle,
+      Int32_val(x_value),
+      Int32_val(y_value),
+      (uint32_t)width,
+      (uint32_t)height);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_hit_grid_push_scissor_rect_unchecked(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value) {
+  CAMLparam5(handle_value, x_value, y_value, width_value, height_value);
+
+  hitGridPushScissorRect(
+      (opentui_native_handle)Int32_val(handle_value),
+      Int32_val(x_value),
+      Int32_val(y_value),
+      (uint32_t)Int32_val(width_value),
+      (uint32_t)Int32_val(height_value));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_renderer_hit_grid_pop_scissor_rect(value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  hitGridPopScissorRect(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_hit_grid_pop_scissor_rect_unchecked(
+    value handle_value) {
+  CAMLparam1(handle_value);
+
+  hitGridPopScissorRect((opentui_native_handle)Int32_val(handle_value));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_renderer_hit_grid_clear_scissor_rects(value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  hitGridClearScissorRects(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_hit_grid_clear_scissor_rects_unchecked(
+    value handle_value) {
+  CAMLparam1(handle_value);
+
+  hitGridClearScissorRects((opentui_native_handle)Int32_val(handle_value));
+  CAMLreturn(Val_unit);
+}
+
+static value renderer_add_to_current_hit_grid_clipped_impl(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  CAMLparam5(handle_value, x_value, y_value, width_value, height_value);
+  CAMLxparam1(id_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t width = Int32_val(width_value);
+  int32_t height = Int32_val(height_value);
+  int32_t id = Int32_val(id_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (width < 0 || height < 0 || id < 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  addToCurrentHitGridClipped(
+      handle,
+      Int32_val(x_value),
+      Int32_val(y_value),
+      (uint32_t)width,
+      (uint32_t)height,
+      (uint32_t)id);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_add_to_current_hit_grid_clipped(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  return renderer_add_to_current_hit_grid_clipped_impl(
+      handle_value, x_value, y_value, width_value, height_value, id_value);
+}
+
+CAMLprim value opentui_raw_renderer_add_to_current_hit_grid_clipped_bytecode(
+    value *arguments,
+    int argument_count) {
+  if (argument_count != 6) {
+    return Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT);
+  }
+  return renderer_add_to_current_hit_grid_clipped_impl(
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5]);
+}
+
+static value renderer_add_to_current_hit_grid_clipped_unchecked_impl(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  CAMLparam5(handle_value, x_value, y_value, width_value, height_value);
+  CAMLxparam1(id_value);
+
+  addToCurrentHitGridClipped(
+      (opentui_native_handle)Int32_val(handle_value),
+      Int32_val(x_value),
+      Int32_val(y_value),
+      (uint32_t)Int32_val(width_value),
+      (uint32_t)Int32_val(height_value),
+      (uint32_t)Int32_val(id_value));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value opentui_raw_renderer_add_to_current_hit_grid_clipped_unchecked(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value width_value,
+    value height_value,
+    value id_value) {
+  return renderer_add_to_current_hit_grid_clipped_unchecked_impl(
+      handle_value, x_value, y_value, width_value, height_value, id_value);
+}
+
+CAMLprim value opentui_raw_renderer_add_to_current_hit_grid_clipped_unchecked_bytecode(
+    value *arguments,
+    int argument_count) {
+  if (argument_count != 6) {
+    caml_invalid_argument(
+        "opentui_raw_renderer_add_to_current_hit_grid_clipped_unchecked");
+  }
+  return renderer_add_to_current_hit_grid_clipped_unchecked_impl(
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5]);
+}
+
+CAMLprim value opentui_raw_renderer_check_hit(
+    value handle_value,
+    value x_value,
+    value y_value) {
+  CAMLparam3(handle_value, x_value, y_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t x = Int32_val(x_value);
+  int32_t y = Int32_val(y_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_STALE_HANDLE, 0));
+  }
+  if (x < 0 || y < 0) {
+    CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+  }
+
+  CAMLreturn(make_status_count(
+      OPENTUI_RAW_STATUS_OK,
+      checkHit(handle, (uint32_t)x, (uint32_t)y)));
+}
+
+CAMLprim value opentui_raw_renderer_check_hit_unchecked(
+    value handle_value,
+    value x_value,
+    value y_value) {
+  CAMLparam3(handle_value, x_value, y_value);
+
+  CAMLreturn(Val_int((int)checkHit(
+      (opentui_native_handle)Int32_val(handle_value),
+      (uint32_t)Int32_val(x_value),
+      (uint32_t)Int32_val(y_value))));
+}
+
+CAMLprim value opentui_raw_renderer_get_hit_grid_dirty(value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_STALE_HANDLE, false));
+  }
+
+  CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_OK, getHitGridDirty(handle)));
+}
+
+CAMLprim value opentui_raw_renderer_get_hit_grid_dirty_unchecked(
+    value handle_value) {
+  CAMLparam1(handle_value);
+
+  CAMLreturn(Val_bool(getHitGridDirty(
+      (opentui_native_handle)Int32_val(handle_value))));
 }
 
 CAMLprim value opentui_raw_buffer_dimensions(value handle_value) {

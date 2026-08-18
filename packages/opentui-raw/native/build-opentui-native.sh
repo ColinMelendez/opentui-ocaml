@@ -90,8 +90,13 @@ if ! command -v patch >/dev/null 2>&1; then
   printf '%s\n' "the native source patch requires the patch utility" >&2
   exit 127
 fi
-chmod u+w "$patched_source_dir/native-span-feed.zig" "$patched_source_dir/buffer.zig"
+chmod u+w \
+  "$patched_source_dir/native-span-feed.zig" \
+  "$patched_source_dir/buffer.zig" \
+  "$patched_source_dir/renderer.zig" \
+  "$patched_source_dir/lib.zig"
 (CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/span_feed_exports.patch")
+(CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/hit_grid_exports.patch")
 (CDPATH= cd -- "$patched_source_dir" && zig build -Doptimize=ReleaseSafe --prefix "$zig_prefix")
 
 artifact="$output_dir/lib/$target_name/$library_name"

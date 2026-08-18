@@ -228,7 +228,8 @@ module Private : sig
   val create :
     owner:owner -> width:int32 -> height:int32 ->
     capabilities:Terminal_capabilities.t option ->
-    clock:Lib.Clock.t option -> t
+    clock:Lib.Clock.t option ->
+    hit_grid:Opentui_raw.Renderer.Hit_grid.t -> t
   val set_capabilities : t -> Terminal_capabilities.t -> unit
   val set_palette : t -> Lib.Terminal_palette.normalized -> unit
   val set_theme_mode : t -> theme_mode -> unit
@@ -257,14 +258,15 @@ module Private : sig
   val install_scheduler_wakeup : t -> (unit -> unit) -> scheduler_wakeup option
   val remove_scheduler_wakeup : t -> scheduler_wakeup -> unit
   val set_selection_update : t -> (unit -> unit) -> unit
-  val clear_hit_grid : t -> unit
+  val clear_hit_grid_scissors : t -> unit
   val push_hit_scissor :
     t -> x:int -> y:int -> width:int -> height:int -> unit
   val pop_hit_scissor : t -> unit
   val add_hit_grid :
     t -> x:int -> y:int -> width:int -> height:int -> id:int -> unit
-  val hit_grid_count : t -> int
-  val commit_hit_grid : t -> unit
+  val abort_hit_grid : t -> unit
+  val hit_grid_dirty : t -> bool
+  val set_captured_num : t -> int option -> unit
   val hit_test : t -> x:int -> y:int -> int option
   val close : t -> unit
   val is_open : t -> bool

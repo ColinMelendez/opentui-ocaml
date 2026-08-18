@@ -188,6 +188,38 @@ void destroyRenderer(opentui_native_handle renderer_handle);
 opentui_native_handle getCurrentBuffer(opentui_native_handle renderer_handle);
 opentui_native_handle getNextBuffer(opentui_native_handle renderer_handle);
 uint8_t render(opentui_native_handle renderer_handle, bool force);
+void addToHitGrid(
+    opentui_native_handle renderer_handle,
+    int32_t x,
+    int32_t y,
+    uint32_t width,
+    uint32_t height,
+    uint32_t id);
+void clearCurrentHitGrid(opentui_native_handle renderer_handle);
+void hitGridPushScissorRect(
+    opentui_native_handle renderer_handle,
+    int32_t x,
+    int32_t y,
+    uint32_t width,
+    uint32_t height);
+void hitGridPopScissorRect(opentui_native_handle renderer_handle);
+void hitGridClearScissorRects(opentui_native_handle renderer_handle);
+void addToCurrentHitGridClipped(
+    opentui_native_handle renderer_handle,
+    int32_t x,
+    int32_t y,
+    uint32_t width,
+    uint32_t height,
+    uint32_t id);
+uint32_t checkHit(
+    opentui_native_handle renderer_handle,
+    uint32_t x,
+    uint32_t y);
+bool getHitGridDirty(opentui_native_handle renderer_handle);
+
+/* Local raw seam: the reference clears nextHitGrid while aborting a frame
+ * before native render can perform its normal skipped/failed cleanup. */
+void clearNextHitGrid(opentui_native_handle renderer_handle);
 
 uint32_t getBufferWidth(opentui_native_handle buffer_handle);
 uint32_t getBufferHeight(opentui_native_handle buffer_handle);
@@ -730,6 +762,11 @@ typedef void (*opentui_resize_renderer_fn)(opentui_native_handle, uint32_t, uint
 typedef void (*opentui_destroy_renderer_fn)(opentui_native_handle);
 typedef opentui_native_handle (*opentui_get_buffer_fn)(opentui_native_handle);
 typedef uint8_t (*opentui_render_fn)(opentui_native_handle, bool);
+typedef void (*opentui_hit_grid_rect_fn)(opentui_native_handle, int32_t, int32_t, uint32_t, uint32_t, uint32_t);
+typedef void (*opentui_hit_grid_scissor_fn)(opentui_native_handle, int32_t, int32_t, uint32_t, uint32_t);
+typedef void (*opentui_hit_grid_clear_fn)(opentui_native_handle);
+typedef uint32_t (*opentui_check_hit_fn)(opentui_native_handle, uint32_t, uint32_t);
+typedef bool (*opentui_get_hit_grid_dirty_fn)(opentui_native_handle);
 typedef uint32_t (*opentui_get_buffer_dimension_fn)(opentui_native_handle);
 typedef opentui_native_handle (*opentui_create_optimized_buffer_fn)(uint32_t, uint32_t, bool, uint8_t, const uint8_t *, uint32_t);
 typedef void (*opentui_destroy_optimized_buffer_fn)(opentui_native_handle);
@@ -885,6 +922,15 @@ _Static_assert(OPENTUI_RENDER_STATUS_RENDERED == 0, "rendered status ABI drift")
 _Static_assert(OPENTUI_RENDER_STATUS_SKIPPED == 1, "skipped status ABI drift");
 _Static_assert(OPENTUI_RENDER_STATUS_FAILED == 2, "failed status ABI drift");
 _Static_assert(_Generic(&render, opentui_render_fn: 1, default: 0), "render ABI drift");
+_Static_assert(_Generic(&addToHitGrid, opentui_hit_grid_rect_fn: 1, default: 0), "addToHitGrid ABI drift");
+_Static_assert(_Generic(&clearCurrentHitGrid, opentui_hit_grid_clear_fn: 1, default: 0), "clearCurrentHitGrid ABI drift");
+_Static_assert(_Generic(&hitGridPushScissorRect, opentui_hit_grid_scissor_fn: 1, default: 0), "hitGridPushScissorRect ABI drift");
+_Static_assert(_Generic(&hitGridPopScissorRect, opentui_hit_grid_clear_fn: 1, default: 0), "hitGridPopScissorRect ABI drift");
+_Static_assert(_Generic(&hitGridClearScissorRects, opentui_hit_grid_clear_fn: 1, default: 0), "hitGridClearScissorRects ABI drift");
+_Static_assert(_Generic(&addToCurrentHitGridClipped, opentui_hit_grid_rect_fn: 1, default: 0), "addToCurrentHitGridClipped ABI drift");
+_Static_assert(_Generic(&checkHit, opentui_check_hit_fn: 1, default: 0), "checkHit ABI drift");
+_Static_assert(_Generic(&getHitGridDirty, opentui_get_hit_grid_dirty_fn: 1, default: 0), "getHitGridDirty ABI drift");
+_Static_assert(_Generic(&clearNextHitGrid, opentui_hit_grid_clear_fn: 1, default: 0), "clearNextHitGrid ABI drift");
 _Static_assert(_Generic(&getBufferWidth, opentui_get_buffer_dimension_fn: 1, default: 0), "getBufferWidth ABI drift");
 _Static_assert(_Generic(&getBufferHeight, opentui_get_buffer_dimension_fn: 1, default: 0), "getBufferHeight ABI drift");
 _Static_assert(_Generic(&createOptimizedBuffer, opentui_create_optimized_buffer_fn: 1, default: 0), "createOptimizedBuffer ABI drift");

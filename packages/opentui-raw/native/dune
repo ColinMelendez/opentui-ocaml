@@ -10,6 +10,7 @@
   build.zig
   build.zig.zon
   build-opentui-native.sh
+  hit_grid_exports.patch
   opentui_abi.h
   span_feed_exports.patch
   (source_tree ../../../vendor/opentui/packages/core/src/zig))

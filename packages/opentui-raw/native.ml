@@ -53,6 +53,76 @@ external renderer_buffer :
 external renderer_render : Native_token.Renderer.t -> bool -> int =
   "opentui_raw_renderer_render"
 
+external renderer_add_to_hit_grid :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> int =
+  "opentui_raw_renderer_add_to_hit_grid_bytecode"
+  "opentui_raw_renderer_add_to_hit_grid"
+
+external renderer_add_to_hit_grid_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> unit =
+  "opentui_raw_renderer_add_to_hit_grid_unchecked_bytecode"
+  "opentui_raw_renderer_add_to_hit_grid_unchecked"
+
+external renderer_clear_current_hit_grid : Native_token.Renderer.t -> int =
+  "opentui_raw_renderer_clear_current_hit_grid"
+
+external renderer_clear_current_hit_grid_unchecked :
+  Native_token.Renderer.t -> unit =
+  "opentui_raw_renderer_clear_current_hit_grid_unchecked"
+
+external renderer_clear_next_hit_grid : Native_token.Renderer.t -> int =
+  "opentui_raw_renderer_clear_next_hit_grid"
+
+external renderer_clear_next_hit_grid_unchecked : Native_token.Renderer.t -> unit =
+  "opentui_raw_renderer_clear_next_hit_grid_unchecked"
+
+external renderer_hit_grid_push_scissor_rect :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int =
+  "opentui_raw_renderer_hit_grid_push_scissor_rect"
+
+external renderer_hit_grid_push_scissor_rect_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> unit =
+  "opentui_raw_renderer_hit_grid_push_scissor_rect_unchecked"
+
+external renderer_hit_grid_pop_scissor_rect : Native_token.Renderer.t -> int =
+  "opentui_raw_renderer_hit_grid_pop_scissor_rect"
+
+external renderer_hit_grid_pop_scissor_rect_unchecked :
+  Native_token.Renderer.t -> unit =
+  "opentui_raw_renderer_hit_grid_pop_scissor_rect_unchecked"
+
+external renderer_hit_grid_clear_scissor_rects : Native_token.Renderer.t -> int =
+  "opentui_raw_renderer_hit_grid_clear_scissor_rects"
+
+external renderer_hit_grid_clear_scissor_rects_unchecked :
+  Native_token.Renderer.t -> unit =
+  "opentui_raw_renderer_hit_grid_clear_scissor_rects_unchecked"
+
+external renderer_add_to_current_hit_grid_clipped :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> int =
+  "opentui_raw_renderer_add_to_current_hit_grid_clipped_bytecode"
+  "opentui_raw_renderer_add_to_current_hit_grid_clipped"
+
+external renderer_add_to_current_hit_grid_clipped_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> unit =
+  "opentui_raw_renderer_add_to_current_hit_grid_clipped_unchecked_bytecode"
+  "opentui_raw_renderer_add_to_current_hit_grid_clipped_unchecked"
+
+external renderer_check_hit :
+  Native_token.Renderer.t -> int32 -> int32 -> int * int32 =
+  "opentui_raw_renderer_check_hit"
+
+external renderer_check_hit_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int =
+  "opentui_raw_renderer_check_hit_unchecked"
+
+external renderer_get_hit_grid_dirty : Native_token.Renderer.t -> int * bool =
+  "opentui_raw_renderer_get_hit_grid_dirty"
+
+external renderer_get_hit_grid_dirty_unchecked :
+  Native_token.Renderer.t -> bool =
+  "opentui_raw_renderer_get_hit_grid_dirty_unchecked"
+
 external buffer_dimensions : Native_token.Buffer.t -> int * int32 * int32 =
   "opentui_raw_buffer_dimensions"
 

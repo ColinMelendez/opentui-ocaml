@@ -10,6 +10,11 @@ The shared rationale and alternatives are in the event-system
 [`design-ideation`](../event-system/context/design-ideation.md). The focused
 pointer design is recorded in [`context/design.md`](context/design.md).
 
+Hit-grid storage, clipping, commitment, and native lookup are specified in
+the [`native-hit-grid`](../native-hit-grid/feature.md) feature record. This
+record owns the Core-side routing and pointer lifecycle that consume that
+native capability.
+
 ## Purpose
 
 Pointer dispatch combines input classification, layout hit-testing, target
@@ -109,14 +114,14 @@ hover transitions, drag capture, drop delivery, focus-on-down, resize cleanup,
 stationary-pointer hover recheck, and handler-error reporting are implemented
 in `Renderable.t` and `Renderer.t`.
 
-The current/next hit grid is OCaml-owned and follows the reference
-current/next semantics, including scissor-aware clipping. The reference native
-renderer still owns its own hit-grid storage; replacing the OCaml grid with
-that native storage requires an explicit raw ABI seam. Pointer selection is
-implemented for the active `TextBufferRenderable` and `EditBufferRenderable`
-paths, including selection auto-scroll at a scroll-box edge. The native
-selection/local-coordinate callbacks remain owned by the concrete renderable,
-not by the pointer route.
+The current/next hit grid is native-owned and follows the reference
+current/next semantics, including scissor-aware clipping. Core obtains a
+numeric target from the native committed grid and resolves it through the
+renderable registry before routing. Pointer selection is implemented for the
+active `TextBufferRenderable` and `EditBufferRenderable` paths, including
+selection auto-scroll at a scroll-box edge. The native selection/local-
+coordinate callbacks remain owned by the concrete renderable, not by the
+pointer route.
 
 ## Acceptance criteria
 

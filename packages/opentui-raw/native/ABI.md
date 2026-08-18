@@ -33,6 +33,12 @@ typed raw renderer, buffer, event, Yoga, and capability boundary:
 | `destroyRenderer` | `lib.zig:849` | `u32 -> void` | Destruction invalidates renderer-owned borrowed buffer handles before renderer deinitialization. |
 | `getCurrentBuffer` / `getNextBuffer` | `lib.zig:941`, `lib.zig:936` | `u32 -> u32` | Returned optimized-buffer handles are borrowed children of the renderer. |
 | `render` | `lib.zig:973` | `u32, bool -> u8` | The renderer returns the reference `rendered`/`skipped`/`failed` values `0`/`1`/`2`; the OCaml facade maps them to a typed result without exposing the native enum. |
+| `addToHitGrid` | `lib.zig:1630` | `u32, i32, i32, u32, u32, u32 -> void` | The native renderer clips the signed screen-space rectangle against its dimensions and native hit-grid scissor stack, then writes the renderable ID to `nextHitGrid`. Later writes win. |
+| `clearCurrentHitGrid` | `lib.zig:1635` | `u32 -> void` | Clears only the committed native grid for an explicit immediate rebuild; it does not affect `nextHitGrid`. |
+| `hitGridPushScissorRect` / `hitGridPopScissorRect` / `hitGridClearScissorRects` | `lib.zig:1640-1653` | `u32, i32, i32, u32, u32 -> void`; `u32 -> void` | Scissor state is owned by the native renderer. Nested pushes intersect with the existing stack, and pop/clear mutate only that native frame-local state. |
+| `addToCurrentHitGridClipped` | `lib.zig:1655` | `u32, i32, i32, u32, u32, u32 -> void` | Performs the same native clipping against the current grid for an explicit immediate synchronization path. |
+| `checkHit` / `getHitGridDirty` | `lib.zig:1660`, `lib.zig:1665` | `u32, u32, u32 -> u32`; `u32 -> bool` | `checkHit` reads only the committed native grid and returns `0` for no target or out-of-bounds coordinates. `getHitGridDirty` reports the dirty value computed by the last commit and consumes only the resize-invalidation latch; a later commit recomputes the dirty value. |
+| `clearNextHitGrid` | local `hit_grid_exports.patch` | `u32 -> void` | Local raw extension used when Core aborts before native render can perform skipped/failed-frame cleanup. It clears only the staging grid and never commits it. |
 | `bufferClear` | `lib.zig:1296` | `u32, pointer to four u16 values -> void` | The color pointer is consumed synchronously. |
 | `bufferDrawText` | `lib.zig:1356` | `u32, nullable byte pointer/u32, coordinates, two color pointers, u32 attributes -> void` | Text and colors are synchronous caller-owned input. |
 | `bufferDrawBox` | `lib.zig:1571` | `u32, i32, i32, u32, u32, pointer to 11 u32 code points, u32, three color pointers, two nullable byte pointer/u32 pairs -> void` | Border code points, colors, and optional title strings are borrowed for the synchronous draw. The origin is signed; dimensions are nonnegative. |
@@ -128,10 +134,10 @@ allocator captures stack traces that are not compatible with the OCaml C-call
 frame used by the runtime smoke. The compile-only ABI probe remains Debug.
 The Dune rule verifies the audited SHA-256 of the reference
 `native-span-feed.zig`, copies the source into a generated build directory,
-applies the tracked `span_feed_exports.patch`, runs the ReleaseSafe build and
-source-importing Zig probe against that generated tree, copies the host
-artifact into the Dune native output directory, and links the C facade against
-it with `-lopentui`.
+applies the tracked `span_feed_exports.patch` and `hit_grid_exports.patch`,
+runs the ReleaseSafe build and source-importing Zig probe against that
+generated tree, copies the host artifact into the Dune native output directory,
+and links the C facade against it with `-lopentui`.
 
 The reference build pulls Yoga's C++ sources and, on macOS, AppKit, Foundation,
 ImageIO, CoreFoundation, CoreAudio, AudioToolbox, and `pthread` for the
@@ -144,8 +150,21 @@ selected by the reference build (`aarch64-macos`, `x86_64-macos`,
 
 The typed raw operations in `opentui-raw` provide
 generation-checked independent Yoga-node operations, native text measurement,
-a copied capability snapshot, and the audited NativeSpanFeed ownership
-protocol while preserving the reference renderer/buffer/event ownership model.
+an opaque `Renderer.Hit_grid.t` capability, a copied capability snapshot, and
+the audited NativeSpanFeed ownership protocol while preserving the reference
+renderer/buffer/event ownership model. `Renderer.hit_grid` borrows the
+renderer owner without exposing `Native_token.Renderer.t`; its producer,
+scissor, current-grid, lookup, dirty-flag, and abort-clear methods return
+`Error.Closed` after renderer teardown. The producer calls do not allocate
+OCaml grid storage or copy cell data; checked value/status boundaries retain
+their ordinary OCaml result allocations. Core's render-time producer and
+lookup paths use `Renderer.Hit_grid.Private` unchecked methods: they call
+native directly without a `with_open` closure, result construction, or signed
+dimension/ID validation. The unchecked lookup returns a machine `int` so the
+pointer path does not box the native ID. Their precondition is an open
+renderer owner, nonnegative lookup coordinates, and nonnegative widths,
+heights, and IDs; the checked public methods retain structured validation and
+lifecycle errors.
 The OCaml API exposes `Yoga.Node.create`, explicit child attach/detach/free
 operations, typed style operations, typed layout readback,
 `Text_buffer`/`Text_buffer_view`, `Native_renderable`, `Span_feed.drain`, and

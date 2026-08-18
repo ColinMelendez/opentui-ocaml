@@ -124,6 +124,8 @@ and t = {
 
 let next_num = ref 1
 
+let renderables_by_num : (int, t) Hashtbl.t = Hashtbl.create 256
+
 let fresh_num () =
   let result = !next_num in
   next_num := result + 1;
@@ -332,7 +334,9 @@ let create_node context ~id ~behavior ~is_root =
         | Ok () ->
             (match Yoga.Node.set_flex_grow node (Some 0.0),
                   Yoga.Node.set_flex_shrink node (Some 1.0) with
-            | Ok (), Ok () -> Ok renderable
+            | Ok (), Ok () ->
+                Hashtbl.replace renderables_by_num renderable.num renderable;
+                Ok renderable
             | Error error, _ | _, Error error ->
                 ignore (Yoga.Node.free node);
                 Error (map_native_error error))
@@ -632,17 +636,20 @@ let rec find_descendant renderable id =
   in
   search renderable.children_layout
 
-let rec find_by_num renderable target_num =
-  if Int.equal renderable.num target_num then Some renderable
+let rec belongs_to renderable root =
+  if renderable == root then true
   else
-    let rec search = function
-      | [] -> None
-      | child :: rest ->
-          (match find_by_num child target_num with
-          | Some found -> Some found
-          | None -> search rest)
-    in
-    search renderable.children_layout
+    match renderable.parent with
+    | None -> false
+    | Some parent -> belongs_to parent root
+
+let find_by_num renderable target_num =
+  match Hashtbl.find_opt renderables_by_num target_num with
+  | Some found
+    when Render_context.same_owner renderable.context found.context
+         && belongs_to found renderable ->
+      Some found
+  | Some _ | None -> None
 
 let ensure_event_source renderable =
   match ensure_open renderable with
@@ -934,7 +941,7 @@ let render_root root buffer ~delta_time =
           end else Ok ()
         in
         Result.bind rebuild_result (fun () ->
-            Render_context.Private.clear_hit_grid root.context;
+            Render_context.Private.clear_hit_grid_scissors root.context;
             let rec execute = function
               | [] -> Ok ()
               | command :: rest ->
@@ -1117,6 +1124,7 @@ let destroy renderable =
       (fun parent -> ignore (detach_internal ~parent ~child:renderable))
       renderable.parent;
     detach_children renderable;
+    Hashtbl.remove renderables_by_num renderable.num;
     blur_state renderable;
     Event_kernel.clear renderable.focused_events;
     Event_kernel.clear renderable.blurred_events;

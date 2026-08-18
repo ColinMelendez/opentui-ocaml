@@ -77,6 +77,11 @@
  (libraries opentui-core windtrap))
 
 (test
+ (name test_native_hit_grid)
+ (modules test_native_hit_grid)
+ (libraries opentui-core windtrap))
+
+(test
  (name test_box)
  (modules test_box)
  (libraries opentui-core windtrap))

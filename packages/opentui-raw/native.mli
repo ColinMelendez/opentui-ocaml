@@ -42,6 +42,32 @@ val renderer_destroy : Native_token.Renderer.t -> unit
 val renderer_buffer :
   Native_token.Renderer.t -> bool -> int * Native_token.Buffer.t
 val renderer_render : Native_token.Renderer.t -> bool -> int
+val renderer_add_to_hit_grid :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> int
+val renderer_add_to_hit_grid_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> unit
+val renderer_clear_current_hit_grid : Native_token.Renderer.t -> int
+val renderer_clear_current_hit_grid_unchecked : Native_token.Renderer.t -> unit
+val renderer_clear_next_hit_grid : Native_token.Renderer.t -> int
+val renderer_clear_next_hit_grid_unchecked : Native_token.Renderer.t -> unit
+val renderer_hit_grid_push_scissor_rect :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int
+val renderer_hit_grid_push_scissor_rect_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> unit
+val renderer_hit_grid_pop_scissor_rect : Native_token.Renderer.t -> int
+val renderer_hit_grid_pop_scissor_rect_unchecked : Native_token.Renderer.t -> unit
+val renderer_hit_grid_clear_scissor_rects : Native_token.Renderer.t -> int
+val renderer_hit_grid_clear_scissor_rects_unchecked : Native_token.Renderer.t -> unit
+val renderer_add_to_current_hit_grid_clipped :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> int
+val renderer_add_to_current_hit_grid_clipped_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> unit
+val renderer_check_hit :
+  Native_token.Renderer.t -> int32 -> int32 -> int * int32
+val renderer_check_hit_unchecked :
+  Native_token.Renderer.t -> int32 -> int32 -> int
+val renderer_get_hit_grid_dirty : Native_token.Renderer.t -> int * bool
+val renderer_get_hit_grid_dirty_unchecked : Native_token.Renderer.t -> bool
 val buffer_dimensions : Native_token.Buffer.t -> int * int32 * int32
 val buffer_clear : Native_token.Buffer.t -> color -> int
 val buffer_set_cell : Native_token.Buffer.t -> cell -> int

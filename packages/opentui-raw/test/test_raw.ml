@@ -63,6 +63,95 @@ let () =
           Opentui_raw.Renderer.close renderer;
           expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.width current);
           expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.height next));
+      test "renderer hit-grid capability preserves native frame ownership" (fun () ->
+          let renderer =
+            expect_ok (Opentui_raw.Renderer.create ~width:3l ~height:2l)
+          in
+          let hit_grid = Opentui_raw.Renderer.hit_grid renderer in
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Renderer.Hit_grid.add_to_hit_grid hit_grid ~x:0l ~y:0l
+               ~width:(-1l) ~height:1l ~id:7l);
+          expect_error Opentui_raw.Error.Invalid_argument
+            (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:(-1l) ~y:0l);
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.add_to_hit_grid hit_grid ~x:0l
+                  ~y:0l ~width:2l ~height:1l ~id:7l));
+          equal int32 0l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:0l ~y:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.render renderer ~force:true));
+          equal int32 7l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:0l ~y:0l));
+          equal int32 0l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:2l ~y:0l));
+          equal bool true
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.get_hit_grid_dirty hit_grid));
+          equal bool true
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.get_hit_grid_dirty hit_grid));
+          Opentui_raw.Renderer.Hit_grid.Private
+            .hit_grid_clear_scissor_rects_unchecked hit_grid;
+          Opentui_raw.Renderer.Hit_grid.Private
+            .hit_grid_push_scissor_rect_unchecked hit_grid ~x:1l ~y:0l
+            ~width:1l ~height:1l;
+          Opentui_raw.Renderer.Hit_grid.Private.add_to_hit_grid_unchecked
+            hit_grid ~x:0l ~y:0l ~width:3l ~height:2l ~id:9l;
+          Opentui_raw.Renderer.Hit_grid.Private
+            .hit_grid_pop_scissor_rect_unchecked hit_grid;
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.render renderer ~force:true));
+          equal int32 0l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:0l ~y:0l));
+          equal int32 9l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:1l ~y:0l));
+          equal int32 0l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:1l ~y:1l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.clear_current_hit_grid hit_grid));
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.hit_grid_clear_scissor_rects
+                  hit_grid));
+          Opentui_raw.Renderer.Hit_grid.Private
+            .add_to_current_hit_grid_clipped_unchecked hit_grid ~x:0l ~y:1l
+            ~width:3l ~height:1l ~id:11l;
+          equal int32 0l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:1l ~y:0l));
+          equal int32 11l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:1l ~y:1l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.add_to_hit_grid hit_grid ~x:0l
+                  ~y:0l ~width:3l ~height:2l ~id:13l));
+          Opentui_raw.Renderer.Hit_grid.Private.clear_next_hit_grid_unchecked
+            hit_grid;
+          equal int32 11l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:1l ~y:1l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.render renderer ~force:true));
+          equal int32 0l
+            (expect_ok
+               (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:1l ~y:1l));
+          Opentui_raw.Renderer.close renderer;
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Renderer.Hit_grid.check_hit hit_grid ~x:0l ~y:0l);
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Renderer.Hit_grid.clear_next_hit_grid hit_grid));
       test "text buffer views draw through the native buffer seam" (fun () ->
           let renderer =
             expect_ok (Opentui_raw.Renderer.create ~width:6l ~height:2l)
