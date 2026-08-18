@@ -13,6 +13,10 @@ record defines the storage and producer boundary that pointer dispatch
 consumes. It does not move terminal mouse decoding or pointer-event bubbling
 into native code.
 
+Global background color and terminal cursor presentation are specified by the
+[`renderer-presentation`](../renderer-presentation/feature.md) record. They
+are renderer-owned presentation state, not part of hit-grid storage.
+
 ## Purpose
 
 The current OCaml implementation keeps `current` and `next` hit grids as
@@ -279,8 +283,7 @@ This feature does not:
   selection ownership into native code;
 - make native buffers or raw handles public Core values;
 - introduce a second asynchronous pointer-producer thread; or
-- solve background color, cursor presentation, animation, audio, or plugin
-  lifecycle concerns.
+- solve animation, audio, or plugin lifecycle concerns.
 
 The feature moves to `docs/major-features/implemented/native-hit-grid/` only
 after the native ABI, frame-failure, lifecycle, black-box pointer, and

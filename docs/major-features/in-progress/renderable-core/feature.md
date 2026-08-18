@@ -22,12 +22,17 @@ Native hit-grid storage, clipping, commit, and lookup are specified in the
 [`native-hit-grid`](../native-hit-grid/feature.md) record; this feature owns
 the retained render traversal that produces its native entries.
 
+Global background color and terminal cursor/mouse-pointer presentation are
+specified in the [`renderer-presentation`](../renderer-presentation/feature.md)
+record; this feature owns the renderer and context capabilities that expose
+those operations to retained renderables.
+
 ## Reference correspondence
 
 | Reference source | OCaml port location | Responsibility |
 | --- | --- | --- |
 | `vendor/opentui/packages/core/src/Renderable.ts` | `packages/opentui-core/src/renderable.ml` and `packages/opentui-core/src/layout_children.ml` | Common retained identity, physical parent/child ownership, layout state, dirty state, lifecycle, focus state, and render traversal. |
-| `vendor/opentui/packages/core/src/types.ts` (`RenderContext`) | `packages/opentui-core/src/render_context.ml` and `packages/opentui-core/src/terminal_capabilities.ml` | Capabilities supplied to renderables, including dimensions, frame identity, copied terminal capability state, render requests, focus, hit-grid access, and the renderer event source. |
+| `vendor/opentui/packages/core/src/types.ts` (`RenderContext`) | `packages/opentui-core/src/render_context.ml` and `packages/opentui-core/src/terminal_capabilities.ml` | Capabilities supplied to renderables, including dimensions, frame identity, copied terminal capability state, render requests, focus, hit-grid access, cursor/mouse-pointer presentation, and the renderer event source. |
 | `vendor/opentui/packages/core/src/renderer.ts` (`CliRenderer`) | `packages/opentui-core/src/renderer.ml` | Renderer ownership, root construction, frame scheduling, layout passes, input integration, output presentation, resize, and shutdown. |
 | `vendor/opentui/packages/core/src/buffer.ts` (`OptimizedBuffer`) | `packages/opentui-core/src/buffer.ml`; ABI operations remain in `packages/opentui-raw/buffer.ml` | Renderable-facing drawing operations over renderer-owned native buffers. |
 | `vendor/opentui/packages/core/src/yoga.ts` | `packages/opentui-core/src/yoga.ml` | Layout-tree operations used privately by retained renderables. |
@@ -645,12 +650,13 @@ includes:
 
 Cursor presentation, pointer presentation, selection ownership, and the
 keyboard dispatcher capability are seams on the same context object because
-the reference `RenderContext` carries them. This slice does not implement the
-keyboard dispatcher, pointer hit-testing, or pointer capture. Native
-text-view selection and selectable-renderable coordinate translation are
-implemented behind those seams, so programmatic Core selection and captured
-pointer selection reach native drawing while route ownership remains in the
-dedicated pointer-dispatch feature.
+the reference `RenderContext` carries them. Terminal cursor and mouse-pointer
+presentation now forward through the owner-scoped context capability. This
+slice does not implement the keyboard dispatcher, pointer hit-testing, or
+pointer capture. Native text-view selection and selectable-renderable
+coordinate translation are implemented behind those seams, so programmatic
+Core selection and captured pointer selection reach native drawing while route
+ownership remains in the dedicated pointer-dispatch feature.
 
 The context does not create a second renderer, event source, layout tree, or
 input queue. A renderable receives the capabilities of its owning renderer.

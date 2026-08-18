@@ -30,6 +30,10 @@ typed raw renderer, buffer, event, Yoga, and capability boundary:
 | `createRenderer` | `lib.zig:776` | `u32, u32, u8, u8, nullable pointer -> u32` | A zero dimension or invalid destination returns handle `0`. The renderer owns its current/next buffers. |
 | `setUseThread` | `lib.zig:839` | `u32, bool -> void` | The raw package passes `false`; all raw entrypoints remain on one native owner. |
 | `resizeRenderer` | `lib.zig:1625` | `u32, u32, u32 -> void` | The reference export resizes the renderer's current and next buffers in place, so their borrowed handles remain valid on success. It catches and discards `CliRenderer.resize` errors; the raw facade validates positive dimensions and reads both buffer dimensions back, but hidden hit-grid or other internal allocation failures remain unobservable from this reference signature. |
+| `setBackgroundColor` | `lib.zig:856` | `u32, pointer to four u16 values -> void` | Native stores the renderer backdrop. The raw facade borrows the color pointer only for the synchronous call; Core separately clears its next buffer and records the logical backdrop for failed-frame recovery. |
+| `setCursorPosition` | `lib.zig:1080` | `u32, i32, i32, bool -> void` | Native owns one-based terminal cursor position and visibility. The reference clamps each coordinate to at least one; the raw/Core wrappers preserve that behavior. |
+| `setCursorColor` / `setCursorStyleOptions` | `lib.zig:1160`, `lib.zig:1193` | `u32, pointer to four u16 values -> void`; `u32, pointer to 24-byte options -> void` | Cursor style, blinking, color, and mouse-pointer fields are native presentation state. Optional OCaml fields use the reference `255` sentinel or null color pointer, so omitted fields persist. All pointers are synchronous borrows. |
+| `getCursorState` | `lib.zig:1223` | `u32, pointer to 28-byte state -> void` | Native copies the one-based position, visibility, style, blinking flag, and normalized RGBA floats into caller-owned output storage. The raw facade converts that state into a checked OCaml value without retaining a native pointer. |
 | `destroyRenderer` | `lib.zig:849` | `u32 -> void` | Destruction invalidates renderer-owned borrowed buffer handles before renderer deinitialization. |
 | `getCurrentBuffer` / `getNextBuffer` | `lib.zig:941`, `lib.zig:936` | `u32 -> u32` | Returned optimized-buffer handles are borrowed children of the renderer. |
 | `render` | `lib.zig:973` | `u32, bool -> u8` | The renderer returns the reference `rendered`/`skipped`/`failed` values `0`/`1`/`2`; the OCaml facade maps them to a typed result without exposing the native enum. |
@@ -95,6 +99,13 @@ The capability facade maps the reference enum codes to typed OCaml variants. It
 does not preserve borrowed terminal pointers: names and versions are copied
 into the returned snapshot, and an invalid or stale renderer produces a
 structured raw error.
+
+`CursorStyleOptions` is 24 bytes with `style` at offset 0, `blinking` at
+offset 1, the nullable RGBA pointer at offset 8, and `cursor` at offset 16.
+`ExternalCursorState` is 28 bytes with one-byte `visible` and `style` fields at
+offsets 8 and 9, one-byte `blinking` at offset 10, and four consecutive
+`f32` color channels at offsets 12, 16, 20, and 24. The C header and imported
+Zig probe assert these layouts and all presentation function signatures.
 
 The output-feed facade asserts the 24-byte `Options`, `Stats`, and `SpanInfo`
 layouts and the 16-byte `ReserveInfo` layout. `Span_feed.drain` returns copied
