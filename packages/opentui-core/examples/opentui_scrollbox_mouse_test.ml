@@ -20,7 +20,8 @@ let expect_ok result =
 let color = Util.color_of_hex
 let with_fg fg_text text = S.create [ S.chunk ~fg:(color fg_text) text ]
 
-let run renderer ~exit =
+let run renderer ~exit ~copy_to_clipboard =
+  ignore copy_to_clipboard;
   ignore (expect_ok (O.Renderer.set_background_color renderer ~color:(color "#1a1b26")));
   let context = O.Renderer.context renderer in
   (* Main column container. *)
@@ -213,4 +214,6 @@ let run renderer ~exit =
 
 let () =
   Eio_main.run @@ fun env ->
-  Opentui_examples_lib.App.run env ~init:(fun ~exit renderer -> run renderer ~exit)
+  Opentui_examples_lib.App.run env
+    ~init:(fun ~exit ~copy_to_clipboard renderer ->
+      run renderer ~exit ~copy_to_clipboard)

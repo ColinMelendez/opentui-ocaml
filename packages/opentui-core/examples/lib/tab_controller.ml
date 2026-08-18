@@ -53,7 +53,10 @@ let tab_count controller = List.length controller.tabs
 let option_of_tab index count tab =
   {
     O.Renderables.Select.name = tab.spec.title;
-    description = Printf.sprintf "Tab %d/%d" (index + 1) count;
+    description =
+      Printf.sprintf
+        "Tab %d/%d - Use Left/Right arrows to navigate | Press Ctrl+C to exit | D: toggle debug"
+        (index + 1) count;
     value = None;
   }
 

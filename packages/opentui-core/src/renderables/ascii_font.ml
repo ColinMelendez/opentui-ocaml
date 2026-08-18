@@ -127,6 +127,11 @@ let on_resize font ~width ~height =
     ignore (rasterize font);
   end
 
+let selected_text_for_selection font =
+  match font.selection with
+  | None -> Ok ""
+  | Some (start_index, end_index) -> Ok (codepoint_slice font.text start_index end_index)
+
 let create context ?id ?(text = "") ?(font = Ascii_font_spec.Tiny)
     ?(colors = [ Color.white ]) ?(background_color = Color.transparent)
     ?selection_bg ?selection_fg ?(selectable = true) () =
@@ -181,6 +186,7 @@ let create context ?id ?(text = "") ?(font = Ascii_font_spec.Tiny)
             update_selection value bounds;
             ignore (rasterize value);
             ignore (Renderable.request_render value.renderable))
+          ~selected_text:(fun _renderable -> selected_text_for_selection value)
           ~destroy_self:(fun _renderable ->
             if not value.destroyed then begin
               value.destroyed <- true;
@@ -282,9 +288,9 @@ let set_selectable font value =
       Ok ())
 
 let selected_text font =
-  match font.selection with
-  | None -> ""
-  | Some (start_index, end_index) -> codepoint_slice font.text start_index end_index
+  match selected_text_for_selection font with
+  | Ok value -> value
+  | Error _ -> ""
 
 let has_selection font = Option.is_some font.selection
 let destroy font = Renderable.destroy font.renderable

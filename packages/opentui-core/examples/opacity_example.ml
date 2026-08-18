@@ -324,7 +324,8 @@ let create_demo renderer =
             Option.iter O.Renderer.detach_pre_render demo.pre_render)));
   demo
 
-let run renderer ~exit =
+let run renderer ~exit ~copy_to_clipboard =
+  ignore copy_to_clipboard;
   let demo = create_demo renderer in
   (* Ctrl+C is owned by the shared harness-level binding; the opacity demo
      handles only its four toggles and animation key. *)
@@ -346,4 +347,5 @@ let () =
   in
   Opentui_examples_lib.App.run env
     ~target_frames_per_second
-    ~init:(fun ~exit renderer -> run renderer ~exit)
+    ~init:(fun ~exit ~copy_to_clipboard renderer ->
+      run renderer ~exit ~copy_to_clipboard)

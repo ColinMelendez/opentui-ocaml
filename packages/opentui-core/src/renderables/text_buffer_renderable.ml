@@ -184,7 +184,10 @@ let install_behavior text_buffer_renderable =
         | Renderable.Scroll when text_buffer_renderable.scrollable ->
             handle_scroll text_buffer_renderable event
         | _ -> ())
-      ~selection_changed ~should_start_selection
+      ~selection_changed
+      ~selected_text:(fun _renderable ->
+        Text_buffer_view.selected_text text_buffer_renderable.text_buffer_view)
+      ~should_start_selection
       ~destroy_self:(fun _ -> close_resources text_buffer_renderable) ()
   in
   Renderable.Private.set_behavior text_buffer_renderable.renderable behavior

@@ -472,7 +472,7 @@ let () =
           let selection = Option.get (expect_ok (Renderer.selection renderer)) in
           let selected = Selection.selected_renderables selection in
           let touched = Selection.touched_renderables selection in
-          let assert_snapshot snapshots node expected_x =
+          let assert_snapshot snapshots node expected_x expected_text =
             match
               List.find_opt
                 (fun value -> Int.equal value.Selection.id (Renderable.num node))
@@ -482,14 +482,15 @@ let () =
             | Some value ->
                 equal (float 0.0001) expected_x value.Selection.x;
                 equal bool false value.Selection.destroyed;
-                equal string "" value.Selection.text
+                equal string expected_text value.Selection.text
           in
           equal int 2 (List.length selected);
           equal int 2 (List.length touched);
-          assert_snapshot selected first_node 0.0;
-          assert_snapshot selected second_node 3.0;
-          assert_snapshot touched first_node 0.0;
-          assert_snapshot touched second_node 3.0;
+          assert_snapshot selected first_node 0.0 "ab";
+          assert_snapshot selected second_node 3.0 "a";
+          assert_snapshot touched first_node 0.0 "ab";
+          assert_snapshot touched second_node 3.0 "a";
+          equal string "aba" (Selection.selected_text selection);
           equal bool false
             (List.exists
                (fun value -> Int.equal value.Selection.id (Renderable.num destroyed_node))

@@ -260,7 +260,27 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
     (fun () ->
       Fun.protect
         (fun () ->
-          init ~exit renderer;
+          let copy_to_clipboard text =
+            let supported =
+              match O.Renderer.capabilities renderer with
+              | Ok (Some capabilities) ->
+                  (match capabilities.O.Terminal_capabilities.osc52_support with
+                  | O.Terminal_capabilities.Unsupported -> false
+                  | O.Terminal_capabilities.Unknown_osc52
+                  | O.Terminal_capabilities.Supported -> true)
+              | Ok None | Error _ -> true
+            in
+            if not supported then false
+            else
+              match
+                Output.write output
+                  (O.Lib.Clipboard.osc52
+                     ~selection:O.Lib.Clipboard.Clipboard text)
+              with
+              | Ok () -> true
+              | Error _ -> false
+          in
+          init ~exit ~copy_to_clipboard renderer;
           (* Retained-tree mutations normally request this first frame. Keep
              the harness deterministic for demos that only configure native
              renderer state, while leaving the scheduler idle afterwards. *)

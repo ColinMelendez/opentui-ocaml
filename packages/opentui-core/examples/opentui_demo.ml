@@ -297,7 +297,11 @@ let borders_tab renderer context =
   let partial_border_phase = ref 0 in
   let partial_animated : Box.t option ref = ref None in
   let partial_phase_text : Text.t option ref = ref None in
-  let ascii_codepoints = Array.make 11 (Int32.of_int (Char.code '+')) in
+  let ascii_codepoints =
+    Array.map
+      (fun character -> Int32.of_int (Char.code character))
+      [| '+'; '+'; '+'; '+'; '-'; '|'; '+'; '+'; '+'; '+'; '+' |]
+  in
   let block_codepoints = Array.make 11 (Int32.of_int 0x2588) in
   let star_codepoints = Array.make 11 (Int32.of_int (Char.code '*')) in
   {
@@ -649,7 +653,8 @@ let interactive_tab renderer context =
 (* Main                                                                *)
 (* ------------------------------------------------------------------ *)
 
-let run renderer ~exit =
+let run renderer ~exit ~copy_to_clipboard =
+  ignore copy_to_clipboard;
   (* The reference demo calls [renderer.start()] because its tab showcase
      contains per-frame animations. Own the equivalent live request here so
      the shared harness can remain on-demand for other examples. *)
@@ -711,4 +716,5 @@ let () =
     | None -> 30
   in
   Opentui_examples_lib.App.run env ~target_frames_per_second:fps
-    ~init:(fun ~exit renderer -> run renderer ~exit)
+    ~init:(fun ~exit ~copy_to_clipboard renderer ->
+      run renderer ~exit ~copy_to_clipboard)

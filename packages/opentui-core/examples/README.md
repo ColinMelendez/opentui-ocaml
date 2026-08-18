@@ -71,8 +71,10 @@ nix develop -c dune exec ./packages/opentui-core/examples/opentui_markdown_demo.
 ```
 
 Markdown keys: `T` cycles themes, `C` toggles concealment, `S` starts or
-restarts streaming, `X` stops streaming, `?` toggles the help overlay, `ESC`
-closes the overlay or exits, and Ctrl+C exits.
+restarts streaming, `E` toggles endless streaming, `X` stops streaming,
+`[`/`]` adjust streaming speed, `?` toggles the help overlay, `ESC` closes the
+overlay or exits, and Ctrl+C exits. Drag across Markdown text to select it and
+copy the selection through OSC52 when the terminal supports it.
 
 Run the scrollbox hit-test:
 

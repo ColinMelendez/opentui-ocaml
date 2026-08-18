@@ -50,6 +50,7 @@ and behavior = {
   paste : (t -> Lib.Key_handler.paste_event -> unit) option;
   mouse_event : (t -> mouse_event -> unit) option;
   selection_changed : (t -> Lib.Selection.t option -> unit) option;
+  selected_text : (t -> (string, Error.t) result) option;
   should_start_selection : (t -> x:int -> y:int -> bool) option;
   render_before : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
   render_self : (t -> Buffer.t -> float -> (unit, Error.t) result) option;
@@ -224,6 +225,7 @@ let default_behavior =
     paste = None;
     mouse_event = None;
     selection_changed = None;
+    selected_text = None;
     should_start_selection = None;
     render_before = None;
     render_self = None;
@@ -238,7 +240,8 @@ let default_behavior =
   }
 
 let make_behavior ?on_update ?on_visibility ?on_resize ?on_remove ?lifecycle_pass ?key_press
-    ?key_release ?paste ?mouse_event ?selection_changed ?should_start_selection
+    ?key_release ?paste ?mouse_event ?selection_changed ?selected_text
+    ?should_start_selection
     ?render_before ?render_self ?render_after ?render_replacement ?scissor_rect
     ?visible_children ?destroy_self
     ?(updates_each_frame = false) ?(custom_scissor = false)
@@ -255,6 +258,7 @@ let make_behavior ?on_update ?on_visibility ?on_resize ?on_remove ?lifecycle_pas
     paste;
     mouse_event;
     selection_changed;
+    selected_text;
     should_start_selection;
     render_before;
     render_self;
@@ -1669,6 +1673,11 @@ module Private = struct
     Option.iter
       (fun callback -> callback renderable selection)
       renderable.behavior.selection_changed
+
+  let selected_text renderable =
+    match renderable.behavior.selected_text with
+    | None -> Ok ""
+    | Some callback -> callback renderable
 
   let resize_root root ~width ~height =
     match ensure_open root with

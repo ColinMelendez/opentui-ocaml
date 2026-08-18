@@ -261,12 +261,17 @@ let has_selectable_point renderable =
   has_selection_point renderable ~left ~top ~right ~bottom
 
 let selection_snapshot renderable : Lib.Selection.selectable =
+  let text =
+    match Renderable.Private.selected_text renderable with
+    | Ok value -> value
+    | Error _ -> ""
+  in
   {
     Lib.Selection.id = Renderable.num renderable;
     x = Renderable.screen_x renderable;
     y = Renderable.screen_y renderable;
     destroyed = Renderable.is_destroyed renderable;
-    text = "";
+    text;
   }
 
 let selection_contains_renderable renderables renderable =

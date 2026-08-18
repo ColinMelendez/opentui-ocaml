@@ -193,6 +193,7 @@ module Private : sig
     ?paste:(t -> Lib.Key_handler.paste_event -> unit) ->
     ?mouse_event:(t -> mouse_event -> unit) ->
     ?selection_changed:(t -> Lib.Selection.t option -> unit) ->
+    ?selected_text:(t -> (string, Error.t) result) ->
     ?should_start_selection:(t -> x:int -> y:int -> bool) ->
     ?render_before:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
     ?render_self:(t -> Buffer.t -> float -> (unit, Error.t) result) ->
@@ -262,6 +263,7 @@ module Private : sig
 
   val should_start_selection : t -> x:int -> y:int -> bool
   val selection_changed : t -> Lib.Selection.t option -> unit
+  val selected_text : t -> (string, Error.t) result
 
   val resize_root : t -> width:int32 -> height:int32 -> (unit, Error.t) result
   val render_root :

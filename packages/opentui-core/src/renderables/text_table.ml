@@ -784,6 +784,27 @@ let ensure_alive (state : t) =
     Error Error.Destroyed
   else Ok ()
 
+let selected_text_for_selection state =
+  Result.bind (ensure_alive state) (fun () ->
+      let rows = ref [] in
+      Array.iter
+        (fun row ->
+          let values = ref [] in
+          Array.iter
+            (fun cell ->
+              match Text_buffer_view.has_selection cell.text_buffer_view with
+              | Error _ | Ok false -> ()
+              | Ok true ->
+                  (match Text_buffer_view.selected_text cell.text_buffer_view with
+                  | Ok value when String.length value > 0 -> values := value :: !values
+                  | Ok _ | Error _ -> ()))
+            row;
+          match !values with
+          | [] -> ()
+          | _ -> rows := String.concat "\t" (List.rev !values) :: !rows)
+        state.cells;
+      Ok (String.concat "\n" (List.rev !rows)))
+
 let destroy_resources state =
   ignore (Renderable.Private.clear_measure_func state.renderable);
   close_cells state.cells;
@@ -859,6 +880,7 @@ let create context ?id ?(content = []) ?(column_alignments = [])
                     state.raster_dirty <- true
                   end)
                 ~selection_changed:(selection_changed state)
+                ~selected_text:(fun _renderable -> selected_text_for_selection state)
                 ~should_start_selection:(should_start_selection state)
                 ~destroy_self:(fun _ -> destroy_resources state) ()
             in
@@ -1030,26 +1052,7 @@ let has_selection state =
         state.cells;
       Ok !selected)
 
-let selected_text state =
-  Result.bind (ensure_alive state) (fun () ->
-      let rows = ref [] in
-      Array.iter
-        (fun row ->
-          let values = ref [] in
-          Array.iter
-            (fun cell ->
-              match Text_buffer_view.has_selection cell.text_buffer_view with
-              | Error _ | Ok false -> ()
-              | Ok true ->
-                  (match Text_buffer_view.selected_text cell.text_buffer_view with
-                  | Ok value when String.length value > 0 -> values := value :: !values
-                  | Ok _ | Error _ -> ()))
-            row;
-          match !values with
-          | [] -> ()
-          | _ -> rows := String.concat "\t" (List.rev !values) :: !rows)
-        state.cells;
-      Ok (String.concat "\n" (List.rev !rows)))
+let selected_text state = selected_text_for_selection state
 
 let selection state =
   Result.bind (ensure_alive state) (fun () ->

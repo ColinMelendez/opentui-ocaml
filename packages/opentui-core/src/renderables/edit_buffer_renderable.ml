@@ -643,6 +643,9 @@ let create context ?id ?(width_method = Edit_buffer.Unicode)
                   ~selection_changed:(fun _ selection ->
                     sync_pointer_selection editor selection;
                     ignore (request_render editor))
+                  ~selected_text:(fun _ ->
+                    Result.bind (ensure_alive editor) (fun () ->
+                        Editor_view.selected_text editor.editor_view))
                   ~should_start_selection:(fun _ ~x ~y ->
                     editor.selectable
                     && x >= int_of_float (Renderable.screen_x renderable)

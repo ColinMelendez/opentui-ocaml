@@ -215,6 +215,19 @@ The table alignment uses:
 *Press `?` for keybindings*
 |md}
 
+let md_codepoint_offsets =
+  let codepoints = O.Lib.Text_metrics.scan O.Lib.Text_metrics.Unicode md_content in
+  Array.init (Array.length codepoints + 1) (fun index ->
+      if index < Array.length codepoints then codepoints.(index).byte_start
+      else String.length md_content)
+
+let stream_content_length = Array.length md_codepoint_offsets - 1
+
+let stream_substring ~start ~finish =
+  let byte_start = md_codepoint_offsets.(start) in
+  let byte_finish = md_codepoint_offsets.(finish) in
+  String.sub md_content byte_start (byte_finish - byte_start)
+
 let rgba_of_hex hex =
   match O.Lib.Rgba.of_hex hex with
   | Ok value -> value
@@ -416,6 +429,23 @@ let themes =
 
 type stream_state = Normal | Streaming | Complete | Stopped
 
+type stream_speed = {
+  name : string;
+  min_delay : float;
+  max_delay : float;
+}
+
+let stream_speeds =
+  [|
+    { name = "Slowest"; min_delay = 0.2; max_delay = 0.5 };
+    { name = "Slower"; min_delay = 0.15; max_delay = 0.35 };
+    { name = "Slow"; min_delay = 0.1; max_delay = 0.25 };
+    { name = "Medium"; min_delay = 0.07; max_delay = 0.15 };
+    { name = "Fast"; min_delay = 0.04; max_delay = 0.1 };
+    { name = "Faster"; min_delay = 0.02; max_delay = 0.06 };
+    { name = "Fastest"; min_delay = 0.01; max_delay = 0.05 };
+  |]
+
 type demo = {
   renderer : O.Renderer.t;
   parent : Box.t;
@@ -436,6 +466,8 @@ type demo = {
   mutable stream_position : int;
   mutable stream_generation : int;
   mutable stream_state : stream_state;
+  mutable speed_index : int;
+  mutable endless_mode : bool;
   live_lease : O.Renderer.live_lease;
 }
 
@@ -503,14 +535,39 @@ let is_streaming = function
   | Streaming -> true
   | Normal | Complete | Stopped -> false
 
+let current_speed demo = stream_speeds.(demo.speed_index)
+
+let endless_status demo = if demo.endless_mode then " [ENDLESS]" else ""
+
+let count_lines text =
+  1 + String.fold_left (fun count character -> if Char.equal character '\n' then count + 1 else count) 0 text
+
+let javascript_char_count text =
+  let count = ref 0 in
+  Array.iter
+    (fun codepoint ->
+      count := !count + if codepoint.O.Lib.Text_metrics.code > 0xFFFF then 2 else 1)
+    (O.Lib.Text_metrics.scan O.Lib.Text_metrics.Unicode text);
+  !count
+
+let repeated_prefix ~count ~suffix =
+  let buffer = Buffer.create (String.length suffix + (count * String.length md_content)) in
+  for _ = 1 to count do
+    Buffer.add_string buffer md_content
+  done;
+  Buffer.add_string buffer suffix;
+  Buffer.contents buffer
+
 let set_status demo =
   let theme = current_theme demo in
-  let stream_status = stream_state_label demo.stream_state in
+  let speed = current_speed demo in
+  let stream_status = stream_state_label demo.stream_state ^ endless_status demo in
   let text =
-    Printf.sprintf "Theme: %s | Conceal: %s | Mode: %s | Press T/C/S/X/?"
+    Printf.sprintf
+      "Theme: %s | Conceal: %s | Mode: %s | Speed: %s | Select text to copy | Press T/C/S/E/[/]"
       theme.name
       (if demo.conceal_enabled then "ON" else "OFF")
-      stream_status
+      stream_status speed.name
   in
   ignore
     (expect_ok
@@ -528,50 +585,56 @@ let stop_streaming demo =
   demo.stream_generation <- demo.stream_generation + 1;
   if Markdown.streaming demo.markdown then
     ignore (expect_ok (Markdown.set_streaming demo.markdown false));
+  demo.stream_position <- 0;
   demo.stream_state <- Stopped;
   set_status demo
 
 let restore_full_markdown demo =
+  ignore (expect_ok (O.Renderer.clear_selection demo.renderer));
   stop_streaming demo;
   ignore (expect_ok (Markdown.set_content demo.markdown md_content));
   demo.stream_position <- 0;
   demo.stream_state <- Normal;
   set_status demo
 
-let stream_chunk_size = 48
-let stream_delay = 0.05
-
 let rec schedule_stream_tick demo generation =
   if
     is_streaming demo.stream_state
     && Int.equal generation demo.stream_generation
   then
+    let speed = current_speed demo in
+    let delay = speed.min_delay +. Random.float (speed.max_delay -. speed.min_delay) in
     let timer =
-      Clock.schedule demo.clock ~delay:stream_delay (fun () ->
+      Clock.schedule demo.clock ~delay (fun () ->
           demo.stream_timer <- None;
-          if
-            is_streaming demo.stream_state
-            && Int.equal generation demo.stream_generation
-          then begin
-            let content_length = String.length md_content in
-            let next_position =
-              min content_length (demo.stream_position + stream_chunk_size)
-            in
-            let next_content = String.sub md_content 0 next_position in
-            ignore (expect_ok (Markdown.set_content demo.markdown next_content));
-            demo.stream_position <- next_position;
-            if Int.equal next_position content_length then begin
-              ignore (expect_ok (Markdown.set_streaming demo.markdown false));
-              demo.stream_state <- Complete;
-              set_status demo
-            end
-            else begin
-              set_status demo;
-              schedule_stream_tick demo generation
-            end
-          end)
+          stream_next_chunk demo generation)
     in
     demo.stream_timer <- Some timer
+
+and stream_next_chunk demo generation =
+  if
+    is_streaming demo.stream_state
+    && Int.equal generation demo.stream_generation
+  then begin
+    let content_length = stream_content_length in
+    let chunk_size = 1 + Random.int 50 in
+    let position_in_iteration = demo.stream_position mod content_length in
+    let next_position = min content_length (position_in_iteration + chunk_size) in
+    let iteration_content = stream_substring ~start:0 ~finish:next_position in
+    let full_content =
+      repeated_prefix ~count:(demo.stream_position / content_length)
+        ~suffix:iteration_content
+    in
+    ignore (expect_ok (Markdown.set_content demo.markdown full_content));
+    demo.stream_position <- demo.stream_position + chunk_size;
+    if demo.endless_mode || demo.stream_position < content_length then begin
+      schedule_stream_tick demo generation
+    end
+    else begin
+      demo.stream_state <- Complete;
+      set_status demo
+    end
+  end
 
 let start_streaming demo =
   cancel_stream_timer demo;
@@ -579,12 +642,33 @@ let start_streaming demo =
   let generation = demo.stream_generation in
   demo.stream_position <- 0;
   demo.stream_state <- Streaming;
+  ignore (expect_ok (O.Renderer.clear_selection demo.renderer));
   ignore (expect_ok (Markdown.set_streaming demo.markdown true));
   ignore (expect_ok (Markdown.set_content demo.markdown ""));
   Scroll_box.set_sticky_scroll demo.scroll_box true;
   Scroll_box.set_sticky_start demo.scroll_box (Some Scroll_box.Bottom);
   set_status demo;
-  schedule_stream_tick demo generation
+  stream_next_chunk demo generation
+
+let update_selection_status demo ~copy_to_clipboard selection =
+  let selected_text = O.Lib.Selection.selected_text selection in
+  if String.length selected_text > 0 then begin
+    let line_count = count_lines selected_text in
+    let summary =
+      if line_count > 1 then Printf.sprintf "%d lines" line_count
+      else Printf.sprintf "%d chars" (javascript_char_count selected_text)
+    in
+    let text =
+      if copy_to_clipboard selected_text then
+        Printf.sprintf "Copied selection to clipboard (%s)" summary
+      else Printf.sprintf "Selected %s; clipboard write unavailable" summary
+    in
+    let theme = current_theme demo in
+    ignore
+      (expect_ok
+         (Text.set_content demo.status
+            (with_fg (theme_default_color theme) text)))
+  end
 
 let refresh_chrome demo =
   let theme = current_theme demo in
@@ -603,7 +687,10 @@ let refresh_chrome demo =
              \  C : Toggle concealment\n\n\
               Streaming:\n\
              \  S : Start/restart streaming\n\
-             \  X : Stop streaming\n\n\
+             \  E : Toggle endless mode\n\
+             \  X : Stop streaming\n\
+             \  [ : Decrease speed\n\
+             \  ] : Increase speed\n\n\
               Other:\n\
              \  ? : Toggle this help screen\n\
              \  ESC : Close help or exit\n\
@@ -611,6 +698,7 @@ let refresh_chrome demo =
              \  Backtick : Toggle console")))
 
 let apply_theme demo =
+  ignore (expect_ok (O.Renderer.clear_selection demo.renderer));
   let theme = current_theme demo in
   ignore
     (expect_ok
@@ -652,7 +740,8 @@ let apply_theme demo =
   refresh_chrome demo;
   set_status demo
 
-let run renderer ~exit =
+let run renderer ~exit ~copy_to_clipboard =
+  Random.self_init ();
   let theme = List.nth themes 0 in
   let context = O.Renderer.context renderer in
   let clock =
@@ -774,7 +863,10 @@ let run renderer ~exit =
               \  C : Toggle concealment\n\n\
                Streaming:\n\
               \  S : Start/restart streaming\n\
-              \  X : Stop streaming\n\n\
+              \  E : Toggle endless mode\n\
+              \  X : Stop streaming\n\
+              \  [ : Decrease speed\n\
+              \  ] : Increase speed\n\n\
                Other:\n\
               \  ? : Toggle this help screen\n\
               \  ESC : Close help or exit\n\
@@ -878,17 +970,27 @@ let run renderer ~exit =
       stream_position = 0;
       stream_generation = 0;
       stream_state = Normal;
+      speed_index = 0;
+      endless_mode = false;
       live_lease;
     }
+  in
+  refresh_chrome demo;
+  set_status demo;
+  let console = O.Renderer.console renderer in
+  let selection_subscription =
+    expect_ok
+       (O.Renderer.on_selection renderer (function
+         | None -> ()
+         | Some selection ->
+             update_selection_status demo ~copy_to_clipboard selection))
   in
   ignore
     (expect_ok
        (O.Renderer.attach_before_destroy renderer (fun () ->
             cancel_stream_timer demo;
+            O.Event_subscription.cancel selection_subscription;
             O.Renderer.release_live_lease demo.live_lease)));
-  refresh_chrome demo;
-  set_status demo;
-  let console = O.Renderer.console renderer in
   ignore
     (O.Renderer.on_keypress renderer (fun key_event ->
          match Handler.key_event_kind key_event with
@@ -938,13 +1040,26 @@ let run renderer ~exit =
                          (demo.theme_index + 1) mod List.length themes;
                        apply_theme demo
                    | "c" ->
-                       stop_streaming demo;
+                       restore_full_markdown demo;
                        demo.conceal_enabled <- not demo.conceal_enabled;
                        ignore
                          (expect_ok
                             (Markdown.set_conceal demo.markdown
                                demo.conceal_enabled));
                        set_status demo
+                   | "e" ->
+                       demo.endless_mode <- not demo.endless_mode;
+                       set_status demo
+                   | "[" ->
+                       if demo.speed_index > 0 then begin
+                         demo.speed_index <- demo.speed_index - 1;
+                         set_status demo
+                       end
+                   | "]" ->
+                       if demo.speed_index < Array.length stream_speeds - 1 then begin
+                         demo.speed_index <- demo.speed_index + 1;
+                         set_status demo
+                       end
                    | "s" -> start_streaming demo
                    | "x" -> stop_streaming demo
                    | _ -> ())
@@ -956,4 +1071,5 @@ let run renderer ~exit =
 let () =
   Eio_main.run @@ fun env ->
   Opentui_examples_lib.App.run env ~target_frames_per_second:60
-    ~init:(fun ~exit renderer -> run renderer ~exit)
+    ~init:(fun ~exit ~copy_to_clipboard renderer ->
+      run renderer ~exit ~copy_to_clipboard)
