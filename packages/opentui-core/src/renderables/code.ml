@@ -520,19 +520,11 @@ let create context ?id ?(content = "") ?filetype ?syntax_style
           Error error
       | Ok subscription ->
           ignore subscription;
-          (match
-             Text_buffer_renderable.set_syntax_style text_buffer_renderable
-               (Some syntax_style)
-           with
+          (match refresh code with
+          | Ok () -> Ok code
           | Error error ->
               Text_buffer_renderable.destroy text_buffer_renderable;
-              Error error
-          | Ok () ->
-              (match refresh code with
-              | Ok () -> Ok code
-              | Error error ->
-                  Text_buffer_renderable.destroy text_buffer_renderable;
-                  Error error)))
+              Error error))
 
 let set_content code value =
   match ensure_alive code with
@@ -548,18 +540,14 @@ let set_syntax_style code value =
   match ensure_alive code with
   | Error error -> Error error
   | Ok () ->
-      (match Text_buffer_renderable.set_syntax_style code.text_buffer_renderable
-               (Some value) with
-      | Error error -> Error error
-      | Ok () ->
-          let previous = code.syntax_style in
-          let release_previous = code.owns_syntax_style && previous != value in
-          code.syntax_style <- value;
-          if release_previous then begin
-            code.owns_syntax_style <- false;
-            Syntax_style.destroy previous
-          end;
-          refresh code)
+      let previous = code.syntax_style in
+      let release_previous = code.owns_syntax_style && previous != value in
+      code.syntax_style <- value;
+      if release_previous then begin
+        code.owns_syntax_style <- false;
+        Syntax_style.destroy previous
+      end;
+      refresh code
 
 let set_tree_sitter_client code value =
   match ensure_alive code with

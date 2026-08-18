@@ -32,6 +32,9 @@ val set_text : t -> string -> (unit, Error.t) result
 val append : t -> string -> (unit, Error.t) result
 val clear : t -> (unit, Error.t) result
 val set_styled_text : t -> Lib.Styled_text.t -> (unit, Error.t) result
+(** [set_styled_text] renders each chunk's colors, attributes, and link through
+    the renderable's attached syntax-style registry. A registry is installed
+    automatically when the renderable is created. *)
 val text : t -> (string, Error.t) result
 val styled_text : t -> (Lib.Styled_text.t option, Error.t) result
 
@@ -43,6 +46,10 @@ val set_default_attributes : t -> int option -> (unit, Error.t) result
 val default_attributes : t -> (int option, Error.t) result
 val reset_defaults : t -> (unit, Error.t) result
 val set_syntax_style : t -> Syntax_style.t option -> (unit, Error.t) result
+(** [set_syntax_style] replaces the registry used to resolve native style
+    spans. The supplied registry remains owned by the caller. Passing [None]
+    disables rendering of chunk-specific styles until another registry is
+    attached. *)
 val syntax_style : t -> (Syntax_style.t option, Error.t) result
 val set_tab_width : t -> int -> (unit, Error.t) result
 val tab_width : t -> (int, Error.t) result

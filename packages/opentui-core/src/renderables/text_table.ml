@@ -7,6 +7,7 @@ type column_fitter = Proportional | Balanced
 type cell_state = {
   text_buffer : Text_buffer.t;
   text_buffer_view : Text_buffer_view.t;
+  syntax_style : Syntax_style.t;
 }
 
 type border_layout = {
@@ -106,14 +107,21 @@ let cell_alignment_offset state cell column =
 
 let close_cell cell =
   ignore (Text_buffer_view.close cell.text_buffer_view);
-  ignore (Text_buffer.close cell.text_buffer)
+  ignore (Text_buffer.set_syntax_style cell.text_buffer None);
+  ignore (Text_buffer.close cell.text_buffer);
+  Syntax_style.destroy cell.syntax_style
 
 let close_cells cells =
   Array.iter (fun row -> Array.iter close_cell row) cells
 
 let create_cell state content =
   Result.bind (Text_buffer.create state.width_method) (fun text_buffer ->
-      let cleanup () = ignore (Text_buffer.close text_buffer) in
+      let syntax_style = Syntax_style.create () in
+      let cleanup () =
+        ignore (Text_buffer.set_syntax_style text_buffer None);
+        ignore (Text_buffer.close text_buffer);
+        Syntax_style.destroy syntax_style
+      in
       Result.bind
         (Text_buffer.set_default_fg text_buffer (Some state.default_fg))
         (fun () ->
@@ -124,21 +132,28 @@ let create_cell state content =
                 (Text_buffer.set_default_attributes text_buffer
                    (Some (Int32.to_int state.default_attributes)))
                 (fun () ->
-                  Result.bind (Text_buffer.set_styled_text text_buffer
-                                 (styled_text_of_content content))
+                  Result.bind
+                    (Text_buffer.set_syntax_style text_buffer
+                       (Some syntax_style))
                     (fun () ->
-                      match Text_buffer_view.create text_buffer with
-                      | Error error -> cleanup (); Error error
-                      | Ok text_buffer_view ->
-                          (match
-                             Text_buffer_view.set_wrap_mode text_buffer_view
-                               state.wrap_mode
-                           with
-                          | Ok () -> Ok { text_buffer; text_buffer_view }
-                          | Error error ->
-                              ignore (Text_buffer_view.close text_buffer_view);
-                              cleanup ();
-                              Error error))))))
+                      Result.bind
+                        (Text_buffer.set_styled_text text_buffer
+                           (styled_text_of_content content))
+                        (fun () ->
+                          match Text_buffer_view.create text_buffer with
+                          | Error error -> cleanup (); Error error
+                          | Ok text_buffer_view ->
+                              (match
+                                 Text_buffer_view.set_wrap_mode text_buffer_view
+                                   state.wrap_mode
+                               with
+                              | Ok () ->
+                                  Ok { text_buffer; text_buffer_view; syntax_style }
+                              | Error error ->
+                                  ignore
+                                    (Text_buffer_view.close text_buffer_view);
+                                  cleanup ();
+                                  Error error)))))))
 
 let create_cells state content =
   let rows = ref [] in

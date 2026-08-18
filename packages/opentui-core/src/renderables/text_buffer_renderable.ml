@@ -3,6 +3,7 @@ type t = {
   text_buffer : Text_buffer.t;
   text_buffer_view : Text_buffer_view.t;
   native_measure : Native_measure.t;
+  default_syntax_style : Syntax_style.t;
   mutable wrap_mode : Text_buffer_view.wrap_mode;
   selectable : bool;
   scrollable : bool;
@@ -13,14 +14,20 @@ type t = {
 }
 
 let close_resources text_buffer_renderable =
+  ignore
+    (Text_buffer.set_syntax_style text_buffer_renderable.text_buffer None);
   ignore (Native_measure.close text_buffer_renderable.native_measure);
   ignore (Text_buffer_view.close text_buffer_renderable.text_buffer_view);
-  ignore (Text_buffer.close text_buffer_renderable.text_buffer)
+  ignore (Text_buffer.close text_buffer_renderable.text_buffer);
+  Syntax_style.destroy text_buffer_renderable.default_syntax_style
 
-let cleanup_creation renderable text_buffer text_buffer_view native_measure =
+let cleanup_creation renderable text_buffer text_buffer_view native_measure
+    syntax_style =
+  ignore (Text_buffer.set_syntax_style text_buffer None);
   ignore (Native_measure.close native_measure);
   ignore (Text_buffer_view.close text_buffer_view);
   ignore (Text_buffer.close text_buffer);
+  Syntax_style.destroy syntax_style;
   Renderable.destroy renderable
 
 let mark_measure_dirty text_buffer_renderable =
@@ -206,76 +213,96 @@ let create context ?id ?(width_method = Text_buffer.Wcwidth)
           Renderable.destroy renderable;
           Error error
       | Ok text_buffer ->
-          (match Text_buffer_view.create text_buffer with
+          let default_syntax_style = Syntax_style.create () in
+          (match
+             Text_buffer.set_syntax_style text_buffer
+               (Some default_syntax_style)
+           with
           | Error error ->
+              Syntax_style.destroy default_syntax_style;
               ignore (Text_buffer.close text_buffer);
               Renderable.destroy renderable;
               Error error
-          | Ok text_buffer_view ->
-              (match
-                 Text_buffer_view.set_wrap_mode text_buffer_view wrap_mode
-               with
+          | Ok () ->
+              (match Text_buffer_view.create text_buffer with
               | Error error ->
-                  ignore (Text_buffer_view.close text_buffer_view);
+                  ignore (Text_buffer.set_syntax_style text_buffer None);
+                  Syntax_style.destroy default_syntax_style;
                   ignore (Text_buffer.close text_buffer);
                   Renderable.destroy renderable;
                   Error error
-              | Ok () ->
-                  (match Native_measure.create () with
+              | Ok text_buffer_view ->
+                  (match
+                     Text_buffer_view.set_wrap_mode text_buffer_view wrap_mode
+                   with
                   | Error error ->
                       ignore (Text_buffer_view.close text_buffer_view);
+                      ignore (Text_buffer.set_syntax_style text_buffer None);
+                      Syntax_style.destroy default_syntax_style;
                       ignore (Text_buffer.close text_buffer);
                       Renderable.destroy renderable;
                       Error error
-                  | Ok native_measure ->
-                      (match
-                         Renderable.Private.with_yoga_node renderable
-                           (fun node ->
-                             Native_measure.attach_yoga_node native_measure node)
-                       with
+                  | Ok () ->
+                      (match Native_measure.create () with
                       | Error error ->
-                          cleanup_creation renderable text_buffer
-                            text_buffer_view native_measure;
+                          ignore (Text_buffer_view.close text_buffer_view);
+                          ignore (Text_buffer.set_syntax_style text_buffer None);
+                          Syntax_style.destroy default_syntax_style;
+                          ignore (Text_buffer.close text_buffer);
+                          Renderable.destroy renderable;
                           Error error
-                      | Ok () ->
+                      | Ok native_measure ->
                           (match
-                             Native_measure.set_measure_target native_measure
-                               text_buffer_view
+                             Renderable.Private.with_yoga_node renderable
+                               (fun node ->
+                                 Native_measure.attach_yoga_node native_measure node)
                            with
                           | Error error ->
                               cleanup_creation renderable text_buffer
-                                text_buffer_view native_measure;
+                                text_buffer_view native_measure
+                                default_syntax_style;
                               Error error
                           | Ok () ->
-                              let text_buffer_renderable =
-                                {
-                                  renderable;
-                                  text_buffer;
-                                  text_buffer_view;
-                                  native_measure;
-                                  wrap_mode;
-                                  selectable;
-                                  scrollable;
-                                  scroll_x = 0;
-                                  scroll_y = 0;
-                                  last_local_selection = None;
-                                  lifecycle_pass = None;
-                                }
-                              in
-                              install_behavior text_buffer_renderable;
-                              (match Render_context.width context with
+                              (match
+                                 Native_measure.set_measure_target native_measure
+                                   text_buffer_view
+                               with
                               | Error error ->
-                                  Renderable.destroy renderable;
+                                  cleanup_creation renderable text_buffer
+                                    text_buffer_view native_measure
+                                    default_syntax_style;
                                   Error error
-                              | Ok width ->
-                                  (match
-                                     set_wrap_width_for_dimensions
-                                       text_buffer_renderable (Int32.to_int width)
-                                   with
+                              | Ok () ->
+                                  let text_buffer_renderable =
+                                    {
+                                      renderable;
+                                      text_buffer;
+                                      text_buffer_view;
+                                      native_measure;
+                                      default_syntax_style;
+                                      wrap_mode;
+                                      selectable;
+                                      scrollable;
+                                      scroll_x = 0;
+                                      scroll_y = 0;
+                                      last_local_selection = None;
+                                      lifecycle_pass = None;
+                                    }
+                                  in
+                                  install_behavior text_buffer_renderable;
+                                  (match Render_context.width context with
                                   | Error error ->
                                       Renderable.destroy renderable;
                                       Error error
-                                  | Ok () -> Ok text_buffer_renderable))))))))
+                                  | Ok width ->
+                                      (match
+                                         set_wrap_width_for_dimensions
+                                           text_buffer_renderable (Int32.to_int width)
+                                       with
+                                      | Error error ->
+                                          Renderable.destroy renderable;
+                                          Error error
+                                      | Ok () -> Ok text_buffer_renderable)))))))))
 
 let as_renderable text_buffer_renderable = text_buffer_renderable.renderable
 let text_buffer text_buffer_renderable = text_buffer_renderable.text_buffer

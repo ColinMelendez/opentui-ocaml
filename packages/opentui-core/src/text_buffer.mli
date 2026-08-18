@@ -34,8 +34,10 @@ val load_file : t -> path:string -> (unit, Error.t) result
 (** [load_file buffer ~path] replaces the text with the file at [path]. *)
 
 val set_styled_text : t -> Lib.Styled_text.t -> (unit, Error.t) result
-(** [set_styled_text] stores the plain text and retains its style chunks for
-    the renderer-facing composition layer. *)
+(** [set_styled_text] stores the plain text and materializes its style chunks
+    as native style spans. The buffer must have a {!Syntax_style.t} attached
+    with {!set_syntax_style} before this call for foreground colors,
+    backgrounds, attributes, and links to be rendered by a view. *)
 
 val text : t -> (string, Error.t) result
 (** [text buffer] returns the current UTF-8 text retained by the core owner. *)
