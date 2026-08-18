@@ -10,7 +10,7 @@ type error =
   | Clock_mismatch
   | Already_attached
   | Already_running
-  | Invalid_frames_per_second
+  | Invalid_frame_rate
   | Render_error of Error.t
 
 val message : error -> string
@@ -20,28 +20,38 @@ val create :
   sw:Eio.Switch.t ->
   clock:Eio_clock.t ->
   renderer:Renderer.t ->
-  ?frames_per_second:int ->
+  ?target_frames_per_second:int ->
+  ?max_frames_per_second:int ->
   unit ->
   (t, error) result
 (** [create] attaches one scheduler to [renderer]. The renderer must have been
-    created with the same Eio-backed clock capability. *)
+    created with the same Eio-backed clock capability. Live frames use
+    [target_frames_per_second]. Coalesced on-demand frames are limited by
+    [max_frames_per_second]. *)
 
 val run : t -> (unit, error) result
-(** [run] consumes requests and drives live frames on the caller's Eio fiber.
-    Recoverable renderer frame failures are emitted through the renderer's
-    render-error event and retried at the configured frame cadence. The
-    operation returns when [close] is called, the renderer is destroyed, or a
-    structural scheduler error occurs. It must run in the clock's owner domain. *)
+(** [run] consumes coalesced render requests and drives live frames on the
+    caller's Eio fiber. Recoverable renderer frame failures are emitted through
+    the renderer's render-error event and retried at the active frame cadence.
+    The operation returns when [close] is called, the renderer is destroyed, or
+    a structural scheduler error occurs. It must run in the clock's owner
+    domain. *)
 
-val set_frames_per_second : t -> int -> (unit, error) result
-(** [set_frames_per_second scheduler frames_per_second] changes the live frame
-    cadence to [frames_per_second] while the scheduler is running or idle. The
-    new interval takes effect on the next deadline computation; the caller is
-    trusted to choose a sensible positive value. Returns [Closed] or
-    [Invalid_frames_per_second] without mutation on failure. *)
+val set_target_frames_per_second : t -> int -> (unit, error) result
+(** [set_target_frames_per_second scheduler frames_per_second] changes the live
+    frame cadence while the scheduler is running or idle. Non-positive values
+    return [Invalid_frame_rate] without mutation. *)
 
-val frames_per_second : t -> (int, error) result
-(** [frames_per_second scheduler] reports the current configured cadence. *)
+val target_frames_per_second : t -> (int, error) result
+(** [target_frames_per_second scheduler] reports the live frame cadence. *)
+
+val set_max_frames_per_second : t -> int -> (unit, error) result
+(** [set_max_frames_per_second scheduler frames_per_second] changes the maximum
+    cadence for coalesced on-demand frames while the scheduler is running or
+    idle. Non-positive values return [Invalid_frame_rate] without mutation. *)
+
+val max_frames_per_second : t -> (int, error) result
+(** [max_frames_per_second scheduler] reports the on-demand frame limit. *)
 
 val close : t -> (unit, error) result
 (** [close] idempotently stops the scheduler without destroying its renderer or

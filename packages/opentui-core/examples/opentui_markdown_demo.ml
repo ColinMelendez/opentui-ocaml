@@ -436,6 +436,7 @@ type demo = {
   mutable stream_position : int;
   mutable stream_generation : int;
   mutable stream_state : stream_state;
+  live_lease : O.Renderer.live_lease;
 }
 
 let current_theme demo = List.nth themes demo.theme_index
@@ -852,6 +853,10 @@ let run renderer ~exit =
     (expect_ok
        (O.Layout_children.add (Box.children parent) (Text.as_renderable status)));
   ignore (expect_ok (O.Renderable.focus (Scroll_box.as_renderable scroll_box)));
+  (* The reference demo calls [renderer.start()] because streaming and the
+     markdown showcase use a continuously refreshed frame loop. Keep that
+     ownership local to this demo rather than making the shared harness live. *)
+  let live_lease = expect_ok (O.Renderer.acquire_live_lease renderer) in
   let demo =
     {
       renderer;
@@ -873,12 +878,14 @@ let run renderer ~exit =
       stream_position = 0;
       stream_generation = 0;
       stream_state = Normal;
+      live_lease;
     }
   in
   ignore
     (expect_ok
        (O.Renderer.attach_before_destroy renderer (fun () ->
-            cancel_stream_timer demo)));
+            cancel_stream_timer demo;
+            O.Renderer.release_live_lease demo.live_lease)));
   refresh_chrome demo;
   set_status demo;
   let console = O.Renderer.console renderer in
@@ -948,5 +955,5 @@ let run renderer ~exit =
 
 let () =
   Eio_main.run @@ fun env ->
-  Opentui_examples_lib.App.run env ~init:(fun ~exit renderer ->
-      run renderer ~exit)
+  Opentui_examples_lib.App.run env ~target_frames_per_second:60
+    ~init:(fun ~exit renderer -> run renderer ~exit)

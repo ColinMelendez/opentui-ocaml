@@ -113,12 +113,23 @@ let () =
           let mono_clock = Eio.Stdenv.mono_clock env in
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer = expect_renderer (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
-          (match Scheduler.create ~sw ~clock ~renderer ~frames_per_second:0 () with
-          | Error Scheduler.Invalid_frames_per_second -> ()
+          (match
+             Scheduler.create ~sw ~clock ~renderer
+               ~target_frames_per_second:0 ()
+           with
+          | Error Scheduler.Invalid_frame_rate -> ()
           | Error error -> fail (Scheduler.message error)
           | Ok scheduler ->
               close_scheduler scheduler;
-              fail "zero frames_per_second was accepted");
+              fail "zero target frame rate was accepted");
+          (match
+             Scheduler.create ~sw ~clock ~renderer ~max_frames_per_second:0 ()
+           with
+          | Error Scheduler.Invalid_frame_rate -> ()
+          | Error error -> fail (Scheduler.message error)
+          | Ok scheduler ->
+              close_scheduler scheduler;
+              fail "zero maximum frame rate was accepted");
           (match Scheduler.create ~sw ~clock ~renderer () with
           | Error Scheduler.Missing_clock -> ()
           | Error error -> fail (Scheduler.message error)
@@ -353,7 +364,7 @@ let () =
           let scheduler =
             expect_scheduler
               (Scheduler.create ~sw ~clock ~renderer
-                 ~frames_per_second:40 ())
+                 ~target_frames_per_second:1 ~max_frames_per_second:100 ())
           in
           let frame_times = ref [] in
           let frames = ref 0 in
@@ -373,8 +384,13 @@ let () =
           expect_scheduler_success result;
           (match List.rev !frame_times with
            | first :: second :: third :: _ ->
-               equal bool true (Float.compare (second -. first) 0.015 >= 0);
-               equal bool true (Float.compare (third -. second) 0.015 >= 0)
+               (* Requested frames use the 100fps maximum, not the 1fps live
+                  target. The upper bound leaves room for a loaded CI host
+                  while still catching an accidental live-rate wait. *)
+               equal bool true (Float.compare (second -. first) 0.007 >= 0);
+               equal bool true (Float.compare (second -. first) 0.5 < 0);
+               equal bool true (Float.compare (third -. second) 0.007 >= 0);
+               equal bool true (Float.compare (third -. second) 0.5 < 0)
            | _ -> fail "paced request test rendered fewer than three frames");
           destroy_renderer renderer);
       test "live ownership drives paced frames and stops after drop" (fun () ->
@@ -389,7 +405,8 @@ let () =
           in
           let scheduler =
             expect_scheduler
-              (Scheduler.create ~sw ~clock ~renderer ~frames_per_second:100 ())
+              (Scheduler.create ~sw ~clock ~renderer
+                 ~target_frames_per_second:100 ~max_frames_per_second:40 ())
           in
           let frame_times = ref [] in
           let deltas = ref [] in
@@ -422,7 +439,7 @@ let () =
           | _ -> fail "live rendering produced too few frame timestamps");
           equal int 0 (expect_renderer (Renderer.live_request_count renderer));
           destroy_renderer renderer);
-      test "set_frames_per_second mutates the live cadence and validates" (fun () ->
+      test "set frame rates mutates both cadences and validates" (fun () ->
           Eio_main.run @@ fun env ->
           Eio.Switch.run @@ fun sw ->
           let mono_clock = Eio.Stdenv.mono_clock env in
@@ -434,16 +451,33 @@ let () =
           in
           let scheduler =
             expect_scheduler
-              (Scheduler.create ~sw ~clock ~renderer ~frames_per_second:100 ())
+              (Scheduler.create ~sw ~clock ~renderer
+                 ~target_frames_per_second:100 ~max_frames_per_second:80 ())
           in
-          (* Validation rejects non-positive values without touching cadence. *)
-          (match Scheduler.set_frames_per_second scheduler 0 with
-          | Error Scheduler.Invalid_frames_per_second -> ()
+          (* Validation rejects non-positive values without touching either
+             cadence. *)
+          (match Scheduler.set_target_frames_per_second scheduler 0 with
+          | Error Scheduler.Invalid_frame_rate -> ()
           | Error error -> fail (Scheduler.message error)
-          | Ok () -> fail "zero frames_per_second was accepted by the setter");
-          equal int 100 (expect_scheduler (Scheduler.frames_per_second scheduler));
-          ignore (expect_scheduler (Scheduler.set_frames_per_second scheduler 40));
-          equal int 40 (expect_scheduler (Scheduler.frames_per_second scheduler));
+          | Ok () -> fail "zero target frame rate was accepted by the setter");
+          (match Scheduler.set_max_frames_per_second scheduler 0 with
+          | Error Scheduler.Invalid_frame_rate -> ()
+          | Error error -> fail (Scheduler.message error)
+          | Ok () -> fail "zero maximum frame rate was accepted by the setter");
+          equal int 100
+            (expect_scheduler (Scheduler.target_frames_per_second scheduler));
+          equal int 80
+            (expect_scheduler (Scheduler.max_frames_per_second scheduler));
+          ignore
+            (expect_scheduler
+               (Scheduler.set_target_frames_per_second scheduler 40));
+          ignore
+            (expect_scheduler
+               (Scheduler.set_max_frames_per_second scheduler 20));
+          equal int 40
+            (expect_scheduler (Scheduler.target_frames_per_second scheduler));
+          equal int 20
+            (expect_scheduler (Scheduler.max_frames_per_second scheduler));
           let frame_times = ref [] in
           ignore
             (expect_renderer
@@ -463,8 +497,8 @@ let () =
           equal int 2 (List.length !frame_times);
           (match List.rev !frame_times with
           | first :: second :: _ ->
-              (* 40 fps => ~25ms between frame starts; 100 fps (~10ms) was
-                 replaced by the setter before the loop ran. *)
+              (* 40 fps => ~25ms between live frame starts; the initial 100 fps
+                 target was replaced by the setter before the loop ran. *)
               equal bool true
                 (Float.compare (second -. first) 0.015 >= 0)
           | _ -> fail "live rendering produced too few frame timestamps");
@@ -482,7 +516,8 @@ let () =
           let scheduler =
             expect_scheduler
               (Scheduler.create ~sw ~clock ~renderer
-                 ~frames_per_second:Int.max_int ())
+                 ~target_frames_per_second:Int.max_int
+                 ~max_frames_per_second:Int.max_int ())
           in
           let frames = ref 0 in
           ignore

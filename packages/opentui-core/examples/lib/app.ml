@@ -3,8 +3,10 @@
    Owns the parts of the reference `createCliRenderer` plumbing that the OCaml
    port expresses explicitly: a raw-mode terminal session, an alternate screen,
    a bounded input queue fed by one fiber and drained by a dispatch fiber, a
-   renderer scheduler driving frames, and a pre-render driver for per-frame
-   animation updates. *)
+   renderer scheduler driving requested or live frames, and pre-render drivers
+   for terminal-size polling and demo-owned animation. Each demo opts into
+   continuous rendering when it matches the reference demo's explicit start
+   behavior. *)
 
 module O = Opentui_core
 module Output = O.Platform.Eio_runtime.Output_flow
@@ -158,7 +160,8 @@ let dispatch_handle renderer = function
            ~height:(Int32.of_int (Size.rows size)))
   | Events.Input event -> ignore (O.Renderer.handle_input renderer event)
 
-let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
+let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
+    ?(kitty_events = true) env ~init =
   Eio.Switch.run @@ fun sw ->
   let mono_clock = Eio.Stdenv.mono_clock env in
   let input_fd, output_fd = open_tty ~sw () in
@@ -217,12 +220,13 @@ let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
      terminal session. *)
   let scheduler =
     expect_scheduler
-      (Scheduler.create ~sw ~clock ~renderer ~frames_per_second ())
+      (Scheduler.create ~sw ~clock ~renderer ~target_frames_per_second
+         ~max_frames_per_second ())
   in
   let exit () = ignore (Scheduler.close scheduler) in
-  (* Besides SIGWINCH, poll the terminal size on every frame so the retained
-     tree follows interactive window resizes even when the signal path is
-     unavailable or unreliable. *)
+  (* Besides SIGWINCH, poll the terminal size on each frame that is already
+     being rendered. The resize signal path still requests a frame for
+     on-demand demos when no live loop is active. *)
   let last_size = ref tty_size in
   ignore
     (expect_ok
@@ -257,7 +261,10 @@ let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
       Fun.protect
         (fun () ->
           init ~exit renderer;
-          ignore (expect_ok (O.Renderer.request_live renderer));
+          (* Retained-tree mutations normally request this first frame. Keep
+             the harness deterministic for demos that only configure native
+             renderer state, while leaving the scheduler idle afterwards. *)
+          ignore (expect_ok (O.Renderer.request_render renderer));
           match Scheduler.run scheduler with
           | Ok () -> ()
           | Error error -> invalid_arg (Scheduler.message error))

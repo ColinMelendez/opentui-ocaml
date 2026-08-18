@@ -234,7 +234,8 @@ let () =
                     end)));
           let scheduler =
             expect_scheduler
-              (Scheduler.create ~sw ~clock ~renderer ~frames_per_second:60 ())
+              (Scheduler.create ~sw ~clock ~renderer
+                 ~target_frames_per_second:60 ~max_frames_per_second:60 ())
           in
           ignore (expect_ok (Renderer.request_render renderer));
           let scheduler_result = start_scheduler ~sw scheduler in

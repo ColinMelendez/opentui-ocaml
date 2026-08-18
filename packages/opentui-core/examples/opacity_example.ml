@@ -333,7 +333,7 @@ let run renderer ~exit =
 
 let () =
   Eio_main.run @@ fun env ->
-  let frames_per_second =
+  let target_frames_per_second =
     match Sys.getenv_opt "OPENTUI_DEMO_FPS" with
     | Some raw -> (
         match int_of_string_opt raw with
@@ -344,5 +344,6 @@ let () =
                  "OPENTUI_DEMO_FPS must be a positive integer, got %S" raw))
     | None -> 30
   in
-  Opentui_examples_lib.App.run env ~frames_per_second
+  Opentui_examples_lib.App.run env
+    ~target_frames_per_second
     ~init:(fun ~exit renderer -> run renderer ~exit)

@@ -34,7 +34,9 @@ The shared example helpers live in `lib/`:
 - `app.ml` — the Eio application harness: terminal session (raw mode,
   alternate screen, mouse and kitty modes), the bounded input queue and
   dispatch loop, the renderer scheduler, and the renderer `Sink` wired to
-  `Output_flow.write_frame`.
+  `Output_flow.write_frame`. The harness is on-demand by default; demos that
+  correspond to reference `renderer.start()` calls acquire live rendering
+  themselves.
 - `tab_controller.ml` — a port of `src/lib/tab-controller.ts`: a `Tab_select`
   bar plus one visible `Box` group per tab, with per-frame update callbacks
   and show/hide lifecycle.
@@ -51,8 +53,9 @@ Run the demo from the repository root inside the Nix shell:
 nix develop -c dune exec ./packages/opentui-core/examples/opentui_demo.exe
 ```
 
-The frame rate defaults to 60fps; set `OPENTUI_DEMO_FPS` to run at a
-different cadence, for example:
+Continuous rendering defaults to 30fps and requested frames are capped at
+60fps. Set `OPENTUI_DEMO_FPS` to change the continuous target cadence, for
+example:
 
 ```sh
 OPENTUI_DEMO_FPS=120 nix develop -c dune exec ./packages/opentui-core/examples/opentui_demo.exe

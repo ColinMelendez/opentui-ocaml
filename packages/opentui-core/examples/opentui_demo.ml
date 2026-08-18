@@ -650,6 +650,14 @@ let interactive_tab renderer context =
 (* ------------------------------------------------------------------ *)
 
 let run renderer ~exit =
+  (* The reference demo calls [renderer.start()] because its tab showcase
+     contains per-frame animations. Own the equivalent live request here so
+     the shared harness can remain on-demand for other examples. *)
+  let live_lease = expect_ok (O.Renderer.acquire_live_lease renderer) in
+  ignore
+    (expect_ok
+       (O.Renderer.attach_before_destroy renderer (fun () ->
+            O.Renderer.release_live_lease live_lease)));
   ignore
     (expect_ok
        (O.Renderer.set_background_color renderer
@@ -700,7 +708,7 @@ let () =
         | Some value when value > 0 -> value
         | Some _ | None ->
             invalid_arg (Printf.sprintf "OPENTUI_DEMO_FPS must be a positive integer, got %S" raw))
-    | None -> 60
+    | None -> 30
   in
-  Opentui_examples_lib.App.run env ~frames_per_second:fps
+  Opentui_examples_lib.App.run env ~target_frames_per_second:fps
     ~init:(fun ~exit renderer -> run renderer ~exit)

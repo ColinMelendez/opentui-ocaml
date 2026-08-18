@@ -26,7 +26,7 @@ type error =
   | Clock_mismatch
   | Already_attached
   | Already_running
-  | Invalid_frames_per_second
+  | Invalid_frame_rate
   | Render_error of Error.t
 
 let message = function
@@ -39,8 +39,7 @@ let message = function
       "the renderer clock is not the Eio clock supplied to the scheduler"
   | Already_attached -> "the renderer already has a scheduler"
   | Already_running -> "the renderer scheduler is already running"
-  | Invalid_frames_per_second ->
-      "renderer scheduler frames_per_second must be positive"
+  | Invalid_frame_rate -> "renderer scheduler frame rates must be positive"
   | Render_error error ->
       "renderer scheduler frame failed: " ^ Error.message error
 
@@ -54,7 +53,8 @@ type renderer_state = {
 type t = {
   clock : Eio_clock.t;
   renderer : Renderer.t;
-  mutable interval : float;
+  mutable target_interval : float;
+  mutable max_interval : float;
   signal : signal;
   mutable wakeup : Render_context.Private.scheduler_wakeup option;
   mutable destroy_subscription : Event_subscription.t option;
@@ -63,6 +63,7 @@ type t = {
   mutable running : bool;
   mutable last_attempt : float option;
   mutable next_deadline : float option;
+  mutable deadline_interval : float option;
 }
 
 let renderer_state scheduler =
@@ -75,39 +76,73 @@ let renderer_state scheduler =
       | Error error -> Error (Render_error error)
       | Ok live -> Ok { pending; live })
 
-let set_frames_per_second scheduler frames_per_second =
+let interval_of_frames_per_second frames_per_second =
+  1.0 /. float_of_int frames_per_second
+
+let set_target_frames_per_second scheduler frames_per_second =
   if scheduler.closed then Error Closed
-  else if Int.compare frames_per_second 0 <= 0 then Error Invalid_frames_per_second
+  else if Int.compare frames_per_second 0 <= 0 then Error Invalid_frame_rate
   else begin
-    scheduler.interval <- 1.0 /. float_of_int frames_per_second;
+    scheduler.target_interval <- interval_of_frames_per_second frames_per_second;
+    notify scheduler.signal;
     Ok ()
   end
 
-let frames_per_second scheduler =
+let target_frames_per_second scheduler =
   if scheduler.closed then Error Closed
-  else Ok (int_of_float (Float.div 1.0 scheduler.interval))
+  else Ok (int_of_float (Float.div 1.0 scheduler.target_interval))
 
-let advance_deadline scheduler deadline ~now =
+let set_max_frames_per_second scheduler frames_per_second =
+  if scheduler.closed then Error Closed
+  else if Int.compare frames_per_second 0 <= 0 then Error Invalid_frame_rate
+  else begin
+    scheduler.max_interval <- interval_of_frames_per_second frames_per_second;
+    notify scheduler.signal;
+    Ok ()
+  end
+
+let max_frames_per_second scheduler =
+  if scheduler.closed then Error Closed
+  else Ok (int_of_float (Float.div 1.0 scheduler.max_interval))
+
+let advance_deadline ~interval deadline ~now =
   if Float.compare deadline now > 0 then deadline
   else
     let elapsed = now -. deadline in
-    let skipped = Float.floor (elapsed /. scheduler.interval) +. 1.0 in
-    let candidate = deadline +. (skipped *. scheduler.interval) in
+    let skipped = Float.floor (elapsed /. interval) +. 1.0 in
+    let candidate = deadline +. (skipped *. interval) in
     if Float.compare candidate now > 0 then candidate
     else Float.next_after now Float.infinity
 
-let update_deadline scheduler ~attempt_time ~after_time =
-  (* Keep the minimum frame interval even after the renderer becomes idle.
-     Reference [requestRender] uses the time of the previous frame when it
-     schedules a new one; clearing this deadline at idle would let a burst of
-     queued input batches render back-to-back instead. *)
-  let first_target =
-    match scheduler.next_deadline with
-    | None -> attempt_time +. scheduler.interval
-    | Some previous -> previous +. scheduler.interval
-  in
+let interval_for_state scheduler state =
+  if Int.compare state.live 0 > 0 then scheduler.target_interval
+  else scheduler.max_interval
+
+let schedule_next_deadline scheduler ~interval ~attempt_time ~after_time =
+  (* Keep the frame slot anchored to the attempt that just ran. If the frame
+     overran its slot, [advance_deadline] skips missed slots instead of
+     catching up with a burst of renders. *)
   scheduler.next_deadline <-
-    Some (advance_deadline scheduler first_target ~now:after_time)
+    Some
+      (advance_deadline ~interval (attempt_time +. interval) ~now:after_time);
+  scheduler.deadline_interval <- Some interval
+
+let next_deadline scheduler state ~now =
+  match scheduler.last_attempt with
+  | None -> None
+  | Some attempt_time ->
+      let interval = interval_for_state scheduler state in
+      let needs_rebase =
+        match scheduler.deadline_interval with
+        | None -> true
+        | Some current -> not (Int.equal (Float.compare current interval) 0)
+      in
+      (* A live/on-demand transition changes which reference cadence applies
+         to the next frame. Rebase only for that transition; ordinary
+         invalidations keep the already-established deadline. *)
+      if needs_rebase then
+        schedule_next_deadline scheduler ~interval ~attempt_time ~after_time:now;
+      scheduler.next_deadline
 
 let render_one scheduler =
   let attempt_time = Eio_clock.now scheduler.clock in
@@ -126,17 +161,24 @@ let render_one scheduler =
   | Error error ->
       (* [Renderer.render] restores the coalesced request and emits the
          renderer-owned error event. Keep retrying, but pace the next attempt
-         so a persistent failure cannot become a hot loop. *)
-      scheduler.next_deadline <-
-        Some (Eio_clock.now scheduler.clock +. scheduler.interval);
-      ignore error;
-      Ok ()
+         so a persistent failure cannot become a hot loop. The next loop
+         computes the retry deadline from [last_attempt] and the current
+         rendering mode. *)
+      (match renderer_state scheduler with
+      | Error error -> Error error
+      | Ok state ->
+          let interval = interval_for_state scheduler state in
+          schedule_next_deadline scheduler ~interval ~attempt_time
+            ~after_time:(Eio_clock.now scheduler.clock);
+          ignore error;
+          Ok ())
   | Ok status ->
       ignore status;
       (match renderer_state scheduler with
       | Error error -> Error error
-      | Ok _state ->
-          update_deadline scheduler ~attempt_time
+      | Ok state ->
+          let interval = interval_for_state scheduler state in
+          schedule_next_deadline scheduler ~interval ~attempt_time
             ~after_time:(Eio_clock.now scheduler.clock);
           Ok ())
 
@@ -152,7 +194,8 @@ let wait_idle scheduler =
             if state.pending || Int.compare state.live 0 > 0 then Some ()
             else None)
 
-let wait_until_deadline scheduler ~deadline ~wake_on_signal =
+let wait_until_deadline scheduler ~deadline ~initial_state ~target_interval
+    ~max_interval =
   let waiting = ref true in
   while !waiting && not scheduler.closed do
     if Float.compare (Eio_clock.now scheduler.clock) deadline >= 0 then
@@ -178,10 +221,19 @@ let wait_until_deadline scheduler ~deadline ~wake_on_signal =
               ignore error;
               waiting := false
           | Ok state ->
-              if
-                wake_on_signal
-                && Int.compare state.live 0 <= 0
-              then waiting := false
+              let initial_live = Int.compare initial_state.live 0 > 0 in
+              let current_live = Int.compare state.live 0 > 0 in
+              let mode_changed = not (Bool.equal initial_live current_live) in
+              let rate_changed =
+                not
+                  (Int.equal
+                     (Float.compare target_interval scheduler.target_interval)
+                     0)
+                || not
+                     (Int.equal
+                        (Float.compare max_interval scheduler.max_interval) 0)
+              in
+              if mode_changed || rate_changed then waiting := false
               else begin
                 (* A render can request another frame while it is running.
                    Once a deadline has been established, repeated invalidation
@@ -209,11 +261,12 @@ let run_loop scheduler =
             wait_idle scheduler
           end
           else
-            match scheduler.next_deadline with
-            | Some deadline
-              when Float.compare (Eio_clock.now scheduler.clock) deadline < 0 ->
-                wait_until_deadline scheduler ~deadline
-                  ~wake_on_signal:(Int.compare state.live 0 > 0)
+            let now = Eio_clock.now scheduler.clock in
+            match next_deadline scheduler state ~now with
+            | Some deadline when Float.compare now deadline < 0 ->
+                wait_until_deadline scheduler ~deadline ~initial_state:state
+                  ~target_interval:scheduler.target_interval
+                  ~max_interval:scheduler.max_interval
             | Some _ | None ->
                 (match render_one scheduler with
                 | Ok () -> ()
@@ -252,8 +305,11 @@ let close scheduler =
     Ok ()
   end
 
-let create ~sw ~clock ~renderer ?(frames_per_second = 60) () =
-  if Int.compare frames_per_second 0 <= 0 then Error Invalid_frames_per_second
+let create ~sw ~clock ~renderer ?(target_frames_per_second = 30)
+    ?(max_frames_per_second = 60) () =
+  if Int.compare target_frames_per_second 0 <= 0
+     || Int.compare max_frames_per_second 0 <= 0
+  then Error Invalid_frame_rate
   else if Renderer.is_destroyed renderer then Error Closed
   else
     match Eio_clock.check clock ~sw with
@@ -274,7 +330,8 @@ let create ~sw ~clock ~renderer ?(frames_per_second = 60) () =
           {
             clock;
             renderer;
-            interval = 1.0 /. float_of_int frames_per_second;
+            target_interval = interval_of_frames_per_second target_frames_per_second;
+            max_interval = interval_of_frames_per_second max_frames_per_second;
             signal = create_signal ();
             wakeup = None;
             destroy_subscription = None;
@@ -283,6 +340,7 @@ let create ~sw ~clock ~renderer ?(frames_per_second = 60) () =
             running = false;
             last_attempt = None;
             next_deadline = None;
+            deadline_interval = None;
           }
         in
         (match
