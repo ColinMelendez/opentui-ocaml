@@ -23,6 +23,7 @@ type t = {
   change_events : float Event_kernel.t;
   mutable repeat_timer : Lib.Clock.timer option;
   mutable repeat_generation : int64;
+  mutable slider_track_width : float;
   mutable destroyed : bool;
 }
 
@@ -98,6 +99,27 @@ let update_slider bar =
   ignore (Slider.set_viewport_size bar.slider (max 0.01 bar.viewport_size));
   ignore (Slider.set_value bar.slider bar.scroll_position)
 
+let clamp_slider_track_width value = Float.max 1.0 (Float.min 2.0 value)
+
+let initial_slider_track_width = function
+  | Some (Yoga.Point value) -> clamp_slider_track_width value
+  | Some Yoga.Undefined | Some (Yoga.Percent _) | Some Yoga.Auto | None -> 1.0
+
+let update_slider_track_width bar =
+  match bar.orientation with
+  | Horizontal -> ()
+  | Vertical ->
+      let width = clamp_slider_track_width (Renderable.width bar.renderable) in
+      if not (Float.equal width bar.slider_track_width) then begin
+        let slider_renderable = Slider.as_renderable bar.slider in
+        ignore (Renderable.set_width slider_renderable (Yoga.Point width));
+        (* [set_width] makes a point-sized child non-shrinking in the local
+           Renderable adapter. Restore the reference slider's explicit shrink
+           policy after changing its track width. *)
+        ignore (Renderable.set_flex_shrink slider_renderable (Some 1.0));
+        bar.slider_track_width <- width
+      end
+
 let recalculate_visibility bar =
   if not bar.manual_visibility then
     let should_show = Float.compare bar.scroll_size bar.viewport_size > 0 in
@@ -123,6 +145,7 @@ let set_scroll_position bar value =
 let set_scroll_size bar value =
   Result.bind (ensure_alive bar) (fun () ->
       if Float.compare value 0.0 < 0 then Error Error.Invalid_argument
+      else if Float.equal value bar.scroll_size then Ok ()
       else begin
         bar.scroll_size <- value;
         let previous = bar.scroll_position in
@@ -138,14 +161,18 @@ let set_viewport_size bar value =
   Result.bind (ensure_alive bar) (fun () ->
       if Float.compare value 0.0 < 0 then Error Error.Invalid_argument
       else begin
-        bar.viewport_size <- Float.max 1.0 value;
-        let previous = bar.scroll_position in
-        bar.scroll_position <- rounded_position bar previous;
-        recalculate_visibility bar;
-        update_slider bar;
-        if not (Float.equal previous bar.scroll_position) then emit_change bar;
-        ignore (Renderable.request_render bar.renderable);
-        Ok ()
+        let viewport_size = Float.max 1.0 value in
+        if Float.equal viewport_size bar.viewport_size then Ok ()
+        else begin
+          bar.viewport_size <- viewport_size;
+          let previous = bar.scroll_position in
+          bar.scroll_position <- rounded_position bar previous;
+          recalculate_visibility bar;
+          update_slider bar;
+          if not (Float.equal previous bar.scroll_position) then emit_change bar;
+          ignore (Renderable.request_render bar.renderable);
+          Ok ()
+        end
       end)
 
 let set_show_arrows bar value =
@@ -302,11 +329,14 @@ let create context ~orientation ?id ?(show_arrows = false)
                       change_events = Event_kernel.create ();
                       repeat_timer = None;
                       repeat_generation = 0L;
+                      slider_track_width = initial_slider_track_width width;
                       destroyed = false;
                     }
                   in
                   let behavior =
                     Renderable.Private.make_behavior
+                      ~on_resize:(fun _ ~width:_ ~height:_ ->
+                        update_slider_track_width bar)
                       ~key_press:(fun _ event -> ignore (handle_key_press bar event))
                       ~destroy_self:(fun _ ->
                         cancel_arrow_repeat bar;
@@ -320,25 +350,34 @@ let create context ~orientation ?id ?(show_arrows = false)
                   let focus_result = Renderable.set_focusable renderable true in
                   ignore (Renderable.set_flex_direction renderable
                             (match orientation with Horizontal -> Yoga.Flex_row | Vertical -> Yoga.Flex_column));
+                  ignore (Renderable.set_align_self renderable Yoga.Align_stretch);
                   ignore (Renderable.set_align_items renderable Yoga.Align_stretch);
                   let slider_renderable = Slider.as_renderable slider in
                   ignore (Renderable.set_flex_grow slider_renderable (Some 1.0));
-                  ignore (Renderable.set_flex_shrink slider_renderable (Some 1.0));
                   (match orientation with
                   | Vertical ->
                       ignore
                         (Renderable.set_width slider_renderable
-                           (Yoga.Point 1.0));
+                           (Yoga.Point (initial_slider_track_width width)));
                       ignore
                         (Renderable.set_height slider_renderable
-                           (Yoga.Percent 100.0))
+                           (Yoga.Percent 100.0));
+                      ignore
+                        (Renderable.set_margin slider_renderable ~edge:Yoga.Left
+                           Yoga.Auto)
                   | Horizontal ->
                       ignore
                         (Renderable.set_width slider_renderable
                            (Yoga.Percent 100.0));
                       ignore
                         (Renderable.set_height slider_renderable
-                           (Yoga.Point 1.0)));
+                           (Yoga.Point 1.0));
+                      ignore
+                        (Renderable.set_margin slider_renderable ~edge:Yoga.Top
+                           Yoga.Auto));
+                  ignore (Renderable.set_flex_shrink slider_renderable (Some 1.0));
+                  ignore (Renderable.set_align_self start_arrow.renderable Yoga.Align_center);
+                  ignore (Renderable.set_align_self end_arrow.renderable Yoga.Align_center);
                   ignore (Renderable.set_visible start_arrow.renderable show_arrows);
                   ignore (Renderable.set_visible end_arrow.renderable show_arrows);
                   ignore (Renderable.set_on_mouse_down start_arrow.renderable

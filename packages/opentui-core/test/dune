@@ -72,6 +72,26 @@
  (libraries opentui-core windtrap))
 
 (test
+ (name test_renderer_scroll_output)
+ (modules test_renderer_scroll_output)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_scrollbox_audit)
+ (modules test_scrollbox_audit)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_scrollbox_demo_layout)
+ (modules test_scrollbox_demo_layout)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_renderer_scroll_eio)
+ (modules test_renderer_scroll_eio)
+ (libraries opentui-core eio_main windtrap))
+
+(test
  (name test_terminal_capabilities)
  (modules test_terminal_capabilities)
  (libraries opentui-core windtrap))
@@ -124,6 +144,11 @@
 (test
  (name test_interactive_controls)
  (modules test_interactive_controls)
+ (libraries opentui-core windtrap))
+
+(test
+ (name test_objects_in_viewport)
+ (modules test_objects_in_viewport)
  (libraries opentui-core windtrap))
 
 (test

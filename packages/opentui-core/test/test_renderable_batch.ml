@@ -248,7 +248,7 @@ let () =
             expect_ok
               (Renderables.Text_table.create (Renderer.context renderer)
                  ~content:[ [ Renderables.Text_table.Text "one"; Text "two" ]; [ Text "three"; Empty ] ]
-                 ~width:(Core.Yoga.Point 16.0) ~height:(Core.Yoga.Point 4.0) ())
+                 ~width:(Core.Yoga.Point 16.0) ~height:(Core.Yoga.Point 5.0) ())
           in
           attach renderer (Renderables.Text_table.as_renderable table);
           ignore (expect_ok (Renderer.render renderer ~force:true));
@@ -256,6 +256,13 @@ let () =
             (Renderable.width (Renderables.Text_table.as_renderable table));
           let rendered = frame renderer in
           equal bool true (String.contains rendered 'o');
+          List.iter
+            (fun border_cell ->
+              if not (contains rendered border_cell) then
+                fail
+                  (Printf.sprintf "table border cell %S missing from output %S"
+                     border_cell rendered))
+            [ "┌"; "┬"; "┐"; "├"; "┼"; "┤"; "└"; "┴"; "┘" ];
           ignore
             (expect_ok
                (Renderables.Text_table.set_content table

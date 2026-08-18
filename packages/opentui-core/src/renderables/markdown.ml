@@ -185,6 +185,21 @@ let render_token markdown token index =
         ~draw_unstyled_text:(not markdown.streaming)
         ~streaming:markdown.streaming ~wrap_mode:markdown.wrap_mode ()
       |> Result.map (fun code ->
+             (* Unhighlighted fences render through the text buffer, so carry
+                the documented default fg/bg into it; otherwise unstyled code
+                falls back to the renderer's native default color. *)
+             (match markdown.fg with
+             | Some color ->
+                 ignore
+                   (Text_buffer_renderable.set_default_fg
+                      (Code.text_buffer_renderable code) (Some color))
+             | None -> ());
+             (match markdown.bg with
+             | Some color ->
+                 ignore
+                   (Text_buffer_renderable.set_default_bg
+                      (Code.text_buffer_renderable code) (Some color))
+             | None -> ());
              {
                renderable = Code.as_renderable code;
                selected_text = (fun () -> Code.selected_text code);
@@ -245,7 +260,8 @@ let render_token markdown token index =
         ~wrap_mode:markdown.wrap_mode ~show_borders:markdown.table_options.show_borders
         ~outer_border:markdown.table_options.outer_border
         ~cell_padding_x:markdown.table_options.cell_padding_x
-        ~cell_padding_y:markdown.table_options.cell_padding_y ()
+        ~cell_padding_y:markdown.table_options.cell_padding_y
+        ?fg:markdown.fg ?bg:markdown.bg ?border_color:markdown.fg ()
       |> Result.map (fun table ->
              {
                renderable = Text_table.as_renderable table;

@@ -82,8 +82,17 @@ let compute_content_size box =
   let height = ref (if box.manual_content_size then box.content_height else 0.0) in
   List.iter
     (fun child ->
-      width := float_max !width (Renderable.x child +. Renderable.width child);
-      height := float_max !height (Renderable.y child +. Renderable.height child))
+      match Renderable.layout child with
+      | Error _ -> ()
+      | Ok layout ->
+          (* [Renderable.x]/[y] include all ancestor translations.  The
+             content translation is the scroll offset, so using those
+             accessors here would make the measured content shrink whenever
+             the viewport scrolls.  Intrinsic content bounds are expressed in
+             the child's parent coordinate system, just like the reference
+             ContentRenderable's Yoga size. *)
+          width := float_max !width (layout.left +. Renderable.width child);
+          height := float_max !height (layout.top +. Renderable.height child))
     (Renderable.children box.content);
   let width = max 0.0 !width in
   let height = max 0.0 !height in
@@ -425,7 +434,6 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                                 handle_auto_scroll box delta_time)
                               ~on_visibility:(fun _ visible ->
                                 if not visible then stop_auto_scroll box)
-                              ~lifecycle_pass:(fun _ -> compute_content_size box)
                               ~on_resize:(fun _ ~width:_ ~height:_ ->
                                 stop_auto_scroll box;
                                 update_scrollbars box)
@@ -452,6 +460,8 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                                   Event_subscription.cancel
                                   box.selection_subscription;
                                 box.selection_subscription <- None;
+                                Render_context.Private.unregister_post_layout_pass
+                                  context ~id:(Renderable.num renderable);
                                 box.destroyed <- true;
                                 Scroll_bar.destroy vertical_scrollbar;
                                 Scroll_bar.destroy horizontal_scrollbar;
@@ -463,6 +473,7 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                           Renderable.Private.set_behavior renderable behavior;
                           ignore (Renderable.set_focusable renderable true);
                           ignore (Renderable.set_flex_direction renderable Yoga.Flex_row);
+                          ignore (Renderable.set_align_items renderable Yoga.Align_stretch);
                           ignore (Renderable.set_flex_direction wrapper Yoga.Flex_column);
                           ignore (Renderable.set_flex_grow wrapper (Some 1.0));
                           ignore (Renderable.set_flex_shrink wrapper (Some 1.0));
@@ -477,15 +488,14 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                             ignore (Renderable.set_max_width content (Yoga.Percent 100.0));
                           if not scroll_y then
                             ignore (Renderable.set_max_height content (Yoga.Percent 100.0));
-                          ignore (Renderable.set_position_type content Yoga.Position_absolute);
-                          ignore (Renderable.set_position content ~edge:Yoga.Left (Yoga.Point 0.0));
-                          ignore (Renderable.set_position content ~edge:Yoga.Top (Yoga.Point 0.0));
-                          ignore
-                            (Renderable.set_visible
-                               (Scroll_bar.as_renderable vertical_scrollbar) scroll_y);
-                          ignore
-                            (Renderable.set_visible
-                               (Scroll_bar.as_renderable horizontal_scrollbar) scroll_x);
+                          if scroll_y then
+                            Scroll_bar.reset_visibility_control vertical_scrollbar
+                          else
+                            ignore (Scroll_bar.set_visible vertical_scrollbar false);
+                          if scroll_x then
+                            Scroll_bar.reset_visibility_control horizontal_scrollbar
+                          else
+                            ignore (Scroll_bar.set_visible horizontal_scrollbar false);
                           let result =
                             Renderable.Private.attach ~parent:renderable ~child:wrapper ~index:0
                           in
@@ -506,6 +516,11 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                           (match result with
                           | Error error -> Renderable.destroy_recursively renderable; Error error
                           | Ok () ->
+                              Render_context.Private.register_post_layout_pass context
+                                ~id:(Renderable.num renderable)
+                                (fun () ->
+                                  if not box.destroyed then
+                                    compute_content_size box);
                               let bind_scroll bar =
                                 ignore
                                   (Scroll_bar.on_change bar (fun _ ->

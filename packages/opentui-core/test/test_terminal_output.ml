@@ -37,6 +37,19 @@ module Tty_sink = struct
   let copy fd ~src = Eio.Flow.Pi.simple_copy ~single_write fd ~src
 end
 
+module Counting_sink = struct
+  type t = { output : Buffer.t; writes : int ref }
+
+  let single_write sink buffers =
+    incr sink.writes;
+    List.iter
+      (fun buffer -> Buffer.add_string sink.output (Cstruct.to_string buffer))
+      buffers;
+    Cstruct.lenv buffers
+
+  let copy sink ~src = Eio.Flow.Pi.simple_copy ~single_write sink ~src
+end
+
 let expect_ok result =
   match result with
   | Ok () -> ()
@@ -58,6 +71,8 @@ let () =
               fail "initial flow error was not reported"
           | Error Output.Invalid_range ->
               fail "mode transition produced an invalid range"
+          | Error Output.Frame_too_large ->
+              fail "mode transition produced an oversized frame"
           | Ok () -> fail "a partial sink was reported as successful");
           (match Output.screen output with
           | Modes.Main -> ()
@@ -68,6 +83,8 @@ let () =
               fail "desynchronized output remained retryable"
           | Error Output.Invalid_range ->
               fail "poisoned output reported an invalid range"
+          | Error Output.Frame_too_large ->
+              fail "poisoned output reported an oversized frame"
           | Ok () -> fail "desynchronized output accepted a retry"));
       test "writes mode transitions and commits after the sink accepts them"
         (fun () ->
@@ -98,6 +115,8 @@ let () =
           | Error Output.Flow_error -> fail "invalid range became a flow error"
           | Error Output.Desynchronized ->
               fail "invalid range poisoned healthy output"
+          | Error Output.Frame_too_large ->
+              fail "invalid range produced an oversized frame"
           | Ok () -> fail "invalid range was accepted");
       test "writes a frame's chunks without mode interleaving" (fun () ->
           Eio_main.run @@ fun _env ->
@@ -108,6 +127,19 @@ let () =
             (Output.write_frame output
                [ Bytes.of_string "first"; Bytes.of_string "second" ]);
           equal string "firstsecond" (Buffer.contents buffer));
+      test "coalesces native spans into one sink write per frame" (fun () ->
+          Eio_main.run @@ fun _env ->
+          let state = { Counting_sink.output = Buffer.create 16; writes = ref 0 } in
+          let sink =
+            Eio.Resource.T
+              (state, Eio.Flow.Pi.sink (module Counting_sink))
+          in
+          let output = Output.create ~sink in
+          expect_ok
+            (Output.write_frame output
+               [ Bytes.of_string "first"; Bytes.of_string "second" ]);
+          equal int 1 !(state.writes);
+          equal string "firstsecond" (Buffer.contents state.output));
       test "writes a mode transition through an Eio OS pipe" (fun () ->
           Eio_main.run @@ fun _env ->
           Eio.Switch.run @@ fun sw ->

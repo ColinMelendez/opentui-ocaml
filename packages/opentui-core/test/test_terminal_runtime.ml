@@ -2,6 +2,8 @@ open Windtrap
 
 module Events = Opentui_core.Lib.Event_queue
 module Size = Opentui_core.Lib.Terminal_size
+module Input = Opentui_core.Lib.Stdin_parser
+module Decoder = Opentui_core.Lib.Key_decoder
 module Wakeup = Opentui_core.Platform.Eio_runtime.Wakeup
 module Dispatch = Opentui_core.Platform.Eio_runtime.Dispatch
 module Resize = Opentui_core.Platform.Eio_unix_runtime.Resize_source
@@ -53,6 +55,52 @@ let () =
                (fun () ->
                  expect_push (Wakeup.push wakeup ~queue (Events.Resize size));
                  Eio.Promise.await handled)));
+      test "dispatch yields before an input flood can starve owner fibers" (fun () ->
+          Eio_main.run @@ fun _env ->
+          Eio.Switch.run @@ fun sw ->
+          let queue =
+            match Events.create ~capacity:128 () with
+            | Ok queue -> queue
+            | Error error -> fail (Events.message error)
+          in
+          let wakeup = Wakeup.create () in
+          let modifiers = { Decoder.shift = false; meta = false; ctrl = false } in
+          let event =
+            Events.Input
+              (Input.Key
+                 {
+                   raw = Bytes.empty;
+                   key = Decoder.Named Decoder.Tab;
+                   modifiers;
+                   metadata = Decoder.raw_metadata;
+                 })
+          in
+          for _index = 1 to 128 do
+            expect_push (Wakeup.push wakeup ~queue event)
+          done;
+          let handled = ref 0 in
+          let probe_ran = ref false in
+          let probe_seen_before_end = ref false in
+          let finished, resolve_finished = Eio.Promise.create () in
+          let outcome =
+            Eio.Fiber.first
+              (fun () ->
+                Dispatch.run ~queue ~wakeup ~handle:(fun _event ->
+                    incr handled;
+                    if Int.equal !handled 1 then
+                      ignore
+                        (Eio.Fiber.fork ~sw (fun () ->
+                             Eio.Fiber.yield ();
+                             probe_ran := true));
+                    if Int.equal !handled 127 then
+                      probe_seen_before_end := !probe_ran;
+                    if Int.equal !handled 128 then
+                      Eio.Promise.resolve resolve_finished ()))
+              (fun () -> Eio.Promise.await finished)
+          in
+          ignore outcome;
+          equal int 128 !handled;
+          equal bool true !probe_seen_before_end);
       test "resize source wakes and enforces one process owner" (fun () ->
           Eio_main.run @@ fun _env ->
           Eio.Switch.run @@ fun sw ->

@@ -75,10 +75,6 @@ let renderer_state scheduler =
       | Error error -> Error (Render_error error)
       | Ok live -> Ok { pending; live })
 
-let reset_timing scheduler =
-  scheduler.last_attempt <- None;
-  scheduler.next_deadline <- None
-
 let set_frames_per_second scheduler frames_per_second =
   if scheduler.closed then Error Closed
   else if Int.compare frames_per_second 0 <= 0 then Error Invalid_frames_per_second
@@ -100,17 +96,18 @@ let advance_deadline scheduler deadline ~now =
     if Float.compare candidate now > 0 then candidate
     else Float.next_after now Float.infinity
 
-let update_deadline scheduler ~attempt_time ~after_time ~live =
-  if Int.compare live 0 > 0 then begin
-    let first_target =
-      match scheduler.next_deadline with
-      | None -> attempt_time +. scheduler.interval
-      | Some previous -> previous +. scheduler.interval
-    in
-    scheduler.next_deadline <-
-      Some (advance_deadline scheduler first_target ~now:after_time)
-  end
-  else scheduler.next_deadline <- None
+let update_deadline scheduler ~attempt_time ~after_time =
+  (* Keep the minimum frame interval even after the renderer becomes idle.
+     Reference [requestRender] uses the time of the previous frame when it
+     schedules a new one; clearing this deadline at idle would let a burst of
+     queued input batches render back-to-back instead. *)
+  let first_target =
+    match scheduler.next_deadline with
+    | None -> attempt_time +. scheduler.interval
+    | Some previous -> previous +. scheduler.interval
+  in
+  scheduler.next_deadline <-
+    Some (advance_deadline scheduler first_target ~now:after_time)
 
 let render_one scheduler =
   let attempt_time = Eio_clock.now scheduler.clock in
@@ -138,10 +135,9 @@ let render_one scheduler =
       ignore status;
       (match renderer_state scheduler with
       | Error error -> Error error
-      | Ok state ->
-          let live = state.live in
+      | Ok _state ->
           update_deadline scheduler ~attempt_time
-            ~after_time:(Eio_clock.now scheduler.clock) ~live;
+            ~after_time:(Eio_clock.now scheduler.clock);
           Ok ())
 
 let wait_idle scheduler =
@@ -175,7 +171,6 @@ let wait_until_deadline scheduler ~deadline ~wake_on_signal =
       in
       match outcome with
       | `Deadline -> waiting := false
-      | `Signal when not wake_on_signal -> ()
       | `Signal ->
           (match renderer_state scheduler with
           | Error Closed -> waiting := false
@@ -183,8 +178,19 @@ let wait_until_deadline scheduler ~deadline ~wake_on_signal =
               ignore error;
               waiting := false
           | Ok state ->
-              let live = state.live in
-              if Int.compare live 0 <= 0 then waiting := false)
+              if
+                wake_on_signal
+                && Int.compare state.live 0 <= 0
+              then waiting := false
+              else begin
+                (* A render can request another frame while it is running.
+                   Once a deadline has been established, repeated invalidation
+                   signals must not restart this race and starve the clock;
+                   upstream likewise keeps those re-renders behind its minimum
+                   frame interval. *)
+                Eio_clock.sleep_until scheduler.clock ~deadline;
+                waiting := false
+              end)
     end
   done
 
@@ -200,7 +206,6 @@ let run_loop scheduler =
           continue_running := false
       | Ok state ->
           if not state.pending && Int.compare state.live 0 <= 0 then begin
-            reset_timing scheduler;
             wait_idle scheduler
           end
           else

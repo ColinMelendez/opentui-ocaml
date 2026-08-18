@@ -74,10 +74,17 @@ target is explicit rather than silently defaulting to memory:
   delivers complete, ordered frame chunks to the borrowed sink. The caller
   never receives a native feed pointer or is responsible for feed lifetime.
 
-The sink receives a list rather than independent callbacks so it can preserve
-frame atomicity while avoiding an additional concatenation copy. A sink must
-consume the chunks before returning. The renderer never closes the sink; the
-application owns the underlying terminal resource.
+The sink receives a list rather than independent callbacks so the renderer can
+publish the native feed spans as one logical frame. A sink must consume the
+chunks before returning. The Eio `Output_flow` adapter coalesces multiple spans
+into one contiguous write before handing them to the terminal; this adds one
+copy at that boundary, but removes native-span write boundaries on terminals
+without synchronized-update support. It does not make an unsupported terminal
+display a large ANSI write atomically; terminals that honor `DEC 2026` provide
+that presentation guarantee. Custom sinks may preserve the list
+representation when their transport already provides an equivalent frame
+boundary. The renderer never closes the sink; the application owns the
+underlying terminal resource.
 
 `remote_mode` maps to the native reference values `Auto = 0`, `Local = 1`, and
 `Remote = 2`. When omitted, `Stdout` and `Memory` use `Auto`; `Sink` uses
@@ -120,8 +127,9 @@ completes.
 `Eio_runtime.Output_flow` is the serialized terminal byte owner. Terminal mode
 transitions, capability/palette/theme queries, renderer frame chunks, and
 shutdown output all use the same output boundary. Frame delivery uses one
-`write_frame` operation so control bytes cannot interleave between chunks of a
-single native frame.
+`write_frame` operation, coalesces native spans, and then performs one sink
+transaction so control bytes cannot interleave between chunks of a single
+native frame.
 
 The renderer scheduler remains the owner-domain frame driver. It does not
 create a second output fiber or expose the feed as an independent application

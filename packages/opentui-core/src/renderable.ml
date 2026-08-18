@@ -29,6 +29,7 @@ type mouse_event = {
   is_dragging : bool;
   mutable default_prevented : bool;
   mutable propagation_stopped : bool;
+  mutable capture_requested : bool;
 }
 
 and render_command =
@@ -171,6 +172,15 @@ let bump_render_list_revision renderable =
 
 let invalidate_layout_cache renderable =
   renderable.last_layout_frame <- None
+
+let rec refresh_screen_cache_tree (renderable : t) ~parent_x ~parent_y =
+  renderable.screen_x <- parent_x +. renderable.x +. renderable.translate_x;
+  renderable.screen_y <- parent_y +. renderable.y +. renderable.translate_y;
+  List.iter
+    (fun child ->
+      refresh_screen_cache_tree child ~parent_x:renderable.screen_x
+        ~parent_y:renderable.screen_y)
+    renderable.children_layout
 
 let request_render renderable =
   match ensure_open renderable with
@@ -708,6 +718,17 @@ let update_from_layout renderable =
                   ~height:(int_of_float renderable.height);
               Ok ()))
 
+let rec refresh_layout_cache_tree renderable =
+  invalidate_layout_cache renderable;
+  Result.bind (update_from_layout renderable) (fun () ->
+      let rec refresh_children = function
+        | [] -> Ok ()
+        | child :: rest ->
+            Result.bind (refresh_layout_cache_tree child) (fun () ->
+                refresh_children rest)
+      in
+      refresh_children renderable.children_layout)
+
 let ensure_z_sorted renderable =
   renderable.children_z <-
     List.stable_sort
@@ -884,27 +905,44 @@ let render_root root buffer ~delta_time =
       List.iter
         (fun callback -> callback ())
         (Render_context.Private.lifecycle_passes root.context);
-      let layout_result =
-        match root.node with
-        | None -> Error Error.Destroyed
-        | Some node ->
-            (match Yoga.Node.is_dirty node with
-            | Error error -> Error (map_native_error error)
-            | Ok true -> calculate_root_layout root
-            | Ok false ->
-                (match Yoga.Node.has_new_layout node with
-                | Error error -> Error (map_native_error error)
-                | Ok false -> Ok ()
-                | Ok true ->
-                    ignore
-                      (Render_context.Private.bump_layout_generation root.context);
-                    (match Yoga.Node.mark_layout_seen node with
-                    | Ok () ->
-                        invalidate_layout_cache root;
-                        emit root.layout_changed_events root ();
-                        Ok ()
-                    | Error error -> Error (map_native_error error))))
+      let rec settle_layout pass =
+        let layout_result =
+          match root.node with
+          | None -> Error Error.Destroyed
+          | Some node ->
+              (match Yoga.Node.is_dirty node with
+              | Error error -> Error (map_native_error error)
+              | Ok true -> calculate_root_layout root
+              | Ok false ->
+                  (match Yoga.Node.has_new_layout node with
+                  | Error error -> Error (map_native_error error)
+                  | Ok false -> Ok ()
+                  | Ok true ->
+                      ignore
+                        (Render_context.Private.bump_layout_generation root.context);
+                      (match Yoga.Node.mark_layout_seen node with
+                      | Ok () ->
+                          invalidate_layout_cache root;
+                          emit root.layout_changed_events root ();
+                          Ok ()
+                      | Error error -> Error (map_native_error error))))
+        in
+        Result.bind layout_result (fun () ->
+            Result.bind (refresh_layout_cache_tree root) (fun () ->
+                List.iter
+                  (fun callback -> callback ())
+                  (Render_context.Private.post_layout_passes root.context);
+                if Int.compare pass 4 >= 0 then Ok ()
+                else
+                  match root.node with
+                  | None -> Error Error.Destroyed
+                  | Some node ->
+                      (match Yoga.Node.is_dirty node with
+                      | Error error -> Error (map_native_error error)
+                      | Ok true -> settle_layout (pass + 1)
+                      | Ok false -> Ok ())))
       in
+      let layout_result = settle_layout 0 in
       match layout_result with
       | Error error -> Error error
       | Ok () ->
@@ -1072,6 +1110,7 @@ let make_mouse_event ~kind ~button ~x ~y ~modifiers ~scroll ~source ~target
     is_dragging;
     default_prevented = false;
     propagation_stopped = false;
+    capture_requested = false;
   }
 
 let mouse_kind event = event.kind
@@ -1088,6 +1127,8 @@ let mouse_default_prevented event = event.default_prevented
 let mouse_stop_propagation event = event.propagation_stopped <- true
 let mouse_prevent_default event = event.default_prevented <- true
 let mouse_propagation_stopped event = event.propagation_stopped
+let mouse_capture event = event.capture_requested <- true
+let mouse_capture_requested event = event.capture_requested
 
 let set_key_listener renderable setter value =
   match ensure_open renderable with
@@ -1365,12 +1406,12 @@ let set_translate_x renderable value =
   | Ok () when Float.equal renderable.translate_x value -> Ok ()
   | Ok () ->
       renderable.translate_x <- value;
-      let parent_x =
+      let parent_x, parent_y =
         match renderable.parent with
-        | None -> 0.0
-        | Some parent -> parent.screen_x
+        | None -> 0.0, 0.0
+        | Some parent -> parent.screen_x, parent.screen_y
       in
-      renderable.screen_x <- parent_x +. renderable.x +. value;
+      refresh_screen_cache_tree renderable ~parent_x ~parent_y;
       bump_render_list_revision renderable;
       request_render renderable
 
@@ -1380,12 +1421,12 @@ let set_translate_y renderable value =
   | Ok () when Float.equal renderable.translate_y value -> Ok ()
   | Ok () ->
       renderable.translate_y <- value;
-      let parent_y =
+      let parent_x, parent_y =
         match renderable.parent with
-        | None -> 0.0
-        | Some parent -> parent.screen_y
+        | None -> 0.0, 0.0
+        | Some parent -> parent.screen_x, parent.screen_y
       in
-      renderable.screen_y <- parent_y +. renderable.y +. value;
+      refresh_screen_cache_tree renderable ~parent_x ~parent_y;
       bump_render_list_revision renderable;
       request_render renderable
 
@@ -1618,6 +1659,7 @@ module Private = struct
   let find_by_num = find_by_num
   let make_mouse_event = make_mouse_event
   let process_mouse_event = process_mouse_event
+  let mouse_capture_requested = mouse_capture_requested
   let should_start_selection renderable ~x ~y =
     match renderable.behavior.should_start_selection with
     | None -> false

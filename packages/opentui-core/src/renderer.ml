@@ -1308,6 +1308,8 @@ let dispatch_pointer renderer (decoded : Lib.Mouse_decoder.event) =
                 ~is_dragging:(pointer_event_is_dragging source_kind)
             in
             send_pointer_event renderer target event;
+            if Renderable.Private.mouse_capture_requested event then
+              capture renderer target;
             let focus_result =
               match source_kind with
               | Lib.Mouse_decoder.Down when is_left_button ->

@@ -66,6 +66,11 @@ type lifecycle_pass = {
   callback : unit -> unit;
 }
 
+type post_layout_pass = {
+  id : int;
+  callback : unit -> unit;
+}
+
 type focused_renderable = {
   id : int;
   blur : unit -> unit;
@@ -95,6 +100,7 @@ type t = {
   mutable render_requested : bool;
   mutable live_control : live_control;
   mutable lifecycle_passes : lifecycle_pass list;
+  mutable post_layout_passes : post_layout_pass list;
   mutable focused : focused_renderable option;
   mutable live_request_count : int;
   hit_grid : Opentui_raw.Renderer.Hit_grid.t;
@@ -393,7 +399,7 @@ let register_lifecycle_pass context ~id callback =
   match ensure_open context with
   | Error error -> Error error
   | Ok () ->
-      let entry = { id; callback } in
+      let entry : lifecycle_pass = { id; callback } in
       context.lifecycle_passes <-
         entry
         :: List.filter
@@ -525,6 +531,7 @@ module Private = struct
       render_requested = false;
       live_control = Idle;
       lifecycle_passes = [];
+      post_layout_passes = [];
       focused = None;
       live_request_count = 0;
       hit_grid;
@@ -596,7 +603,7 @@ module Private = struct
   let clear_render_request context = context.render_requested <- false
 
   let register_lifecycle_pass (context : t) ~id callback =
-    let entry = { id; callback } in
+    let entry : lifecycle_pass = { id; callback } in
     context.lifecycle_passes <-
       entry
       :: List.filter
@@ -613,6 +620,25 @@ module Private = struct
     List.rev_map
       (fun (entry : lifecycle_pass) -> entry.callback)
       context.lifecycle_passes
+
+  let register_post_layout_pass context ~id callback =
+    let entry = { id; callback } in
+    context.post_layout_passes <-
+      entry
+      :: List.filter
+           (fun (current : post_layout_pass) -> not (Int.equal current.id id))
+           context.post_layout_passes
+
+  let unregister_post_layout_pass context ~id =
+    context.post_layout_passes <-
+      List.filter
+        (fun (current : post_layout_pass) -> not (Int.equal current.id id))
+        context.post_layout_passes
+
+  let post_layout_passes (context : t) =
+    List.rev_map
+      (fun (entry : post_layout_pass) -> entry.callback)
+      context.post_layout_passes
 
   let focus_renderable context ~id ~blur =
     match context.focused with
@@ -743,6 +769,7 @@ module Private = struct
       context.theme_mode <- None;
       context.pixel_resolution <- None;
       context.lifecycle_passes <- [];
+      context.post_layout_passes <- [];
       context.focused <- None;
       context.live_request_count <- 0;
       context.live_control <- Idle;

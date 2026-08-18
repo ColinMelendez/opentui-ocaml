@@ -31,6 +31,11 @@ val mouse_default_prevented : mouse_event -> bool
 val mouse_stop_propagation : mouse_event -> unit
 val mouse_prevent_default : mouse_event -> unit
 val mouse_propagation_stopped : mouse_event -> bool
+(** [mouse_capture event] asks the owning renderer to keep routing subsequent
+    pointer motion and release events to this event's hit target. The request
+    is honored after the current event has bubbled; it is normally used by a
+    drag control from its left-button down handler. *)
+val mouse_capture : mouse_event -> unit
 
 val id : t -> string
 val set_id : t -> string -> (unit, Error.t) result
@@ -252,6 +257,8 @@ module Private : sig
     mouse_event
 
   val process_mouse_event : t -> mouse_event -> unit
+
+  val mouse_capture_requested : mouse_event -> bool
 
   val should_start_selection : t -> x:int -> y:int -> bool
   val selection_changed : t -> Lib.Selection.t option -> unit

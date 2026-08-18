@@ -278,6 +278,9 @@ module Private : sig
   val register_lifecycle_pass : t -> id:int -> (unit -> unit) -> unit
   val unregister_lifecycle_pass : t -> id:int -> unit
   val lifecycle_passes : t -> (unit -> unit) list
+  val register_post_layout_pass : t -> id:int -> (unit -> unit) -> unit
+  val unregister_post_layout_pass : t -> id:int -> unit
+  val post_layout_passes : t -> (unit -> unit) list
   val focus_renderable : t -> id:int -> blur:(unit -> unit) -> unit
   val blur_renderable : t -> id:int -> unit
   val focused_num : t -> int option

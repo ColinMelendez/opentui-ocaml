@@ -127,7 +127,12 @@ let pump_input input ~clock ~source ~queue ~wakeup =
     match
       Input_flow.read_once input ~clock ~source ~emit:(emit_to_queue queue wakeup)
     with
-    | Ok (Input_flow.Bytes_read _ | Input_flow.Backpressured _) -> read_loop ()
+    | Ok (Input_flow.Bytes_read _) ->
+        Eio.Fiber.yield ();
+        read_loop ()
+    | Ok (Input_flow.Backpressured _) ->
+        Eio.Fiber.yield ();
+        read_loop ()
     | Ok Input_flow.End_of_input -> ()
     | Error error -> invalid_arg (Input_flow.message error)
   in
@@ -187,8 +192,10 @@ let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
     | Error _ -> invalid_arg (Resize.message (Resize.Already_installed))
   in
   (* The demo installs its retained tree and handlers before the scheduler
-     starts consuming requests. [exit] stops the scheduler so the harness can
-     drain renderer output and restore the terminal session. *)
+     starts consuming requests. [Dispatch.run] yields between bounded input
+     batches, so a busy mouse stream cannot starve the scheduler. [exit] stops
+     the scheduler so the harness can drain renderer output and restore the
+     terminal session. *)
   let scheduler =
     expect_scheduler
       (Scheduler.create ~sw ~clock ~renderer ~frames_per_second ())

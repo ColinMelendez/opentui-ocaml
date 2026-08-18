@@ -1393,6 +1393,9 @@ CAMLprim value opentui_raw_optimized_buffer_draw_grid(
     CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
   }
 
+  column_count = column_count == 0 ? 0 : column_count - 1;
+  row_count = row_count == 0 ? 0 : row_count - 1;
+
   opentui_external_grid_draw_options options = {
       .draw_inner = Bool_val(draw_inner_value),
       .draw_outer = Bool_val(draw_outer_value),

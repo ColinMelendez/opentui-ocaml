@@ -5,6 +5,7 @@ module Renderer = Core.Renderer
 module Box = Core.Renderables.Box
 module Text = Core.Renderables.Text
 module Text_table = Core.Renderables.Text_table
+module Markdown = Core.Renderables.Markdown
 
 let expect_ok result =
   match result with
@@ -137,6 +138,38 @@ let () =
           if not (contains_substring output "38;2;0;255;255") then
             fail ("styled table output was: " ^ String.escaped output);
           Text_table.destroy table;
+          ignore (expect_ok (Renderer.close renderer)));
+      test "markdown propagates its default fg into code and table blocks" (fun () ->
+          let frames = ref [] in
+          let sink =
+            Renderer.Output.sink ~write_frame:(fun chunks ->
+                frames := chunks :: !frames;
+                Ok ())
+          in
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:(Renderer.Output.Sink sink) ~width:30l
+                 ~height:12l ())
+          in
+          let fg = color_rgb ~red:1 ~green:2 ~blue:3 in
+          let content =
+            "# Heading\n\nA paragraph.\n\n```ts\nconst x = 1\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n"
+          in
+          let markdown =
+            expect_ok
+              (Markdown.create (Renderer.context renderer) ~content ~fg ())
+          in
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer)
+                  (Markdown.as_renderable markdown)));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let output = first_frame_output !frames in
+          (* Unstyled code and table cells should carry the markdown default fg
+             (RGB 1,2,3) instead of the native white default. *)
+          if not (contains_substring output "38;2;1;2;3") then
+            fail ("markdown fg did not reach sub-blocks: " ^ String.escaped output);
+          Markdown.destroy markdown;
           ignore (expect_ok (Renderer.close renderer)));
       test "a failed sink poisons the renderer output path" (fun () ->
           let sink =

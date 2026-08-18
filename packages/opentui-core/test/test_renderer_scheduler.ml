@@ -340,6 +340,43 @@ let () =
           equal bool true !requested;
           equal bool true (expect_renderer (Renderer.has_pending_render renderer));
           destroy_renderer renderer);
+      test "requested frames remain paced after the scheduler becomes idle" (fun () ->
+          Eio_main.run @@ fun env ->
+          Eio.Switch.run @@ fun sw ->
+          let mono_clock = Eio.Stdenv.mono_clock env in
+          let clock = Eio_clock.create ~sw ~mono_clock in
+          let renderer =
+            expect_renderer
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory
+                 ~clock:(Eio_clock.lib_clock clock) ~width:4l ~height:2l ())
+          in
+          let scheduler =
+            expect_scheduler
+              (Scheduler.create ~sw ~clock ~renderer
+                 ~frames_per_second:40 ())
+          in
+          let frame_times = ref [] in
+          let frames = ref 0 in
+          ignore
+            (Renderer.on_frame renderer (fun event ->
+                 ignore event;
+                 incr frames;
+                 frame_times := Eio_clock.now clock :: !frame_times;
+                 if Int.compare !frames 3 < 0 then
+                   ignore
+                     (Eio.Fiber.fork ~sw (fun () ->
+                          Eio.Fiber.yield ();
+                          ignore (expect_renderer (Renderer.request_render renderer))))
+                 else close_scheduler scheduler));
+          let result = start_scheduler ~sw scheduler in
+          ignore (expect_renderer (Renderer.request_render renderer));
+          expect_scheduler_success result;
+          (match List.rev !frame_times with
+           | first :: second :: third :: _ ->
+               equal bool true (Float.compare (second -. first) 0.015 >= 0);
+               equal bool true (Float.compare (third -. second) 0.015 >= 0)
+           | _ -> fail "paced request test rendered fewer than three frames");
+          destroy_renderer renderer);
       test "live ownership drives paced frames and stops after drop" (fun () ->
           Eio_main.run @@ fun env ->
           Eio.Switch.run @@ fun sw ->

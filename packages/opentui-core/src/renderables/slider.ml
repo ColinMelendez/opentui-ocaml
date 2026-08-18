@@ -9,7 +9,7 @@ type t = {
   mutable viewport_size : float;
   mutable background_color : Color.t;
   mutable foreground_color : Color.t;
-  mutable drag_offset_virtual : int option;
+  mutable drag_offset_virtual : float option;
   change_events : float Event_kernel.t;
 }
 
@@ -55,6 +55,8 @@ let set_cell buffer ~x ~y ~character ~foreground ~background =
 
 let render_self slider renderable buffer delta_time =
   ignore delta_time;
+  let origin_x = int_of_float (Renderable.screen_x renderable) in
+  let origin_y = int_of_float (Renderable.screen_y renderable) in
   let width = max 0 (int_of_float (Renderable.width renderable)) in
   let height = max 0 (int_of_float (Renderable.height renderable)) in
   let length =
@@ -67,7 +69,7 @@ let render_self slider renderable buffer delta_time =
     | Error _ -> ()
     | Ok () ->
         result :=
-          set_cell buffer ~x ~y ~character ~foreground
+          set_cell buffer ~x:(origin_x + x) ~y:(origin_y + y) ~character ~foreground
             ~background:slider.background_color
   in
   for y = 0 to height - 1 do
@@ -197,7 +199,7 @@ let virtual_mouse_position slider event =
     | Vertical -> Renderable.height slider.renderable
   in
   let clamped = Float.max 0.0 (Float.min length coordinate) in
-  int_of_float (Float.round (clamped *. 2.0))
+  clamped *. 2.0
 
 let update_value_from_mouse slider event ~offset_virtual =
   let length =
@@ -209,13 +211,13 @@ let update_value_from_mouse slider event ~offset_virtual =
   let _, thumb_size = thumb_geometry slider length in
   let max_start = max 0 (virtual_track - thumb_size) in
   let desired_start =
-    max 0
-      (min max_start
-         (virtual_mouse_position slider event - offset_virtual))
+    Float.max 0.0
+      (Float.min (float_of_int max_start)
+         (virtual_mouse_position slider event -. offset_virtual))
   in
   let ratio =
     if Int.equal max_start 0 then 0.0
-    else float_of_int desired_start /. float_of_int max_start
+    else desired_start /. float_of_int max_start
   in
   ignore (set_value slider (slider.minimum +. (range slider *. ratio)))
 
@@ -224,6 +226,7 @@ let handle_mouse slider event =
   | Renderable.Down ->
       Renderable.mouse_prevent_default event;
       Renderable.mouse_stop_propagation event;
+      Renderable.mouse_capture event;
       let length =
         match slider.orientation with
         | Horizontal -> int_of_float (Float.floor (Renderable.width slider.renderable))
@@ -231,12 +234,20 @@ let handle_mouse slider event =
       in
       let thumb_start, thumb_size = thumb_geometry slider length in
       let mouse = virtual_mouse_position slider event in
-      if mouse >= thumb_start && mouse < thumb_start + thumb_size then
-        slider.drag_offset_virtual <- Some (mouse - thumb_start)
+      if
+        mouse >= float_of_int thumb_start
+        && mouse < float_of_int (thumb_start + thumb_size)
+      then
+        slider.drag_offset_virtual <-
+          Some (mouse -. float_of_int thumb_start)
       else begin
         ignore (set_value slider (relative_position slider event));
         let new_start, new_size = thumb_geometry slider length in
-        let offset = max 0 (min new_size (mouse - new_start)) in
+        let offset =
+          Float.max 0.0
+            (Float.min (float_of_int new_size)
+               (mouse -. float_of_int new_start))
+        in
         slider.drag_offset_virtual <- Some offset
       end
   | Renderable.Drag ->

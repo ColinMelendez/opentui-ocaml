@@ -4,8 +4,8 @@
     adapter because terminal state may be uncertain; the sink itself is never
     closed by this module. *)
 
-type error = Invalid_range | Flow_error | Desynchronized
-(** Range, sink, and post-failure state errors. *)
+type error = Invalid_range | Frame_too_large | Flow_error | Desynchronized
+(** Range, frame-size, sink, and post-failure state errors. *)
 
 type t
 (** An output adapter with tracked terminal mode state. *)
@@ -39,9 +39,10 @@ val write_subbytes :
 (** [write_subbytes] writes exactly the validated subrange. *)
 
 val write_frame : t -> bytes list -> (unit, error) result
-(** [write_frame output chunks] writes all chunks while holding one output
-    lock, so a complete renderer frame cannot be interleaved with terminal
-    mode changes or another frame. *)
+(** [write_frame output chunks] validates and writes one complete frame while
+    holding one output lock. Multiple native spans are coalesced before the
+    sink write, so terminals without synchronized-update support still observe
+    the frame as one transport transaction. *)
 
 val set_screen :
   t -> Lib.Terminal_modes.screen -> (unit, error) result

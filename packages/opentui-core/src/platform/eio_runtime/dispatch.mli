@@ -1,5 +1,7 @@
 (** Caller-run dispatch over a bounded {!Lib.Event_queue}.
-    [run] waits on {!Wakeup} and does not create fibers or own resources. *)
+    [run] waits on {!Wakeup}, yields after a bounded non-empty batch, and does
+    not create fibers or own resources. The yield keeps a continuously
+    readable terminal from starving rendering and other owner-domain fibers. *)
 
 (** [drain ~queue ~handle] invokes [handle] for each currently queued event in
     FIFO order. *)

@@ -1,6 +1,6 @@
 module Modes = Lib.Terminal_modes
 
-type error = Invalid_range | Flow_error | Desynchronized
+type error = Invalid_range | Frame_too_large | Flow_error | Desynchronized
 
 type t = {
   sink : Eio.Flow.sink_ty Eio.Resource.t;
@@ -13,6 +13,7 @@ and status = Healthy | Poisoned
 
 let message = function
   | Invalid_range -> "terminal Eio output byte range is invalid"
+  | Frame_too_large -> "terminal Eio output frame is too large"
   | Flow_error -> "terminal Eio output flow failed"
   | Desynchronized -> "terminal Eio output flow state is desynchronized"
 
@@ -83,6 +84,34 @@ let write_subbytes output ~bytes ~off ~len =
 let write output bytes =
   write_subbytes output ~bytes ~off:0 ~len:(Bytes.length bytes)
 
+let contiguous_frame chunks =
+  match chunks with
+  | [] -> Ok None
+  | [ bytes ] -> Ok (Some bytes)
+  | _ ->
+      let total_result =
+        List.fold_left
+          (fun result bytes ->
+            Result.bind result (fun total ->
+                let length = Bytes.length bytes in
+                if Int.compare total (Sys.max_string_length - length) > 0 then
+                  Error Frame_too_large
+                else Ok (total + length)))
+          (Ok 0) chunks
+      in
+      Result.map
+        (fun total ->
+          let frame = Bytes.create total in
+          let offset = ref 0 in
+          List.iter
+            (fun bytes ->
+              let length = Bytes.length bytes in
+              Bytes.blit bytes 0 frame !offset length;
+              offset := !offset + length)
+            chunks;
+          Some frame)
+        total_result
+
 let write_frame output chunks =
   Eio.Mutex.use_rw output.mutex ~protect:true (fun () ->
       if
@@ -92,14 +121,11 @@ let write_frame output chunks =
              chunks)
       then Error Invalid_range
       else
-        List.fold_left
-          (fun result bytes ->
-            match result with
-            | Error _ -> result
-            | Ok () ->
-                write_subbytes_unlocked
-                  output ~bytes ~off:0 ~len:(Bytes.length bytes))
-          (Ok ()) chunks)
+        Result.bind (contiguous_frame chunks) (function
+          | None -> Ok ()
+          | Some frame ->
+              write_subbytes_unlocked output ~bytes:frame ~off:0
+                ~len:(Bytes.length frame)))
 
 let apply output make_transition =
   Eio.Mutex.use_rw output.mutex ~protect:true (fun () ->

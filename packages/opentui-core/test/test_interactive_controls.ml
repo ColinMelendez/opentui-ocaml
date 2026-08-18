@@ -275,4 +275,88 @@ let () =
           Core.Renderables.Scroll_bar.destroy bar;
           Core.Renderables.Scroll_box.destroy box;
           Renderer.destroy renderer);
+      test "scrollbar layout exposes the docked track to pointer dragging" (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:12l ~height:8l ())
+          in
+          let bar =
+            expect_ok
+              (Core.Renderables.Scroll_bar.create (Renderer.context renderer)
+                 ~orientation:Core.Renderables.Scroll_bar.Vertical
+                 ~width:(Core.Yoga.Point 4.0) ~height:(Core.Yoga.Point 8.0) ())
+          in
+          let bar_node = Core.Renderables.Scroll_bar.as_renderable bar in
+          let slider_node =
+            Core.Renderables.Slider.as_renderable
+              (Core.Renderables.Scroll_bar.slider bar)
+          in
+          ignore (expect_ok (Core.Renderables.Scroll_bar.set_viewport_size bar 3.0));
+          ignore (expect_ok (Core.Renderables.Scroll_bar.set_scroll_size bar 20.0));
+          attach renderer bar_node;
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 4.0 (Renderable.width bar_node);
+          equal (float 0.0001) 2.0 (Renderable.width slider_node);
+          equal (float 0.0001) 2.0 (Renderable.screen_x slider_node);
+          equal bool true
+            (match expect_ok (Renderer.hit_test renderer ~x:3 ~y:0) with
+            | Some target -> target == slider_node
+            | None -> false);
+          equal bool true
+            (match expect_ok (Renderer.hit_test renderer ~x:0 ~y:0) with
+            | Some target -> target == bar_node
+            | None -> false);
+          let before = Core.Renderables.Scroll_bar.scroll_position bar in
+          ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Down ~x:3 ~y:0)));
+          ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Drag ~x:3 ~y:7)));
+          ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Up ~x:3 ~y:7)));
+          equal bool true
+            (Core.Renderables.Scroll_bar.scroll_position bar > before);
+          Core.Renderables.Scroll_bar.destroy bar;
+          Renderer.destroy renderer);
+      test "scrollbox stretches and commits its scrollbar edge hit target" (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:8l ())
+          in
+          let box =
+            expect_ok
+              (Core.Renderables.Scroll_box.create (Renderer.context renderer)
+                 ~scroll_y:true ~width:(Core.Yoga.Point 10.0)
+                 ~height:(Core.Yoga.Point 4.0) ())
+          in
+          let content =
+            expect_ok (Renderable.Private.create (Renderer.context renderer) ())
+          in
+          ignore (expect_ok (Renderable.set_width content (Core.Yoga.Point 10.0)));
+          ignore (expect_ok (Renderable.set_height content (Core.Yoga.Point 12.0)));
+          ignore (expect_ok (Core.Renderables.Scroll_box.add box content));
+          attach renderer (Core.Renderables.Scroll_box.as_renderable box);
+          for _ = 1 to 3 do
+            ignore (expect_ok (Renderer.render renderer ~force:true))
+          done;
+          let bar = Core.Renderables.Scroll_box.vertical_scrollbar box in
+          let bar_node = Core.Renderables.Scroll_bar.as_renderable bar in
+          let slider_node =
+            Core.Renderables.Slider.as_renderable
+              (Core.Renderables.Scroll_bar.slider bar)
+          in
+          equal bool true (Core.Renderables.Scroll_bar.visible bar);
+          let bar_x =
+            int_of_float
+              (Float.floor
+                 (Renderable.screen_x bar_node +. Renderable.width bar_node -. 1.0))
+          in
+          equal bool true
+            (match expect_ok (Renderer.hit_test renderer ~x:bar_x ~y:0) with
+            | Some target -> target == slider_node
+            | None -> false);
+          let before = Core.Renderables.Scroll_box.scroll_top box in
+          ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Down ~x:bar_x ~y:0)));
+          ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Drag ~x:bar_x ~y:3)));
+          ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Up ~x:bar_x ~y:3)));
+          equal bool true (Core.Renderables.Scroll_box.scroll_top box > before);
+          Core.Renderables.Scroll_box.destroy box;
+          Renderable.destroy content;
+          Renderer.destroy renderer);
     ]
