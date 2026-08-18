@@ -35,6 +35,7 @@ type capabilities =
 type span_feed_options = int32 * int32 * int64 * int * bool * int32
 type span_feed_stats = int64 * int64 * int32 * int32
 type image_info = int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32
+type cursor_state = int32 * int32 * bool * int * bool * color
 
 external renderer_create : int32 -> int32 -> int * Native_token.Renderer.t =
   "opentui_raw_renderer_create"
@@ -42,6 +43,27 @@ external renderer_create : int32 -> int32 -> int * Native_token.Renderer.t =
 external renderer_resize :
   Native_token.Renderer.t -> int32 -> int32 -> int =
   "opentui_raw_renderer_resize"
+
+external renderer_set_background_color :
+  Native_token.Renderer.t -> color -> int =
+  "opentui_raw_renderer_set_background_color"
+
+external renderer_set_cursor_position :
+  Native_token.Renderer.t -> int32 -> int32 -> bool -> int =
+  "opentui_raw_renderer_set_cursor_position"
+
+external renderer_set_cursor_color :
+  Native_token.Renderer.t -> color -> int =
+  "opentui_raw_renderer_set_cursor_color"
+
+external renderer_set_cursor_style_options :
+  Native_token.Renderer.t -> int option -> bool option -> color option ->
+  int option -> int =
+  "opentui_raw_renderer_set_cursor_style_options"
+
+external renderer_cursor_state :
+  Native_token.Renderer.t -> int * cursor_state =
+  "opentui_raw_renderer_cursor_state"
 
 external renderer_destroy : Native_token.Renderer.t -> unit =
   "opentui_raw_renderer_destroy"

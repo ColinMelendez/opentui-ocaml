@@ -28,6 +28,27 @@ type pixel_resolution = {
 
 type render_geometry = Lib.Render_geometry.t
 
+type cursor_style = Opentui_raw.Renderer.cursor_style =
+  | Block
+  | Line
+  | Underline
+  | Default
+
+type mouse_pointer_style = Opentui_raw.Renderer.mouse_pointer_style =
+  | Mouse_default
+  | Mouse_pointer
+  | Mouse_text
+  | Mouse_crosshair
+  | Mouse_move
+  | Mouse_not_allowed
+
+type cursor_style_options = {
+  style : cursor_style option;
+  blinking : bool option;
+  color : Color.t option;
+  cursor : mouse_pointer_style option;
+}
+
 type handler_source = Renderer_events.handler_source = Keyboard | Pointer
 type handler_scope = Renderer_events.handler_scope = Global | Renderable
 type handler_kind = Renderer_events.handler_kind = Keypress | Keyrelease | Paste | Mouse
@@ -77,6 +98,7 @@ type t = {
   mutable focused : focused_renderable option;
   mutable live_request_count : int;
   hit_grid : Opentui_raw.Renderer.Hit_grid.t;
+  presentation : Opentui_raw.Renderer.t;
   mutable captured_num : int option;
   mutable closed : bool;
   mutable scheduler_wakeup : scheduler_wakeup_state option;
@@ -89,6 +111,11 @@ let same_owner left right = left.owner == right.owner
 
 let ensure_open context =
   if context.closed then Error Error.Closed else Ok ()
+
+let map_raw_error error =
+  match error with
+  | Opentui_raw.Error.Closed -> Error.Closed
+  | error -> Error.Native (Native.Error.Native error)
 
 let width context =
   match ensure_open context with
@@ -188,6 +215,50 @@ let has_pending_render context =
   match ensure_open context with
   | Error error -> Error error
   | Ok () -> Ok context.render_requested
+
+let set_cursor_position context ~x ~y ?(visible = true) () =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () ->
+      (match
+         Opentui_raw.Renderer.set_cursor_position context.presentation ~x ~y
+           ~visible ()
+       with
+      | Ok () -> Ok ()
+      | Error error -> Error (map_raw_error error))
+
+let set_cursor_color context ~color =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () ->
+      (match
+         Opentui_raw.Renderer.set_cursor_color context.presentation
+           ~color:(Color.Private.to_raw color)
+       with
+      | Ok () -> Ok ()
+      | Error error -> Error (map_raw_error error))
+
+let set_cursor_style context (options : cursor_style_options) =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () ->
+      let raw_options : Opentui_raw.Renderer.cursor_style_options =
+        {
+          style = options.style;
+          blinking = options.blinking;
+          color = Option.map Color.Private.to_raw options.color;
+          cursor = options.cursor;
+        }
+      in
+      (match
+         Opentui_raw.Renderer.set_cursor_style context.presentation raw_options
+       with
+      | Ok () -> Ok ()
+      | Error error -> Error (map_raw_error error))
+
+let set_mouse_pointer context pointer =
+  set_cursor_style context
+    { style = None; blinking = None; color = None; cursor = Some pointer }
 
 let on_resize context callback =
   match ensure_open context with
@@ -425,7 +496,7 @@ module Private = struct
     { source = Keyboard; scope; kind; owner_num = error.owner_num;
       exception_value = error.exception_value }
 
-  let create ~owner ~width ~height ~capabilities ~clock ~hit_grid =
+  let create ~owner ~width ~height ~capabilities ~clock ~hit_grid ~presentation =
     let events = Renderer_events.Private.create () in
     let key_handler =
       Lib.Key_handler.create ~on_error:(fun error ->
@@ -457,6 +528,7 @@ module Private = struct
       focused = None;
       live_request_count = 0;
       hit_grid;
+      presentation;
       captured_num = None;
       closed = false;
       scheduler_wakeup = None;

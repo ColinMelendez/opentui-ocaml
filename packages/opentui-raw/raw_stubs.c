@@ -145,6 +145,104 @@ static bool read_color(value color, uint16_t output[4]) {
   return true;
 }
 
+static bool read_optional_code(
+    value optional,
+    uint8_t maximum,
+    uint8_t sentinel,
+    uint8_t *output) {
+  if (Is_long(optional)) {
+    if (Long_val(optional) != 0) {
+      return false;
+    }
+    *output = sentinel;
+    return true;
+  }
+
+  if (Wosize_val(optional) != 1) {
+    return false;
+  }
+  value code = Field(optional, 0);
+  if (!Is_long(code)) {
+    return false;
+  }
+
+  intnat code_value = Long_val(code);
+  if (code_value < 0 || code_value > maximum) {
+    return false;
+  }
+  *output = (uint8_t)code_value;
+  return true;
+}
+
+static bool read_optional_bool(value optional, uint8_t *output) {
+  return read_optional_code(optional, 1, UINT8_MAX, output);
+}
+
+static bool read_optional_color(
+    value optional,
+    uint16_t output[4],
+    const uint16_t **pointer) {
+  if (Is_long(optional)) {
+    if (Long_val(optional) != 0) {
+      return false;
+    }
+    *pointer = NULL;
+    return true;
+  }
+
+  if (Wosize_val(optional) != 1 || !read_color(Field(optional, 0), output)) {
+    return false;
+  }
+  *pointer = output;
+  return true;
+}
+
+static uint8_t cursor_channel(float channel) {
+  if (!isfinite(channel) || channel <= 0.0f) {
+    return 0;
+  }
+  if (channel >= 1.0f) {
+    return UINT8_MAX;
+  }
+  return (uint8_t)lroundf(channel * 255.0f);
+}
+
+static value make_status_cursor_state(
+    int status,
+    const opentui_external_cursor_state *state) {
+  CAMLparam0();
+  CAMLlocal3(result, state_value, color_value);
+
+  uint32_t x = state == NULL ? 0 : state->x;
+  uint32_t y = state == NULL ? 0 : state->y;
+  bool visible = state != NULL && state->visible;
+  uint8_t style = state == NULL ? 3 : state->style;
+  bool blinking = state != NULL && state->blinking;
+  uint8_t red = state == NULL ? 0 : cursor_channel(state->r);
+  uint8_t green = state == NULL ? 0 : cursor_channel(state->g);
+  uint8_t blue = state == NULL ? 0 : cursor_channel(state->b);
+  uint8_t alpha = state == NULL ? 0 : cursor_channel(state->a);
+
+  color_value = caml_alloc_tuple(4);
+  Store_field(color_value, 0, Val_int(red));
+  Store_field(color_value, 1, Val_int(green));
+  Store_field(color_value, 2, Val_int(blue));
+  Store_field(color_value, 3, Val_int(alpha));
+
+  state_value = caml_alloc_tuple(6);
+  Store_field(state_value, 0, caml_copy_int32((int32_t)x));
+  Store_field(state_value, 1, caml_copy_int32((int32_t)y));
+  Store_field(state_value, 2, Val_bool(visible));
+  Store_field(state_value, 3, Val_int(style));
+  Store_field(state_value, 4, Val_bool(blinking));
+  Store_field(state_value, 5, color_value);
+
+  result = caml_alloc_tuple(2);
+  Store_field(result, 0, Val_int(status));
+  Store_field(result, 1, state_value);
+  CAMLreturn(result);
+}
+
 static bool read_text_length(value text, uint32_t *length) {
   mlsize_t text_length = caml_string_length(text);
   if (text_length > UINT32_MAX) {
@@ -285,6 +383,111 @@ CAMLprim value opentui_raw_renderer_render(value handle_value, value force_value
   }
 
   CAMLreturn(Val_int((int)render(handle, Bool_val(force_value))));
+}
+
+CAMLprim value opentui_raw_renderer_set_background_color(
+    value handle_value,
+    value color_value) {
+  CAMLparam2(handle_value, color_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  uint16_t color[4];
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!read_color(color_value, color)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  setBackgroundColor(handle, color);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_set_cursor_position(
+    value handle_value,
+    value x_value,
+    value y_value,
+    value visible_value) {
+  CAMLparam4(handle_value, x_value, y_value, visible_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  setCursorPosition(
+      handle,
+      Int32_val(x_value),
+      Int32_val(y_value),
+      Bool_val(visible_value));
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_set_cursor_color(
+    value handle_value,
+    value color_value) {
+  CAMLparam2(handle_value, color_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  uint16_t color[4];
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!read_color(color_value, color)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  setCursorColor(handle, color);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_set_cursor_style_options(
+    value handle_value,
+    value style_value,
+    value blinking_value,
+    value color_value,
+    value cursor_value) {
+  CAMLparam5(handle_value, style_value, blinking_value, color_value, cursor_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  uint8_t style;
+  uint8_t blinking;
+  uint8_t cursor;
+  uint16_t color[4];
+  const uint16_t *color_pointer;
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!read_optional_code(style_value, 3, UINT8_MAX, &style)
+      || !read_optional_bool(blinking_value, &blinking)
+      || !read_optional_color(color_value, color, &color_pointer)
+      || !read_optional_code(cursor_value, 5, UINT8_MAX, &cursor)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  opentui_external_cursor_style_options options = {
+    .style = style,
+    .blinking = blinking,
+    .color = color_pointer,
+    .cursor = cursor,
+  };
+  setCursorStyleOptions(handle, &options);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_cursor_state(value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(make_status_cursor_state(
+        OPENTUI_RAW_STATUS_STALE_HANDLE,
+        NULL));
+  }
+
+  opentui_external_cursor_state state;
+  getCursorState(handle, &state);
+  CAMLreturn(make_status_cursor_state(OPENTUI_RAW_STATUS_OK, &state));
 }
 
 static value renderer_add_to_hit_grid_impl(

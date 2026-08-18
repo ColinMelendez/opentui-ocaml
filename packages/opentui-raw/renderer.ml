@@ -7,6 +7,32 @@ type t = renderer
 
 type render_status = Rendered | Skipped | Failed
 
+type cursor_style = Block | Line | Underline | Default
+
+type mouse_pointer_style =
+  | Mouse_default
+  | Mouse_pointer
+  | Mouse_text
+  | Mouse_crosshair
+  | Mouse_move
+  | Mouse_not_allowed
+
+type cursor_style_options = {
+  style : cursor_style option;
+  blinking : bool option;
+  color : Color.t option;
+  cursor : mouse_pointer_style option;
+}
+
+type cursor_state = {
+  x : int32;
+  y : int32;
+  visible : bool;
+  style : cursor_style;
+  blinking : bool;
+  color : Color.t;
+}
+
 let error_of_status status =
   match Error.Private.of_native_status status with
   | Some error -> error
@@ -59,6 +85,80 @@ let render renderer ~force =
 let with_open renderer operation =
   if Native_owner.is_open renderer.owner then operation renderer.handle
   else Error Error.Closed
+
+let cursor_style_code = function
+  | Block -> 0
+  | Line -> 1
+  | Underline -> 2
+  | Default -> 3
+
+let cursor_style_of_code = function
+  | 0 -> Ok Block
+  | 1 -> Ok Line
+  | 2 -> Ok Underline
+  | 3 -> Ok Default
+  | _ -> Error Error.Native_failure
+
+let mouse_pointer_style_code = function
+  | Mouse_default -> 0
+  | Mouse_pointer -> 1
+  | Mouse_text -> 2
+  | Mouse_crosshair -> 3
+  | Mouse_move -> 4
+  | Mouse_not_allowed -> 5
+
+let set_background_color renderer ~color =
+  with_open renderer (fun handle ->
+      result_of_status
+        (Native.renderer_set_background_color handle (Color.Private.to_native color))
+        ())
+
+let set_cursor_position renderer ~x ~y ?(visible = true) () =
+  with_open renderer (fun handle ->
+      result_of_status
+        (Native.renderer_set_cursor_position handle x y visible)
+        ())
+
+let set_cursor_color renderer ~color =
+  with_open renderer (fun handle ->
+      result_of_status
+        (Native.renderer_set_cursor_color handle (Color.Private.to_native color))
+        ())
+
+let set_cursor_style renderer (options : cursor_style_options) =
+  with_open renderer (fun handle ->
+      let style = Option.map cursor_style_code options.style in
+      let color = Option.map Color.Private.to_native options.color in
+      let cursor = Option.map mouse_pointer_style_code options.cursor in
+      result_of_status
+        (Native.renderer_set_cursor_style_options handle style options.blinking
+           color cursor)
+        ())
+
+let cursor_state renderer =
+  with_open renderer (fun handle ->
+      let status, (x, y, visible, style_code, blinking, color) =
+        Native.renderer_cursor_state handle
+      in
+      match Error.Private.of_native_status status with
+      | Some error -> Error error
+      | None ->
+          (match cursor_style_of_code style_code with
+          | Error error -> Error error
+          | Ok style ->
+              let red, green, blue, alpha = color in
+              (match Color.rgba ~red ~green ~blue ~alpha with
+              | Ok color -> Ok { x; y; visible; style; blinking; color }
+              | Error
+                  (Error.Invalid_argument
+                  | Error.Closed
+                  | Error.Stale_handle
+                  | Error.Native_failure
+                  | Error.Output_too_small
+                  | Error.Queue_overflow
+                  | Error.No_space
+                  | Error.Max_bytes
+                  | Error.Busy) -> Error Error.Native_failure)))
 
 module Hit_grid = struct
   type t = { renderer : renderer }

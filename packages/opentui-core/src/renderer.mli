@@ -7,6 +7,36 @@ type t
 type render_status = Rendered | Skipped | Failed
 (** The native outcome of one explicit frame execution. *)
 
+type cursor_style = Render_context.cursor_style =
+  | Block
+  | Line
+  | Underline
+  | Default
+
+type mouse_pointer_style = Render_context.mouse_pointer_style =
+  | Mouse_default
+  | Mouse_pointer
+  | Mouse_text
+  | Mouse_crosshair
+  | Mouse_move
+  | Mouse_not_allowed
+
+type cursor_style_options = Render_context.cursor_style_options = {
+  style : cursor_style option;
+  blinking : bool option;
+  color : Color.t option;
+  cursor : mouse_pointer_style option;
+}
+
+type cursor_state = {
+  x : int32;
+  y : int32;
+  visible : bool;
+  style : cursor_style;
+  blinking : bool;
+  color : Color.t;
+}
+
 type post_process =
   Buffer.t -> delta_time:float -> (unit, Error.t) result
 (** A synchronous, owner-local post-process applied to the next buffer after
@@ -105,6 +135,31 @@ val has_pending_render : t -> (bool, Error.t) result
 (** Renderer-owned current and next buffers borrowed through {!Buffer}. *)
 val current_buffer : t -> (Buffer.t, Error.t) result
 val next_buffer : t -> (Buffer.t, Error.t) result
+
+(** [background_color renderer] returns the renderer-owned native backdrop. *)
+val background_color : t -> (Color.t, Error.t) result
+
+(** [set_background_color renderer ~color] updates the native backdrop, clears
+    the next buffer with that color, and requests one coalesced repaint. *)
+val set_background_color : t -> color:Color.t -> (unit, Error.t) result
+
+(** [set_cursor_position renderer ...] updates the native terminal cursor. The
+    native renderer clamps coordinates to its one-based dimensions. *)
+val set_cursor_position :
+  t -> x:int32 -> y:int32 -> ?visible:bool -> unit -> (unit, Error.t) result
+
+(** [set_cursor_color renderer ~color] updates cursor color without requesting
+    a repaint or changing style and blinking. *)
+val set_cursor_color : t -> color:Color.t -> (unit, Error.t) result
+
+(** [set_cursor_style renderer options] updates supplied terminal cursor style,
+    blinking, color, and mouse-pointer fields. Unspecified fields persist. *)
+val set_cursor_style :
+  t -> cursor_style_options -> (unit, Error.t) result
+val set_mouse_pointer : t -> mouse_pointer_style -> (unit, Error.t) result
+
+(** [cursor_state renderer] reads native terminal cursor presentation state. *)
+val cursor_state : t -> (cursor_state, Error.t) result
 
 (** [request_render renderer] records one coalesced future render request. It
     does not execute a frame or start an Eio fiber. *)

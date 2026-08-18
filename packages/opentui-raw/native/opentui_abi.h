@@ -48,6 +48,25 @@ typedef struct opentui_external_render_stats {
   bool stdout_write_time_valid;
 } opentui_external_render_stats;
 
+typedef struct opentui_external_cursor_style_options {
+  uint8_t style;
+  uint8_t blinking;
+  const uint16_t *color;
+  uint8_t cursor;
+} opentui_external_cursor_style_options;
+
+typedef struct opentui_external_cursor_state {
+  uint32_t x;
+  uint32_t y;
+  bool visible;
+  uint8_t style;
+  bool blinking;
+  float r;
+  float g;
+  float b;
+  float a;
+} opentui_external_cursor_state;
+
 typedef void *opentui_yoga_config_ref;
 typedef const void *opentui_yoga_config_const_ref;
 typedef void *opentui_yoga_node_ref;
@@ -184,6 +203,23 @@ void resizeRenderer(
     opentui_native_handle renderer_handle,
     uint32_t width,
     uint32_t height);
+void setBackgroundColor(
+    opentui_native_handle renderer_handle,
+    const uint16_t *color);
+void setCursorPosition(
+    opentui_native_handle renderer_handle,
+    int32_t x,
+    int32_t y,
+    bool visible);
+void setCursorColor(
+    opentui_native_handle renderer_handle,
+    const uint16_t *color);
+void setCursorStyleOptions(
+    opentui_native_handle renderer_handle,
+    const opentui_external_cursor_style_options *options);
+void getCursorState(
+    opentui_native_handle renderer_handle,
+    opentui_external_cursor_state *output);
 void destroyRenderer(opentui_native_handle renderer_handle);
 opentui_native_handle getCurrentBuffer(opentui_native_handle renderer_handle);
 opentui_native_handle getNextBuffer(opentui_native_handle renderer_handle);
@@ -689,6 +725,18 @@ _Static_assert(sizeof(bool) == 1, "OpenTUI bool must have one-byte C ABI storage
 _Static_assert(sizeof(opentui_external_build_options) == 2, "build options ABI drift");
 _Static_assert(sizeof(opentui_external_allocator_stats) == 40, "allocator stats ABI drift");
 _Static_assert(sizeof(opentui_external_render_stats) == 56, "render stats ABI drift");
+_Static_assert(sizeof(opentui_external_cursor_style_options) == 24, "cursor style options ABI drift");
+_Static_assert(offsetof(opentui_external_cursor_style_options, color) == 8, "cursor style options color offset drift");
+_Static_assert(offsetof(opentui_external_cursor_style_options, cursor) == 16, "cursor style options cursor offset drift");
+_Static_assert(sizeof(opentui_external_cursor_state) == 28, "cursor state ABI drift");
+_Static_assert(offsetof(opentui_external_cursor_state, y) == 4, "cursor state y offset drift");
+_Static_assert(offsetof(opentui_external_cursor_state, visible) == 8, "cursor state visible offset drift");
+_Static_assert(offsetof(opentui_external_cursor_state, style) == 9, "cursor state style offset drift");
+_Static_assert(offsetof(opentui_external_cursor_state, blinking) == 10, "cursor state blinking offset drift");
+_Static_assert(offsetof(opentui_external_cursor_state, r) == 12, "cursor state red offset drift");
+_Static_assert(offsetof(opentui_external_cursor_state, g) == 16, "cursor state green offset drift");
+_Static_assert(offsetof(opentui_external_cursor_state, b) == 20, "cursor state blue offset drift");
+_Static_assert(offsetof(opentui_external_cursor_state, a) == 24, "cursor state alpha offset drift");
 _Static_assert(sizeof(opentui_external_yoga_layout) == 24, "Yoga layout ABI drift");
 _Static_assert(sizeof(opentui_external_measure_result) == 8, "measure result ABI drift");
 _Static_assert(sizeof(opentui_external_styled_chunk) == 56, "styled chunk ABI drift");
@@ -759,6 +807,11 @@ typedef void (*opentui_edit_buffer_insert_text_fn)(opentui_native_handle, const 
 typedef opentui_native_handle (*opentui_create_renderer_fn)(uint32_t, uint32_t, uint8_t, uint8_t, void *);
 typedef void (*opentui_set_use_thread_fn)(opentui_native_handle, bool);
 typedef void (*opentui_resize_renderer_fn)(opentui_native_handle, uint32_t, uint32_t);
+typedef void (*opentui_set_background_color_fn)(opentui_native_handle, const uint16_t *);
+typedef void (*opentui_set_cursor_position_fn)(opentui_native_handle, int32_t, int32_t, bool);
+typedef void (*opentui_set_cursor_color_fn)(opentui_native_handle, const uint16_t *);
+typedef void (*opentui_set_cursor_style_options_fn)(opentui_native_handle, const opentui_external_cursor_style_options *);
+typedef void (*opentui_get_cursor_state_fn)(opentui_native_handle, opentui_external_cursor_state *);
 typedef void (*opentui_destroy_renderer_fn)(opentui_native_handle);
 typedef opentui_native_handle (*opentui_get_buffer_fn)(opentui_native_handle);
 typedef uint8_t (*opentui_render_fn)(opentui_native_handle, bool);
@@ -915,6 +968,11 @@ _Static_assert(_Generic(&editBufferInsertText, opentui_edit_buffer_insert_text_f
 _Static_assert(_Generic(&createRenderer, opentui_create_renderer_fn: 1, default: 0), "createRenderer ABI drift");
 _Static_assert(_Generic(&setUseThread, opentui_set_use_thread_fn: 1, default: 0), "setUseThread ABI drift");
 _Static_assert(_Generic(&resizeRenderer, opentui_resize_renderer_fn: 1, default: 0), "resizeRenderer ABI drift");
+_Static_assert(_Generic(&setBackgroundColor, opentui_set_background_color_fn: 1, default: 0), "setBackgroundColor ABI drift");
+_Static_assert(_Generic(&setCursorPosition, opentui_set_cursor_position_fn: 1, default: 0), "setCursorPosition ABI drift");
+_Static_assert(_Generic(&setCursorColor, opentui_set_cursor_color_fn: 1, default: 0), "setCursorColor ABI drift");
+_Static_assert(_Generic(&setCursorStyleOptions, opentui_set_cursor_style_options_fn: 1, default: 0), "setCursorStyleOptions ABI drift");
+_Static_assert(_Generic(&getCursorState, opentui_get_cursor_state_fn: 1, default: 0), "getCursorState ABI drift");
 _Static_assert(_Generic(&destroyRenderer, opentui_destroy_renderer_fn: 1, default: 0), "destroyRenderer ABI drift");
 _Static_assert(_Generic(&getCurrentBuffer, opentui_get_buffer_fn: 1, default: 0), "getCurrentBuffer ABI drift");
 _Static_assert(_Generic(&getNextBuffer, opentui_get_buffer_fn: 1, default: 0), "getNextBuffer ABI drift");

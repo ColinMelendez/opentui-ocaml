@@ -62,6 +62,11 @@
  (libraries opentui-core windtrap))
 
 (test
+ (name test_renderer_presentation)
+ (modules test_renderer_presentation)
+ (libraries opentui-core windtrap))
+
+(test
  (name test_terminal_capabilities)
  (modules test_terminal_capabilities)
  (libraries opentui-core windtrap))

@@ -3,6 +3,11 @@
  (modules test_raw)
  (libraries opentui-raw windtrap))
 
+(test
+ (name test_renderer_presentation)
+ (modules test_renderer_presentation)
+ (libraries opentui-raw windtrap))
+
 (library
  (name test_native_link_support)
  (modules test_native_link_support)

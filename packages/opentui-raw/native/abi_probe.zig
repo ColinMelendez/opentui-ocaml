@@ -464,6 +464,43 @@ comptime {
         "resizeRenderer",
     );
     expectType(
+        @TypeOf(opentui.setBackgroundColor),
+        fn (opentui.NativeHandle, [*]const u16) callconv(.c) void,
+        "setBackgroundColor",
+    );
+    expectType(
+        @TypeOf(opentui.setCursorPosition),
+        fn (opentui.NativeHandle, i32, i32, bool) callconv(.c) void,
+        "setCursorPosition",
+    );
+    expectType(
+        @TypeOf(opentui.setCursorColor),
+        fn (opentui.NativeHandle, [*]const u16) callconv(.c) void,
+        "setCursorColor",
+    );
+    expectType(
+        @TypeOf(opentui.setCursorStyleOptions),
+        fn (opentui.NativeHandle, *const opentui.CursorStyleOptions) callconv(.c) void,
+        "setCursorStyleOptions",
+    );
+    expectType(
+        @TypeOf(opentui.getCursorState),
+        fn (opentui.NativeHandle, *opentui.ExternalCursorState) callconv(.c) void,
+        "getCursorState",
+    );
+    expectSize(opentui.CursorStyleOptions, 24, "CursorStyleOptions");
+    expectOffset(opentui.CursorStyleOptions, "color", 8, "CursorStyleOptions.color");
+    expectOffset(opentui.CursorStyleOptions, "cursor", 16, "CursorStyleOptions.cursor");
+    expectSize(opentui.ExternalCursorState, 28, "ExternalCursorState");
+    expectOffset(opentui.ExternalCursorState, "y", 4, "ExternalCursorState.y");
+    expectOffset(opentui.ExternalCursorState, "visible", 8, "ExternalCursorState.visible");
+    expectOffset(opentui.ExternalCursorState, "style", 9, "ExternalCursorState.style");
+    expectOffset(opentui.ExternalCursorState, "blinking", 10, "ExternalCursorState.blinking");
+    expectOffset(opentui.ExternalCursorState, "r", 12, "ExternalCursorState.r");
+    expectOffset(opentui.ExternalCursorState, "g", 16, "ExternalCursorState.g");
+    expectOffset(opentui.ExternalCursorState, "b", 20, "ExternalCursorState.b");
+    expectOffset(opentui.ExternalCursorState, "a", 24, "ExternalCursorState.a");
+    expectType(
         @TypeOf(opentui.destroyRenderer),
         fn (opentui.NativeHandle) callconv(.c) void,
         "destroyRenderer",

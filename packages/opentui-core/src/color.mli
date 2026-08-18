@@ -23,4 +23,5 @@ val channels : t -> int * int * int * int
 module Private : sig
   (** Internal conversion used by the raw renderer bridge. *)
   val to_raw : t -> Opentui_raw.Color.t
+  val of_raw : Opentui_raw.Color.t -> t
 end

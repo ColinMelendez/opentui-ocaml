@@ -17,4 +17,5 @@ let channels = Opentui_raw.Color.channels
 
 module Private = struct
   let to_raw color = color
+  let of_raw color = color
 end

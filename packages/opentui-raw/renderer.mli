@@ -7,6 +7,32 @@ type t
 type render_status = Rendered | Skipped | Failed
 (** The native renderer's frame outcome. *)
 
+type cursor_style = Block | Line | Underline | Default
+
+type mouse_pointer_style =
+  | Mouse_default
+  | Mouse_pointer
+  | Mouse_text
+  | Mouse_crosshair
+  | Mouse_move
+  | Mouse_not_allowed
+
+type cursor_style_options = {
+  style : cursor_style option;
+  blinking : bool option;
+  color : Color.t option;
+  cursor : mouse_pointer_style option;
+}
+
+type cursor_state = {
+  x : int32;
+  y : int32;
+  visible : bool;
+  style : cursor_style;
+  blinking : bool;
+  color : Color.t;
+}
+
 module Hit_grid : sig
   (** An opaque, renderer-owned hit-grid capability. It remains tied to its
       renderer owner and reports [Error.Closed] after that renderer closes. *)
@@ -106,6 +132,27 @@ val create : width:int32 -> height:int32 -> (t, Error.t) result
 
 (** [resize renderer ...] resizes the renderer and its borrowed buffers. *)
 val resize : t -> width:int32 -> height:int32 -> (unit, Error.t) result
+
+(** [set_background_color renderer ~color] changes the native backdrop and
+    requests the next renderer frame. *)
+val set_background_color : t -> color:Color.t -> (unit, Error.t) result
+
+(** [set_cursor_position renderer ...] updates the native terminal cursor. The
+    native renderer clamps coordinates to its one-based dimensions. *)
+val set_cursor_position :
+  t -> x:int32 -> y:int32 -> ?visible:bool -> unit -> (unit, Error.t) result
+
+(** [set_cursor_color renderer ~color] updates the native terminal cursor
+    color without changing its style or blinking mode. *)
+val set_cursor_color : t -> color:Color.t -> (unit, Error.t) result
+
+(** [set_cursor_style renderer options] updates only the cursor options supplied
+    by the caller. Unspecified style, blinking, and color values persist. *)
+val set_cursor_style :
+  t -> cursor_style_options -> (unit, Error.t) result
+
+(** [cursor_state renderer] reads the native terminal cursor presentation. *)
+val cursor_state : t -> (cursor_state, Error.t) result
 
 (** [close renderer] destroys the renderer and invalidates borrowed buffers. *)
 val close : t -> unit

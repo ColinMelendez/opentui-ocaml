@@ -34,6 +34,27 @@ type pixel_resolution = {
 
 type render_geometry = Lib.Render_geometry.t
 
+type cursor_style = Opentui_raw.Renderer.cursor_style =
+  | Block
+  | Line
+  | Underline
+  | Default
+
+type mouse_pointer_style = Opentui_raw.Renderer.mouse_pointer_style =
+  | Mouse_default
+  | Mouse_pointer
+  | Mouse_text
+  | Mouse_crosshair
+  | Mouse_move
+  | Mouse_not_allowed
+
+type cursor_style_options = {
+  style : cursor_style option;
+  blinking : bool option;
+  color : Color.t option;
+  cursor : mouse_pointer_style option;
+}
+
 type handler_source = Renderer_events.handler_source = Keyboard | Pointer
 type handler_scope = Renderer_events.handler_scope = Global | Renderable
 type handler_kind = Renderer_events.handler_kind = Keypress | Keyrelease | Paste | Mouse
@@ -93,6 +114,14 @@ val request_selection_update : t -> (unit, Error.t) result
 (** [has_pending_render context] reports whether a coalesced render request is
     waiting for the renderer scheduler. *)
 val has_pending_render : t -> (bool, Error.t) result
+
+(** Cursor presentation is renderer-owned and does not request a repaint. *)
+val set_cursor_position :
+  t -> x:int32 -> y:int32 -> ?visible:bool -> unit -> (unit, Error.t) result
+val set_cursor_color : t -> color:Color.t -> (unit, Error.t) result
+val set_cursor_style : t -> cursor_style_options -> (unit, Error.t) result
+val set_mouse_pointer : t -> mouse_pointer_style -> (unit, Error.t) result
+
 val request_live : t -> (unit, Error.t) result
 val drop_live : t -> (unit, Error.t) result
 val live_request_count : t -> (int, Error.t) result
@@ -229,7 +258,8 @@ module Private : sig
     owner:owner -> width:int32 -> height:int32 ->
     capabilities:Terminal_capabilities.t option ->
     clock:Lib.Clock.t option ->
-    hit_grid:Opentui_raw.Renderer.Hit_grid.t -> t
+    hit_grid:Opentui_raw.Renderer.Hit_grid.t ->
+    presentation:Opentui_raw.Renderer.t -> t
   val set_capabilities : t -> Terminal_capabilities.t -> unit
   val set_palette : t -> Lib.Terminal_palette.normalized -> unit
   val set_theme_mode : t -> theme_mode -> unit

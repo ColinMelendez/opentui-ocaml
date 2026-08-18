@@ -1,5 +1,35 @@
 type render_status = Rendered | Skipped | Failed
 
+type cursor_style = Render_context.cursor_style =
+  | Block
+  | Line
+  | Underline
+  | Default
+
+type mouse_pointer_style = Render_context.mouse_pointer_style =
+  | Mouse_default
+  | Mouse_pointer
+  | Mouse_text
+  | Mouse_crosshair
+  | Mouse_move
+  | Mouse_not_allowed
+
+type cursor_style_options = Render_context.cursor_style_options = {
+  style : cursor_style option;
+  blinking : bool option;
+  color : Color.t option;
+  cursor : mouse_pointer_style option;
+}
+
+type cursor_state = {
+  x : int32;
+  y : int32;
+  visible : bool;
+  style : cursor_style;
+  blinking : bool;
+  color : Color.t;
+}
+
 type post_process =
   Buffer.t -> delta_time:float -> (unit, Error.t) result
 
@@ -12,6 +42,7 @@ type t = {
   children : Layout_children.t;
   current_buffer : Buffer.t;
   next_buffer : Buffer.t;
+  mutable background_color : Color.t;
   console : Console.t;
   mutable post_processes : (post_process_id * post_process) list;
   mutable next_post_process_id : int;
@@ -379,6 +410,7 @@ let create_with_clock_option ~clock ~width ~height =
                       ~owner:(Render_context.Private.new_owner ()) ~width ~height
                       ~capabilities:(Some capabilities) ~clock
                       ~hit_grid:(Opentui_raw.Renderer.hit_grid raw)
+                      ~presentation:raw
                   in
                   (match Renderable.Private.create_root context with
                   | Error error ->
@@ -414,6 +446,7 @@ let create_with_clock_option ~clock ~width ~height =
                               children = Layout_children.Private.of_renderable root;
                               current_buffer = Buffer_internal.of_raw current_buffer;
                               next_buffer = Buffer_internal.of_raw next_buffer;
+                              background_color = Color.transparent;
                               console;
                               post_processes = [];
                               next_post_process_id = 1;
@@ -491,7 +524,7 @@ let apply_post_processes renderer ~delta_time =
 
 let reset_failed_frame renderer =
   Render_context.Private.abort_hit_grid renderer.context;
-  ignore (Buffer.clear renderer.next_buffer ~background:Color.black);
+  ignore (Buffer.clear renderer.next_buffer ~background:renderer.background_color);
   ignore (Buffer.clear_scissor_rects renderer.next_buffer);
   ignore (Buffer.clear_opacity renderer.next_buffer);
   renderer.force_full_repaint <- true
@@ -529,6 +562,46 @@ let current_buffer renderer =
 let next_buffer renderer =
   if Render_context.Private.is_open renderer.context then Ok renderer.next_buffer
   else Error Error.Closed
+
+let background_color renderer =
+  if Render_context.Private.is_open renderer.context then Ok renderer.background_color
+  else Error Error.Closed
+
+let set_background_color renderer ~color =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else
+    match
+      Opentui_raw.Renderer.set_background_color renderer.raw
+        ~color:(Color.Private.to_raw color)
+    with
+    | Error error -> Error (map_raw_error error)
+    | Ok () ->
+        (match Buffer.clear renderer.next_buffer ~background:color with
+        | Error error -> Error error
+        | Ok () ->
+            renderer.background_color <- color;
+            Render_context.Private.request_render renderer.context;
+            Ok ())
+
+let set_cursor_position renderer ~x ~y ?(visible = true) () =
+  Render_context.set_cursor_position renderer.context ~x ~y ~visible ()
+
+let set_cursor_color renderer ~color =
+  Render_context.set_cursor_color renderer.context ~color
+
+let set_cursor_style renderer (options : cursor_style_options) =
+  Render_context.set_cursor_style renderer.context options
+
+let set_mouse_pointer renderer pointer =
+  Render_context.set_mouse_pointer renderer.context pointer
+
+let cursor_state renderer =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else
+    match Opentui_raw.Renderer.cursor_state renderer.raw with
+    | Error error -> Error (map_raw_error error)
+    | Ok { x; y; visible; style; blinking; color } ->
+        Ok { x; y; visible; style; blinking; color = Color.Private.of_raw color }
 
 let request_render renderer = Render_context.request_render renderer.context
 let request_live renderer = Render_context.request_live renderer.context
