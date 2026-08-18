@@ -17,3 +17,8 @@
  (name opentui_scrollbox_mouse_test)
  (modules opentui_scrollbox_mouse_test)
  (libraries opentui-core opentui_examples_lib eio_main))
+
+(executable
+ (name opacity_example)
+ (modules opacity_example)
+ (libraries opentui-core opentui_examples_lib eio_main))

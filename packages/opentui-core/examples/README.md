@@ -24,6 +24,10 @@ The examples directory contains executable programs for the public
   `Scroll_box` hit-testing check with 50 hoverable item rows, mostly to
   exercise scrolling and scrolled-content hit-testing during the ongoing
   scroll-behavior work.
+- `opacity_example.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/opacity-example.ts`: overlapping boxes
+  with individually toggleable opacity, nested opacity multiplication, and a
+  live animation driven by the renderer's pre-render hook.
 
 The shared example helpers live in `lib/`:
 
@@ -76,3 +80,13 @@ nix develop -c dune exec ./packages/opentui-core/examples/opentui_scrollbox_mous
 Scroll with the mouse wheel or arrow keys, hover rows to see the header
 status update, click a row to append a message to the diagnostic console, and
 use backtick/`"` to show it. Ctrl+C exits.
+
+Run the opacity demo:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/opacity_example.exe
+```
+
+Opacity keys: `1`-`4` toggle each overlapping box between full and 30%
+opacity, `A` starts or stops the animation, backtick/`"` toggles the console,
+and Ctrl+C exits. The nested panel shows parent, child, and effective opacity.
