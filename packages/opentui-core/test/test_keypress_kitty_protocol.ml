@@ -164,6 +164,10 @@ let () =
           expect_event_type up_release `Release;
           expect_named "pageup" page_up;
           expect_event_type page_up `Press);
+      test "Kitty Escape is exposed as the semantic named key" (fun () ->
+          let event = parse_keypress "\027[27;1:1u" in
+          expect_kitty event;
+          expect_named "escape" event);
       test "Kitty parser records base-code metadata" (fun () ->
           let event = parse_keypress "\027[97::113u" in
           expect_character "a" event;

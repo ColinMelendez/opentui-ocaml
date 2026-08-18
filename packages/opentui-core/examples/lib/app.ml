@@ -80,11 +80,6 @@ let expect_scheduler result =
   | Ok value -> value
   | Error error -> invalid_arg (Scheduler.message error)
 
-let expect_renderer_close result =
-  match result with
-  | Ok () -> ()
-  | Error error -> invalid_arg (O.Error.message error)
-
 let expect_size result =
   match result with
   | Ok value -> value
@@ -138,6 +133,24 @@ let pump_input input ~clock ~source ~queue ~wakeup =
   in
   read_loop ()
 
+(* [Input_flow] deliberately exposes timeout delivery to its owner so the
+   pure coordinator remains usable with runtimes other than Eio. The terminal
+   harness owns that policy, so keep a small timer fiber beside the blocking
+   reader. Without it a lone ESC remains buffered and is later reinterpreted
+   as the prefix of the next key. *)
+let pump_input_timeouts input ~clock ~queue ~wakeup =
+  let delay = float_of_int (Input_flow.timeout_ms input) /. 1000.0 in
+  let rec loop () =
+    Eio.Time.Mono.sleep clock delay;
+    (match
+       Input_flow.fire_timeout input ~clock
+         ~emit:(emit_to_queue queue wakeup)
+     with
+    | Ok _ -> loop ()
+    | Error error -> invalid_arg (Input_flow.message error))
+  in
+  loop ()
+
 let dispatch_handle renderer = function
   | Events.Resize size ->
       ignore
@@ -181,6 +194,12 @@ let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
          ~width:(Int32.of_int (Size.columns tty_size))
          ~height:(Int32.of_int (Size.rows tty_size)) ())
   in
+  (* The output flow also emits a hide-cursor mode, but the renderer has its
+     own presentation cursor state and may otherwise re-enable it on the
+     first frame. *)
+  ignore
+    (expect_ok
+       (O.Renderer.set_cursor_position renderer ~x:1l ~y:1l ~visible:false ()));
   (match O.Renderer.kitty_keyboard_push renderer ~events:kitty_events () with
   | bytes -> expect_output_ok (Output.write output bytes));
   let queue = expect_events (Events.create ~capacity:64 ()) in
@@ -216,6 +235,18 @@ let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
                      ~width:(Int32.of_int (Size.columns size))
                      ~height:(Int32.of_int (Size.rows size)))
             | Ok _ | Error _ -> ())));
+  let cleanup () =
+    (* Cleanup is deliberately best effort here: it also runs while unwinding
+       an exception from demo initialization or a renderer callback, so a
+       failed cleanup operation must not prevent the terminal session from
+       being restored. *)
+    ignore (Scheduler.close scheduler);
+    ignore (O.Renderer.set_mouse_pointer renderer O.Renderer.Mouse_default);
+    ignore
+      (O.Renderer.set_cursor_position renderer ~x:1l ~y:1l ~visible:false ());
+    ignore (O.Renderer.close renderer);
+    ignore (Session.restore session)
+  in
   (* The main fiber drives the scheduler until [exit] closes it; the background
      fibers pump input, resize signals, and dispatched events. [Eio.Fiber.first]
      cancels the losing side, so when the scheduler stops the pumps are torn
@@ -223,18 +254,14 @@ let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
      still-open tty until the user interrupts it again. *)
   Eio.Fiber.first
     (fun () ->
-      init ~exit renderer;
-      ignore (expect_ok (O.Renderer.request_live renderer));
-      (match Scheduler.run scheduler with
-       | Ok () -> ()
-       | Error error -> invalid_arg (Scheduler.message error));
-      (* Reset the terminal cursor before shutdown so the shell prompt lands on
-         a fresh line instead of resuming the last app cursor position. *)
-      ignore
-        (expect_ok
-           (O.Renderer.set_cursor_position renderer ~x:1l ~y:1l ~visible:false ()));
-      expect_renderer_close (O.Renderer.close renderer);
-      expect_session_ok (Session.restore session))
+      Fun.protect
+        (fun () ->
+          init ~exit renderer;
+          ignore (expect_ok (O.Renderer.request_live renderer));
+          match Scheduler.run scheduler with
+          | Ok () -> ()
+          | Error error -> invalid_arg (Scheduler.message error))
+        ~finally:cleanup)
     (fun () ->
       Eio.Switch.run @@ fun bg ->
       ignore
@@ -243,6 +270,9 @@ let run ?(frames_per_second = 60) ?(kitty_events = true) env ~init =
                ~source:
                  (Eio.Resource.T (input_fd, Eio.Flow.Pi.source (module Tty_source)))
                ~queue ~wakeup));
+      ignore
+        (Eio.Fiber.fork ~sw:bg (fun () ->
+             pump_input_timeouts input ~clock:mono_clock ~queue ~wakeup));
       ignore
         (Eio.Fiber.fork ~sw:bg (fun () ->
              let rec wait_resize () =

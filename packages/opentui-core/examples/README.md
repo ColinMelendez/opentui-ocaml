@@ -13,6 +13,17 @@ The examples directory contains executable programs for the public
   with the feed-backed `Sink` output target so styled frames reach the
   terminal through the same serialized output owner as terminal-mode and query
   writes.
+- `opentui_markdown_demo.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/markdown-demo.ts`: a scrollable
+  `MarkdownRenderable` showcase with rich inline formatting, tables, lists,
+  blockquotes, and fenced code, theme cycling, conceal toggling, and a
+  streaming simulation. Fenced code renders as plain fallback text because
+  the OCaml port does not yet ship a tree-sitter runtime.
+- `opentui_scrollbox_mouse_test.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/scrollbox-mouse-test.ts`: a focused
+  `Scroll_box` hit-testing check with 50 hoverable item rows, mostly to
+  exercise scrolling and scrolled-content hit-testing during the ongoing
+  scroll-behavior work.
 
 The shared example helpers live in `lib/`:
 
@@ -45,3 +56,23 @@ OPENTUI_DEMO_FPS=120 nix develop -c dune exec ./packages/opentui-core/examples/o
 
 Keys: Left/Right arrows switch tabs, `t`/`r`/`b`/`l` toggle the Interactive
 tab's borders, backtick/`"` toggles the console, Ctrl+C exits.
+
+Run the markdown demo:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/opentui_markdown_demo.exe
+```
+
+Markdown keys: `T` cycles themes, `C` toggles concealment, `S` starts or
+restarts streaming, `X` stops streaming, `?` toggles the help overlay, `ESC`
+closes the overlay or exits, and Ctrl+C exits.
+
+Run the scrollbox hit-test:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/opentui_scrollbox_mouse_test.exe
+```
+
+Scroll with the mouse wheel or arrow keys, hover rows to see the header
+status update, click a row to append a message to the diagnostic console, and
+use backtick/`"` to show it. Ctrl+C exits.

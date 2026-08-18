@@ -27,8 +27,10 @@ let setup_common_demo_keys renderer ~on_ctrl_c =
            match Handler.key key_event with
            | Key.Character bytes when not modifiers.ctrl ->
                let raw = Bytes.to_string bytes in
-               if String.equal raw "`" || String.equal raw "\"" then
-                 ignore (O.Console.toggle (O.Renderer.console renderer))
+               if String.equal raw "`" || String.equal raw "\"" then begin
+                 ignore (O.Console.toggle (O.Renderer.console renderer));
+                 ignore (O.Renderer.request_render renderer)
+               end
            | Key.Character bytes when modifiers.ctrl ->
                (* Ctrl+C arrives in raw mode either as a literal ETX byte
                   (decoded as Character "c" with ctrl set) or as a Kitty
