@@ -2,3 +2,8 @@
  (name renderer_buffers)
  (modules renderer_buffers)
  (libraries opentui-core))
+
+(executable
+ (name opentui_demo)
+ (modules opentui_demo)
+ (libraries opentui-core opentui_examples_lib eio_main))

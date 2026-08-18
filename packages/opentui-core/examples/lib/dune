@@ -1,0 +1,3 @@
+(library
+ (name opentui_examples_lib)
+ (libraries opentui-core opentui-raw eio eio.unix eio_main))
