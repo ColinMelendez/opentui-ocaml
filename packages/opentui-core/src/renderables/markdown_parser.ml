@@ -9,7 +9,6 @@ type inline =
   | Hard_break
 
 type alignment = Align_left | Align_center | Align_right | Align_default
-type list_item = { raw : string; inlines : inline list }
 
 type token =
   | Heading of { level : int; raw : string; inlines : inline list }
@@ -21,6 +20,8 @@ type token =
   | Table of { raw : string; headers : inline list list; rows : inline list list list; alignments : alignment list }
   | Horizontal_rule of string
   | Html of string
+
+and list_item = { raw : string; inlines : inline list; children : token list }
 
 type parsed = { content : string; tokens : token list; stable_token_count : int }
 
@@ -153,28 +154,68 @@ let heading line =
     Some (!count, String.sub line (!count + 1) (String.length line - !count - 1))
   else None
 
+type fence_info = { marker : string; indent : int }
+
+type list_marker = {
+  indent : int;
+  ordered : bool;
+  number : int option;
+  text : string;
+}
+
+let leading_spaces line =
+  let count = ref 0 in
+  while !count < String.length line && String.get line !count = ' ' do incr count done;
+  !count
+
+let strip_indent line count =
+  let removed = min count (leading_spaces line) in
+  String.sub line removed (String.length line - removed)
+
 let fence line =
-  if starts_with_at line 0 "```" then Some "```"
-  else if starts_with_at line 0 "~~~" then Some "~~~"
+  let indent = leading_spaces line in
+  if indent > 3 then None
+  else if starts_with_at line indent "```" then Some { marker = "```"; indent }
+  else if starts_with_at line indent "~~~" then Some { marker = "~~~"; indent }
   else None
 
-let unordered_item line =
-  if String.length line >= 2
-     && (String.get line 0 = '-' || String.get line 0 = '*' || String.get line 0 = '+')
-     && String.get line 1 = ' '
-  then Some (String.sub line 2 (String.length line - 2))
-  else None
-
-let ordered_item line =
-  let index = ref 0 in
-  while !index < String.length line
-        && String.get line !index >= '0' && String.get line !index <= '9' do incr index done;
-  if !index > 0 && !index + 1 < String.length line
-     && String.get line !index = '.' && String.get line (!index + 1) = ' '
+let list_marker line =
+  let indent = leading_spaces line in
+  let length = String.length line in
+  if indent + 2 > length then None
+  else if
+    (String.get line indent = '-' || String.get line indent = '*'
+    || String.get line indent = '+')
+    && String.get line (indent + 1) = ' '
   then
-    let number = int_of_string (String.sub line 0 !index) in
-    Some (number, String.sub line (!index + 2) (String.length line - !index - 2))
-  else None
+    Some
+      {
+        indent;
+        ordered = false;
+        number = None;
+        text = String.sub line (indent + 2) (length - indent - 2);
+      }
+  else
+    let index = ref indent in
+    while !index < length
+          && String.get line !index >= '0' && String.get line !index <= '9' do
+      incr index
+    done;
+    if !index > indent && !index + 1 < length
+       && String.get line !index = '.'
+       && String.get line (!index + 1) = ' '
+    then
+      (match int_of_string_opt (String.sub line indent (!index - indent)) with
+      | Some number ->
+          Some
+            {
+              indent;
+              ordered = true;
+              number = Some number;
+              text = String.sub line (!index + 2) (length - !index - 2);
+            }
+      | None -> None)
+    else None
 
 let horizontal_rule line =
   let value = trim line in
@@ -233,98 +274,195 @@ let raw_lines lines start finish =
   for index = start to finish - 1 do values := lines.(index) :: !values done;
   String.concat "\n" (List.rev !values)
 
-let parse content =
+let rec parse content =
   let lines = split_lines content in
   let last = Array.length lines in
-  let result = ref [] in
-  let index = ref 0 in
-  while !index < last do
-    let line = lines.(!index) in
-    if line_is_blank line then incr index
-    else
-      match fence line with
-      | Some marker ->
-          let info = trim (String.sub line 3 (String.length line - 3)) in
-          let body = ref [] in
-          let finish = ref (!index + 1) in
-          while !finish < last && not (starts_with_at lines.(!finish) 0 marker) do
-            body := lines.(!finish) :: !body;
-            incr finish
-          done;
-          let raw_finish = if !finish < last then !finish + 1 else !finish in
-          result := Code_block { raw = raw_lines lines !index raw_finish; language = Lib.Tree_sitter_resolve_filetype.info_string_to_filetype info; text = String.concat "\n" (List.rev !body) } :: !result;
-          index := raw_finish
-      | None ->
-          (match heading line with
-          | Some (level, text) ->
-              result := Heading { level; raw = line; inlines = parse_inline text 0 (String.length text) } :: !result;
-              incr index
-          | None when horizontal_rule line ->
-              result := Horizontal_rule line :: !result;
-              incr index
-          | None when !index + 1 < last && String.contains line '|' && table_separator lines.(!index + 1) ->
-              let finish = ref (!index + 2) in
-              while !finish < last && String.contains lines.(!finish) '|' && not (line_is_blank lines.(!finish)) do incr finish done;
-              let rows = ref [] in
-              for row = !index + 2 to !finish - 1 do rows := split_table_row lines.(row) :: !rows done;
-              result := Table { raw = raw_lines lines !index !finish; headers = split_table_row line; rows = List.rev !rows; alignments = table_alignments lines.(!index + 1) } :: !result;
-              index := !finish
-          | None when starts_with_at line 0 ">" ->
-              let finish = ref !index in
-              let values = ref [] in
-              while !finish < last && starts_with_at lines.(!finish) 0 ">" do
-                let value = if String.length lines.(!finish) > 1 && String.get lines.(!finish) 1 = ' ' then String.sub lines.(!finish) 2 (String.length lines.(!finish) - 2) else String.sub lines.(!finish) 1 (String.length lines.(!finish) - 1) in
-                values := value :: !values;
-                incr finish
-              done;
-              let text = String.concat "\n" (List.rev !values) in
-              result := Blockquote { raw = raw_lines lines !index !finish; inlines = parse_inline text 0 (String.length text) } :: !result;
-              index := !finish
-          | None ->
-              (match unordered_item line, ordered_item line with
-              | Some _, _ ->
-                  let finish = ref !index in
-                  let items = ref [] in
-                  while !finish < last && Option.is_some (unordered_item lines.(!finish)) do
-                    let value = Option.get (unordered_item lines.(!finish)) in
-                    items := { raw = lines.(!finish); inlines = parse_inline value 0 (String.length value) } :: !items;
-                    incr finish
-                  done;
-                  result := Unordered_list { raw = raw_lines lines !index !finish; items = List.rev !items } :: !result;
-                  index := !finish
-              | None, Some (start, _) ->
-                  let finish = ref !index in
-                  let items = ref [] in
-                  while !finish < last && Option.is_some (ordered_item lines.(!finish)) do
-                    let number, value = Option.get (ordered_item lines.(!finish)) in
-                    items := { raw = lines.(!finish); inlines = parse_inline value 0 (String.length value) } :: !items;
-                    incr finish;
-                    ignore number
-                  done;
-                  result := Ordered_list { raw = raw_lines lines !index !finish; start; items = List.rev !items } :: !result;
-                  index := !finish
-              | None, None when String.length (trim line) > 0 && String.get (trim line) 0 = '<' ->
-                  result := Html line :: !result; incr index
-              | None, None ->
-                  let finish = ref (!index + 1) in
-                  while !finish < last && not (line_is_blank lines.(!finish))
-                        && Option.is_none (heading lines.(!finish))
-                        && Option.is_none (fence lines.(!finish))
-                        && not (horizontal_rule lines.(!finish))
-                        && not (starts_with_at lines.(!finish) 0 ">")
-                        && Option.is_none (unordered_item lines.(!finish))
-                        && (match ordered_item lines.(!finish) with None -> true | Some _ -> false)
-                        && not
-                             (!finish + 1 < last
-                             && String.contains lines.(!finish) '|'
-                             && table_separator lines.(!finish + 1)) do
-                    incr finish
-                  done;
-                  let text = raw_lines lines !index !finish in
-                  result := Paragraph { raw = text; inlines = parse_inline text 0 (String.length text) } :: !result;
-                  index := !finish))
-  done;
-  { content; tokens = List.rev !result; stable_token_count = 0 }
+  let parse_nested values =
+    let nested = parse (String.concat "\n" values) in
+    nested.tokens
+  in
+  let continuation_lines ~base_indent start finish =
+    let values = ref [] in
+    for line_index = start to finish - 1 do
+      values := lines.(line_index) :: !values
+    done;
+    let values = List.rev !values in
+    let minimum_indent = ref max_int in
+    List.iter
+      (fun value ->
+        if not (line_is_blank value) then
+          let indent = leading_spaces value in
+          if Int.compare indent base_indent > 0 then
+            minimum_indent := min !minimum_indent indent)
+      values;
+    let strip_count = if Int.equal !minimum_indent max_int then base_indent + 2 else !minimum_indent in
+    List.map (fun value -> strip_indent value strip_count) values
+  in
+  let rec parse_blocks start =
+    let result = ref [] in
+    let index = ref start in
+    while !index < last do
+      let line = lines.(!index) in
+      if line_is_blank line then incr index
+      else
+        match fence line with
+        | Some opening ->
+            let info_start = opening.indent + 3 in
+            let info = trim (String.sub line info_start (String.length line - info_start)) in
+            let body = ref [] in
+            let finish = ref (!index + 1) in
+            while
+              !finish < last
+              && (match fence lines.(!finish) with
+                 | Some closing -> not (String.equal closing.marker opening.marker)
+                 | None -> true)
+            do
+              body := strip_indent lines.(!finish) opening.indent :: !body;
+              incr finish
+            done;
+            let raw_finish = if !finish < last then !finish + 1 else !finish in
+            result :=
+              Code_block
+                {
+                  raw = raw_lines lines !index raw_finish;
+                  language = Lib.Tree_sitter_resolve_filetype.info_string_to_filetype info;
+                  text = String.concat "\n" (List.rev !body);
+                }
+              :: !result;
+            index := raw_finish
+        | None ->
+            (match heading line with
+            | Some (level, text) ->
+                result :=
+                  Heading { level; raw = line; inlines = parse_inline text 0 (String.length text) }
+                  :: !result;
+                incr index
+            | None when horizontal_rule line ->
+                result := Horizontal_rule line :: !result;
+                incr index
+            | None when !index + 1 < last && String.contains line '|'
+                       && table_separator lines.(!index + 1) ->
+                let finish = ref (!index + 2) in
+                while
+                  !finish < last && String.contains lines.(!finish) '|'
+                  && not (line_is_blank lines.(!finish))
+                do
+                  incr finish
+                done;
+                let rows = ref [] in
+                for row = !index + 2 to !finish - 1 do
+                  rows := split_table_row lines.(row) :: !rows
+                done;
+                result :=
+                  Table
+                    {
+                      raw = raw_lines lines !index !finish;
+                      headers = split_table_row line;
+                      rows = List.rev !rows;
+                      alignments = table_alignments lines.(!index + 1);
+                    }
+                  :: !result;
+                index := !finish
+            | None when starts_with_at line 0 ">" ->
+                let finish = ref !index in
+                let values = ref [] in
+                while !finish < last && starts_with_at lines.(!finish) 0 ">" do
+                  let value =
+                    if String.length lines.(!finish) > 1
+                       && String.get lines.(!finish) 1 = ' '
+                    then String.sub lines.(!finish) 2 (String.length lines.(!finish) - 2)
+                    else String.sub lines.(!finish) 1 (String.length lines.(!finish) - 1)
+                  in
+                  values := value :: !values;
+                  incr finish
+                done;
+                let text = String.concat "\n" (List.rev !values) in
+                result :=
+                  Blockquote
+                    { raw = raw_lines lines !index !finish;
+                      inlines = parse_inline text 0 (String.length text) }
+                  :: !result;
+                index := !finish
+            | None ->
+                (match list_marker line with
+                | Some first_marker when Int.equal first_marker.indent 0 ->
+                    let finish = ref !index in
+                    let items = ref [] in
+                    let keep_scanning = ref true in
+                    while !keep_scanning && !finish < last do
+                      match list_marker lines.(!finish) with
+                      | Some marker
+                        when Int.equal marker.indent first_marker.indent
+                             && Bool.equal marker.ordered first_marker.ordered ->
+                          let item_start = !finish in
+                          incr finish;
+                          let item_done = ref false in
+                          while !finish < last && not !item_done do
+                            match list_marker lines.(!finish) with
+                            | Some next
+                              when Int.equal next.indent first_marker.indent
+                                   && Bool.equal next.ordered first_marker.ordered ->
+                                item_done := true
+                            | Some next when Int.compare next.indent first_marker.indent <= 0 ->
+                                item_done := true
+                            | None when not (line_is_blank lines.(!finish))
+                                     && Int.compare (leading_spaces lines.(!finish)) first_marker.indent <= 0 ->
+                                item_done := true
+                            | Some _ | None -> incr finish
+                          done;
+                          let continuation =
+                            continuation_lines ~base_indent:first_marker.indent
+                              (item_start + 1) !finish
+                          in
+                          items :=
+                            {
+                              raw = raw_lines lines item_start !finish;
+                              inlines = parse_inline marker.text 0 (String.length marker.text);
+                              children = parse_nested continuation;
+                            }
+                            :: !items
+                      | Some _ | None -> keep_scanning := false
+                    done;
+                    result :=
+                      (if first_marker.ordered then
+                         Ordered_list
+                           {
+                             raw = raw_lines lines !index !finish;
+                             start = Option.value first_marker.number ~default:1;
+                             items = List.rev !items;
+                           }
+                       else
+                         Unordered_list
+                           { raw = raw_lines lines !index !finish; items = List.rev !items })
+                      :: !result;
+                    index := !finish
+                | Some _ | None when String.length (trim line) > 0
+                                    && String.get (trim line) 0 = '<' ->
+                    result := Html line :: !result;
+                    incr index
+                | Some _ | None ->
+                    let finish = ref (!index + 1) in
+                    while
+                      !finish < last && not (line_is_blank lines.(!finish))
+                      && Option.is_none (heading lines.(!finish))
+                      && Option.is_none (fence lines.(!finish))
+                      && not (horizontal_rule lines.(!finish))
+                      && not (starts_with_at lines.(!finish) 0 ">")
+                      && Option.is_none (list_marker lines.(!finish))
+                      && not
+                           (!finish + 1 < last
+                           && String.contains lines.(!finish) '|'
+                           && table_separator lines.(!finish + 1))
+                    do
+                      incr finish
+                    done;
+                    let text = raw_lines lines !index !finish in
+                    result := Paragraph { raw = text; inlines = parse_inline text 0 (String.length text) } :: !result;
+                    index := !finish))
+    done;
+    List.rev !result
+  in
+  { content; tokens = parse_blocks 0; stable_token_count = 0 }
 
 let token_raw = function
   | Heading { raw; _ } | Paragraph { raw; _ } | Code_block { raw; _ }

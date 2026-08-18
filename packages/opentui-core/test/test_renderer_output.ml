@@ -34,6 +34,15 @@ let first_frame_output frames =
   | frame :: _ -> String.concat "" (List.map Bytes.to_string frame)
   | [] -> fail "renderer did not deliver a frame"
 
+let resolved_frame renderer =
+  let buffer = expect_ok (Renderer.current_buffer renderer) in
+  let output = Bytes.create 4096 in
+  let written =
+    expect_ok
+      (Core.Buffer.write_resolved_chars buffer ~output ~add_line_breaks:false)
+  in
+  Bytes.sub_string output 0 (Int32.to_int written)
+
 let color_rgb ~red ~green ~blue =
   match Core.Color.rgb ~red ~green ~blue with
   | Ok color -> color
@@ -139,6 +148,43 @@ let () =
             fail ("styled table output was: " ^ String.escaped output);
           Text_table.destroy table;
           ignore (expect_ok (Renderer.close renderer)));
+      test "transparent text-table cells preserve the parent background" (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:8l
+                 ~height:3l ())
+          in
+          let parent_background = color_rgb ~red:18 ~green:52 ~blue:86 in
+          ignore
+            (expect_ok
+               (Renderer.set_background_color renderer ~color:parent_background));
+          let table =
+            expect_ok
+              (Text_table.create (Renderer.context renderer)
+                 ~content:[ [ Text_table.Empty ] ] ~show_borders:false
+                 ~outer_border:false ())
+          in
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer)
+                  (Text_table.as_renderable table)));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let snapshot =
+            expect_ok
+              (Core.Buffer.cell_snapshot
+                 (expect_ok (Renderer.current_buffer renderer)))
+          in
+          let _, _, background, _ = snapshot.cells in
+          let red = background.(0) in
+          let green = background.(1) in
+          let blue = background.(2) in
+          let alpha = background.(3) in
+          equal int32 18l red;
+          equal int32 52l green;
+          equal int32 86l blue;
+          equal int32 255l alpha;
+          Text_table.destroy table;
+          ignore (expect_ok (Renderer.close renderer)));
       test "markdown propagates its default fg into code and table blocks" (fun () ->
           let frames = ref [] in
           let sink =
@@ -171,6 +217,103 @@ let () =
             fail ("markdown fg did not reach sub-blocks: " ^ String.escaped output);
           Markdown.destroy markdown;
           ignore (expect_ok (Renderer.close renderer)));
+      test "unstyled Markdown list text inherits the renderable foreground" (fun () ->
+          let frames = ref [] in
+          let sink =
+            Renderer.Output.sink ~write_frame:(fun chunks ->
+                frames := chunks :: !frames;
+                Ok ())
+          in
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:(Renderer.Output.Sink sink) ~width:24l
+                 ~height:3l ())
+          in
+          let fg = color_rgb ~red:12 ~green:34 ~blue:56 in
+          let markdown =
+            expect_ok
+              (Markdown.create (Renderer.context renderer)
+                 ~content:"- plain light-theme text" ~fg ())
+          in
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer)
+                  (Markdown.as_renderable markdown)));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let output = first_frame_output !frames in
+          if not (contains_substring output "38;2;12;34;56") then
+            fail ("list text lost the Markdown foreground: " ^ String.escaped output);
+          Markdown.destroy markdown;
+          Renderer.destroy renderer);
+      test "streaming Markdown keeps paragraphs and nested list blocks laid out" (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:36l ~height:12l ())
+          in
+          let markdown =
+            expect_ok
+              (Markdown.create (Renderer.context renderer) ~content:"" ~streaming:true ())
+          in
+          ignore
+            (expect_ok
+               (Core.Renderable.set_width (Markdown.as_renderable markdown)
+                  (Core.Yoga.Percent 100.0)));
+          ignore
+            (expect_ok
+               (Core.Layout_children.add (Renderer.children renderer)
+                  (Markdown.as_renderable markdown)));
+          List.iter
+            (fun content ->
+              (match Markdown.set_content markdown content with
+              | Ok () -> ()
+              | Error error -> fail ("streaming Markdown update failed: " ^ Core.Error.message error));
+              ignore (expect_ok (Renderer.render renderer ~force:true)))
+            [ "# Streaming Markdown\n\nA paragraph that must wrap across the viewport.";
+              "# Streaming Markdown\n\nA paragraph that must wrap across the viewport.\n\n1. Outer item\n   - Nested item\n   - Nested code:\n\n     ```ts\n     const nested = true\n     ```\n2. Last item" ];
+          let frame = resolved_frame renderer in
+          if not (contains_substring frame "Streaming Markdown")
+             || not (contains_substring frame "Nested item")
+          then begin
+            let describe id =
+              match Core.Renderable.find_descendant_by_id (Markdown.as_renderable markdown) id with
+              | None -> id ^ "=missing"
+              | Some renderable ->
+                  Printf.sprintf "%s=%.1fx%.1f@%.1f,%.1f" id
+                    (Core.Renderable.width renderable)
+                    (Core.Renderable.height renderable)
+                    (Core.Renderable.screen_x renderable)
+                    (Core.Renderable.screen_y renderable)
+            in
+            let rec tree renderable =
+              let children = Core.Renderable.children renderable in
+              let child_text = String.concat "," (List.map tree children) in
+              Printf.sprintf "%s(%.1fx%.1f)[%s]" (Core.Renderable.id renderable)
+                (Core.Renderable.width renderable) (Core.Renderable.height renderable)
+                child_text
+            in
+            fail
+              (Printf.sprintf
+                 "streaming Markdown lost structured content (%d blocks, %.1fx%.1f; %s; %s; %s; tree=%s): %s"
+                 (Markdown.block_count markdown)
+                 (Core.Renderable.width (Markdown.as_renderable markdown))
+                 (Core.Renderable.height (Markdown.as_renderable markdown))
+                 (describe "markdown-block-2")
+                 (describe "markdown-block-2-item-0-body")
+                 (describe "markdown-block-2-item-0-body-text")
+                 (tree (Option.get (Core.Renderable.find_descendant_by_id
+                                      (Markdown.as_renderable markdown) "markdown-block-2")))
+                 (String.escaped frame));
+          end;
+          if Float.compare (Core.Renderable.height (Markdown.as_renderable markdown)) 1.0 <= 0 then
+            fail "streaming Markdown collapsed into one layout row";
+          ignore (expect_ok (Markdown.set_streaming markdown false));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let settled_frame = resolved_frame renderer in
+          if not (contains_substring settled_frame "const nested = true") then
+            fail ("streaming Markdown did not reassemble its fenced block: "
+                  ^ String.escaped settled_frame);
+          Markdown.destroy markdown;
+          Renderer.destroy renderer);
       test "a failed sink poisons the renderer output path" (fun () ->
           let sink =
             Renderer.Output.sink ~write_frame:(fun _ ->

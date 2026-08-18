@@ -10,8 +10,6 @@ type inline =
 
 type alignment = Align_left | Align_center | Align_right | Align_default
 
-type list_item = { raw : string; inlines : inline list }
-
 type token =
   | Heading of { level : int; raw : string; inlines : inline list }
   | Paragraph of { raw : string; inlines : inline list }
@@ -22,6 +20,8 @@ type token =
   | Table of { raw : string; headers : inline list list; rows : inline list list list; alignments : alignment list }
   | Horizontal_rule of string
   | Html of string
+
+and list_item = { raw : string; inlines : inline list; children : token list }
 
 type parsed
 

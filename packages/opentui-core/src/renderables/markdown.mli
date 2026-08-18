@@ -3,6 +3,7 @@ type table_options = {
   outer_border : bool;
   cell_padding_x : int;
   cell_padding_y : int;
+  column_width_mode : Text_table.column_width_mode;
 }
 
 type t

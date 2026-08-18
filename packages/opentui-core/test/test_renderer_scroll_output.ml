@@ -123,6 +123,17 @@ let snapshot_first_column renderer =
   Array.init (Int32.to_int snapshot.height) (fun row ->
       Char.chr (Int32.to_int characters.(row * width)))
 
+let ascii_row renderer row =
+  let buffer = expect_ok (Renderer.current_buffer renderer) in
+  let snapshot = expect_ok (Core.Buffer.cell_snapshot buffer) in
+  let characters, _, _, _ = snapshot.cells in
+  let width = Int32.to_int snapshot.width in
+  String.init width (fun column ->
+      let codepoint = Int32.to_int characters.(row * width + column) in
+      if codepoint >= Char.code ' ' && codepoint <= Char.code '~' then
+        Char.chr codepoint
+      else ' ')
+
 let make_row context ~character () =
   let renderable = expect_ok (Renderable.Private.create context ()) in
   let render_self renderable buffer _delta_time =
@@ -204,6 +215,161 @@ let () =
           assert_char_array [| 'A'; 'B'; 'C' |] (first_column replayed);
           apply_frame replayed second;
           assert_char_array [| 'B'; 'C'; 'D' |] (first_column replayed);
+          Renderer.destroy renderer)
+    ; test "transparent tables preserve the backdrop while ScrollBox translates them"
+        (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:8l
+                 ~height:3l ())
+          in
+          let backdrop =
+            match Core.Color.rgb ~red:18 ~green:52 ~blue:86 with
+            | Ok color -> color
+            | Error error -> fail (Core.Native.Error.message error)
+          in
+          ignore (expect_ok (Renderer.set_background_color renderer ~color:backdrop));
+          let scroll_box =
+            expect_ok
+              (Core.Renderables.Scroll_box.create (Renderer.context renderer)
+                 ~scroll_y:true ~viewport_culling:false
+                 ~width:(Core.Yoga.Point 8.0) ~height:(Core.Yoga.Point 3.0) ())
+          in
+          let vertical = Core.Renderables.Scroll_box.vertical_scrollbar scroll_box in
+          ignore (expect_ok (Core.Renderables.Scroll_bar.set_visible vertical false));
+          let tables =
+            List.init 5 (fun index ->
+                let table =
+                  expect_ok
+                    (Core.Renderables.Text_table.create
+                       (Renderer.context renderer)
+                       ~id:(Printf.sprintf "transparent-table-%d" index)
+                       ~content:[ [ Core.Renderables.Text_table.Empty ] ]
+                       ~show_borders:false ~outer_border:false
+                       ~width:(Core.Yoga.Point 8.0) ~height:(Core.Yoga.Point 1.0)
+                       ())
+                in
+                ignore
+                  (expect_ok
+                     (Core.Renderables.Scroll_box.add scroll_box
+                        (Core.Renderables.Text_table.as_renderable table)));
+                table)
+          in
+          attach renderer (Core.Renderables.Scroll_box.as_renderable scroll_box);
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          ignore (expect_ok (Core.Renderables.Scroll_box.set_scroll_top scroll_box 1.0));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          let snapshot =
+            expect_ok
+              (Core.Buffer.cell_snapshot
+                 (expect_ok (Renderer.current_buffer renderer)))
+          in
+          let _, _, backgrounds, _ = snapshot.cells in
+          let cell_count = Int32.to_int snapshot.width * Int32.to_int snapshot.height in
+          for cell = 0 to cell_count - 1 do
+            let offset = cell * 4 in
+            equal int32 18l backgrounds.(offset);
+            equal int32 52l backgrounds.(offset + 1);
+            equal int32 86l backgrounds.(offset + 2);
+            equal int32 255l backgrounds.(offset + 3)
+          done;
+          List.iter Core.Renderables.Text_table.destroy tables;
+          Renderer.destroy renderer)
+    ; test "blockquote borders stay inside a translated ScrollBox viewport"
+        (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:30l
+                 ~height:8l ())
+          in
+          let frame =
+            expect_ok
+              (Core.Renderables.Box.create (Renderer.context renderer)
+                 ~border:Core.Renderables.Box.all_borders ~title:"Markdown" ())
+          in
+          ignore
+            (expect_ok
+               (Renderable.set_width (Core.Renderables.Box.as_renderable frame)
+                  (Core.Yoga.Point 24.0)));
+          ignore
+            (expect_ok
+               (Renderable.set_height (Core.Renderables.Box.as_renderable frame)
+                  (Core.Yoga.Point 6.0)));
+          ignore
+            (expect_ok
+               (Renderable.set_margin (Core.Renderables.Box.as_renderable frame)
+                  ~edge:Core.Yoga.Left (Core.Yoga.Point 2.0)));
+          ignore
+            (expect_ok
+               (Renderable.set_overflow (Core.Renderables.Box.as_renderable frame)
+                  Core.Yoga.Overflow_hidden));
+          attach renderer (Core.Renderables.Box.as_renderable frame);
+          let scroll_box =
+            expect_ok
+              (Core.Renderables.Scroll_box.create (Renderer.context renderer)
+                 ~scroll_y:true ~scroll_x:false ~width:(Core.Yoga.Percent 100.0)
+                 ~height:(Core.Yoga.Percent 100.0) ~viewport_culling:false ())
+          in
+          ignore
+            (expect_ok
+               (Core.Renderables.Scroll_bar.set_visible
+                  (Core.Renderables.Scroll_box.vertical_scrollbar scroll_box)
+                  false));
+          ignore
+            (expect_ok
+               (Core.Layout_children.add
+                  (Core.Renderables.Box.children frame)
+                  (Core.Renderables.Scroll_box.as_renderable scroll_box)));
+          let content =
+            String.concat "\n"
+              ([ "> Quoted note after the list. It should stay clipped."; "" ]
+              @ List.init 12 (fun index -> Printf.sprintf "following row %02d" index))
+          in
+          let markdown =
+            expect_ok
+              (Core.Renderables.Markdown.create (Renderer.context renderer)
+                 ~content ())
+          in
+          ignore
+            (expect_ok
+               (Renderable.set_width
+                  (Core.Renderables.Markdown.as_renderable markdown)
+                  (Core.Yoga.Percent 100.0)));
+          ignore
+            (expect_ok
+               (Core.Renderables.Scroll_box.add scroll_box
+                  (Core.Renderables.Markdown.as_renderable markdown)));
+          for _ = 1 to 3 do
+            ignore (expect_ok (Renderer.render renderer ~force:true))
+          done;
+          let quote =
+            match
+              Renderable.find_descendant_by_id
+                (Core.Renderables.Markdown.as_renderable markdown)
+                "markdown-block-0"
+            with
+            | Some quote -> quote
+            | None -> fail "blockquote renderable was not retained"
+          in
+          let viewport = Core.Renderables.Scroll_box.viewport scroll_box in
+          let viewport_right = Renderable.screen_x viewport +. Renderable.width viewport in
+          let quote_right = Renderable.screen_x quote +. Renderable.width quote in
+          if Float.compare (Renderable.screen_x quote) (Renderable.screen_x viewport) < 0
+             || Float.compare quote_right viewport_right > 0
+          then
+            fail
+              (Printf.sprintf
+                 "blockquote escaped the viewport horizontally: quote=(%.1f,%.1f) viewport=(%.1f,%.1f)"
+                 (Renderable.screen_x quote) quote_right
+                 (Renderable.screen_x viewport) viewport_right);
+          let initial_y = Renderable.screen_y quote in
+          ignore (expect_ok (Core.Renderables.Scroll_box.set_scroll_top scroll_box 1.0));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          if Float.compare (Renderable.screen_y quote) initial_y >= 0 then
+            fail "blockquote did not translate with the ScrollBox content";
+          if not (String.contains (ascii_row renderer 0) 'M') then
+            fail "scrolled blockquote overwrote the containing frame title";
+          Core.Renderables.Markdown.destroy markdown;
           Renderer.destroy renderer)
     ; test "nested ScrollBox keeps its scrollbar at the trailing edge"
         (fun () ->
@@ -308,5 +474,55 @@ let () =
              | Some target -> target == slider_node
              | None -> false);
           Core.Renderables.Markdown.destroy markdown;
+          Renderer.destroy renderer)
+    ; test "sticky ScrollBox yields to manual scrolling and re-engages at its edge"
+        (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ())
+          in
+          let box =
+            expect_ok
+              (Core.Renderables.Scroll_box.create (Renderer.context renderer)
+                 ~scroll_y:true ~sticky_scroll:true
+                 ~sticky_start:Core.Renderables.Scroll_box.Bottom
+                 ~viewport_culling:false ~width:(Core.Yoga.Point 8.0)
+                 ~height:(Core.Yoga.Point 4.0) ())
+          in
+          let vertical = Core.Renderables.Scroll_box.vertical_scrollbar box in
+          ignore (expect_ok (Core.Renderables.Scroll_bar.set_visible vertical false));
+          for index = 0 to 7 do
+            let row = make_row (Renderer.context renderer) ~character:(65 + index) () in
+            ignore (expect_ok (Core.Renderables.Scroll_box.add box row))
+          done;
+          attach renderer (Core.Renderables.Scroll_box.as_renderable box);
+          for _ = 1 to 3 do
+            ignore (expect_ok (Renderer.render renderer ~force:true))
+          done;
+          equal (float 0.0001) 4.0 (Core.Renderables.Scroll_box.scroll_top box);
+          ignore (expect_ok (Core.Renderables.Scroll_box.set_scroll_top box 1.0));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 1.0 (Core.Renderables.Scroll_box.scroll_top box);
+          let extra = make_row (Renderer.context renderer) ~character:90 () in
+          ignore (expect_ok (Core.Renderables.Scroll_box.add box extra));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 1.0 (Core.Renderables.Scroll_box.scroll_top box);
+          ignore (expect_ok (Core.Renderables.Scroll_box.set_scroll_top box 4.0));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 4.0 (Core.Renderables.Scroll_box.scroll_top box);
+          ignore (expect_ok (Core.Renderables.Scroll_box.set_scroll_top box 3.0));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 3.0 (Core.Renderables.Scroll_box.scroll_top box);
+          Core.Renderables.Scroll_box.set_sticky_start box
+            (Some Core.Renderables.Scroll_box.Bottom);
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 3.0 (Core.Renderables.Scroll_box.scroll_top box);
+          ignore (expect_ok (Core.Renderables.Scroll_box.remove box extra));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 4.0 (Core.Renderables.Scroll_box.scroll_top box);
+          Core.Renderables.Scroll_box.set_sticky_scroll box false;
+          ignore (expect_ok (Core.Renderables.Scroll_box.set_scroll_top box 0.0));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal (float 0.0001) 0.0 (Core.Renderables.Scroll_box.scroll_top box);
           Renderer.destroy renderer)
     ]

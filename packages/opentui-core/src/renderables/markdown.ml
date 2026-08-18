@@ -6,6 +6,7 @@ type table_options = {
   outer_border : bool;
   cell_padding_x : int;
   cell_padding_y : int;
+  column_width_mode : Text_table.column_width_mode;
 }
 
 type block_entry = {
@@ -68,6 +69,7 @@ let register_default_styles syntax_style =
       ("markup.strikethrough", definition ~dim:true ());
       ("markup.raw", definition ~bg:(Lib.Rgba.from_ints 40 40 40) ());
       ("markup.link.label", definition ~fg:blue ~underline:true ());
+      ("markup.list", definition ~fg:green ());
       ("punctuation.special", definition ~fg:green ());
     ]
 
@@ -152,8 +154,17 @@ let styled_inline markdown names values =
     value
 
 let inline_text_block markdown ?id names values =
-  Text.create markdown.context ?id ~wrap_mode:markdown.wrap_mode
-    ~content:(styled_inline markdown names values) ()
+  Result.bind
+    (Text.create markdown.context ?id ~wrap_mode:markdown.wrap_mode
+       ~content:(styled_inline markdown names values) ())
+    (fun text ->
+      match
+        Renderable.set_width (Text.as_renderable text) (Yoga.Percent 100.0)
+      with
+      | Ok () -> Ok text
+      | Error error ->
+          Text.destroy text;
+          Error error)
 
 let rendered_text text =
   {
@@ -169,8 +180,7 @@ let table_alignment = function
   | Parser.Align_right -> Text_table.Right
   | Parser.Align_default -> Text_table.Default
 
-let render_token markdown token index =
-  let id = Printf.sprintf "markdown-block-%d" index in
+let rec render_token markdown token id =
   match token with
   | Parser.Heading { level; inlines; _ } ->
       inline_text_block markdown ~id [ "markup.heading"; "markup.heading." ^ string_of_int level ] inlines
@@ -178,101 +188,275 @@ let render_token markdown token index =
   | Parser.Paragraph { inlines; _ } ->
       inline_text_block markdown ~id [] inlines |> map_text
   | Parser.Code_block { language; text; _ } ->
-      Code.create markdown.context ~id ~content:text ?filetype:language
-        ?tree_sitter_client:markdown.tree_sitter_client
-        ?background:markdown.background
-        ~syntax_style:markdown.syntax_style ~conceal:markdown.conceal_code
-        ~draw_unstyled_text:(not markdown.streaming)
-        ~streaming:markdown.streaming ~wrap_mode:markdown.wrap_mode ()
-      |> Result.map (fun code ->
-             (* Unhighlighted fences render through the text buffer, so carry
-                the documented default fg/bg into it; otherwise unstyled code
-                falls back to the renderer's native default color. *)
-             (match markdown.fg with
-             | Some color ->
-                 ignore
-                   (Text_buffer_renderable.set_default_fg
-                      (Code.text_buffer_renderable code) (Some color))
-             | None -> ());
-             (match markdown.bg with
-             | Some color ->
-                 ignore
-                   (Text_buffer_renderable.set_default_bg
-                      (Code.text_buffer_renderable code) (Some color))
-             | None -> ());
-             {
-               renderable = Code.as_renderable code;
-               selected_text = (fun () -> Code.selected_text code);
-             })
+      Result.bind
+        (Code.create markdown.context ~id ~content:text ?filetype:language
+           ?tree_sitter_client:markdown.tree_sitter_client
+           ?background:markdown.background
+           ~syntax_style:markdown.syntax_style ~conceal:markdown.conceal_code
+           ~draw_unstyled_text:(not markdown.streaming)
+           ~streaming:markdown.streaming ~wrap_mode:markdown.wrap_mode ())
+        (fun code ->
+          (* Unhighlighted fences render through the text buffer, so carry
+             the documented default fg/bg into it; otherwise unstyled code
+             falls back to the renderer's native default color. *)
+          (match markdown.fg with
+          | Some color ->
+              ignore
+                (Text_buffer_renderable.set_default_fg
+                   (Code.text_buffer_renderable code) (Some color))
+          | None -> ());
+          (match markdown.bg with
+          | Some color ->
+              ignore
+                (Text_buffer_renderable.set_default_bg
+                   (Code.text_buffer_renderable code) (Some color))
+          | None -> ());
+          (match
+             Renderable.set_width (Code.as_renderable code) (Yoga.Percent 100.0)
+           with
+          | Ok () ->
+              Ok
+                {
+                  renderable = Code.as_renderable code;
+                  selected_text = (fun () -> Code.selected_text code);
+                }
+          | Error error ->
+              Code.destroy code;
+              Error error))
   | Parser.Blockquote { inlines; _ } ->
       Result.bind
-        (Box.create markdown.context ~id ~border:Box.all_borders
+        (Box.create markdown.context ~id
+           ~border:(Lib.Border.Sides [ Lib.Border.Left ])
            ~border_color:(Option.value markdown.fg ~default:Color.white)
            ~should_fill:false ())
         (fun box ->
-          Result.bind (inline_text_block markdown ~id:(id ^ "-text") [ "markup.quote" ] inlines)
-            (fun text ->
+          Result.bind
+            (Renderable.set_width (Box.as_renderable box) (Yoga.Percent 100.0))
+            (fun () ->
               Result.bind
-                (Layout_children.add (Layout_children.Private.of_renderable (Box.as_renderable box))
-                   (Text.as_renderable text))
-                (fun _ ->
-                  Ok
-                    {
-                      renderable = Box.as_renderable box;
-                      selected_text = (fun () -> Text.selected_text text);
-                    })))
+                (Renderable.set_flex_shrink (Box.as_renderable box) (Some 0.0))
+                (fun () ->
+                  Result.bind
+                (Renderable.set_padding (Box.as_renderable box)
+                   ~edge:Yoga.Left (Yoga.Point 1.0))
+                    (fun () ->
+                      Result.bind
+                        (inline_text_block markdown ~id:(id ^ "-text") [ "markup.quote" ] inlines)
+                        (fun text ->
+                          Result.bind
+                            (Layout_children.add (Box.children box) (Text.as_renderable text))
+                            (fun _ ->
+                              Ok
+                                {
+                                  renderable = Box.as_renderable box;
+                                  selected_text = (fun () -> Text.selected_text text);
+                                }))))))
   | Parser.Unordered_list { items; _ } ->
-      let chunks =
-        List.concat
-          (List.mapi
-          (fun index item ->
-            let marker = style_chunk markdown.syntax_style [ "punctuation.special" ] "• " in
-            [ marker ] @ inline_chunks markdown.syntax_style ~conceal:markdown.conceal [] item.Parser.inlines
-             @ (if index < List.length items - 1 then [ Styled.chunk "\n" ] else []))
-          items)
-      in
-      Text.create markdown.context ~id ~wrap_mode:markdown.wrap_mode ~content:(Styled.create chunks) ()
-      |> map_text
+      render_list markdown ~id ~ordered:false ~start:1 items
   | Parser.Ordered_list { start; items; _ } ->
-      let chunks =
-        List.concat
-          (List.mapi
-          (fun index item ->
-            let marker = style_chunk markdown.syntax_style [ "punctuation.special" ] (string_of_int (start + index) ^ ". ") in
-            [ marker ] @ inline_chunks markdown.syntax_style ~conceal:markdown.conceal [] item.Parser.inlines
-             @ (if index < List.length items - 1 then [ Styled.chunk "\n" ] else []))
-          items)
-      in
-      Text.create markdown.context ~id ~wrap_mode:markdown.wrap_mode ~content:(Styled.create chunks) ()
-      |> map_text
+      render_list markdown ~id ~ordered:true ~start items
   | Parser.Table { headers; rows; alignments; _ } ->
       let cells values =
         List.map
           (fun value ->
             Text_table.Styled
-              (Styled.create
-                 (inline_chunks markdown.syntax_style ~conceal:markdown.conceal [] value)))
+              (styled_inline markdown [] value))
           values
       in
       let table_content = cells headers :: List.map cells rows in
-      Text_table.create markdown.context ~id ~content:table_content
-        ~column_alignments:(List.map table_alignment alignments)
-        ~wrap_mode:markdown.wrap_mode ~show_borders:markdown.table_options.show_borders
-        ~outer_border:markdown.table_options.outer_border
-        ~cell_padding_x:markdown.table_options.cell_padding_x
-        ~cell_padding_y:markdown.table_options.cell_padding_y
-        ?fg:markdown.fg ?bg:markdown.bg ?border_color:markdown.fg ()
-      |> Result.map (fun table ->
-             {
-               renderable = Text_table.as_renderable table;
-               selected_text = (fun () -> Text_table.selected_text table);
-             })
+      (match
+         Text_table.create markdown.context ~id ~content:table_content
+           ~column_alignments:(List.map table_alignment alignments)
+           ~wrap_mode:markdown.wrap_mode
+           ~column_width_mode:markdown.table_options.column_width_mode
+           ~show_borders:markdown.table_options.show_borders
+           ~outer_border:markdown.table_options.outer_border
+           ~cell_padding_x:markdown.table_options.cell_padding_x
+           ~cell_padding_y:markdown.table_options.cell_padding_y
+           ?fg:markdown.fg ?bg:markdown.bg ?border_color:markdown.fg ()
+       with
+       | Error error -> Error error
+       | Ok table ->
+           (match
+              Renderable.set_width (Text_table.as_renderable table)
+                (Yoga.Percent 100.0)
+            with
+            | Ok () ->
+                Ok
+                  {
+                    renderable = Text_table.as_renderable table;
+                    selected_text = (fun () -> Text_table.selected_text table);
+                  }
+            | Error error ->
+                Text_table.destroy table;
+                Error error))
   | Parser.Horizontal_rule _ ->
-      Text.create markdown.context ~id ~content:(Styled.of_string "────────────────") ()
+      inline_text_block markdown ~id [] [ Parser.Text "────────────────" ]
       |> map_text
   | Parser.Html raw ->
-      Text.create markdown.context ~id ~content:(Styled.of_string raw) ()
-      |> map_text
+      inline_text_block markdown ~id [] [ Parser.Text raw ] |> map_text
+
+and render_list markdown ~id ~ordered ~start items =
+  let marker_display_width marker =
+    Lib.Text_metrics.display_width Lib.Text_metrics.Wcwidth marker
+  in
+  let has_trailing_blank_line raw =
+    match List.rev (String.split_on_char '\n' raw) with
+    | last :: _ -> String.length (String.trim last) = 0
+    | [] -> false
+  in
+  let marker_width =
+    if ordered then
+      List.fold_left
+        (fun width (index, _) ->
+          let marker = string_of_int (start + index) ^ "." in
+          Int.max width (marker_display_width marker))
+        1 (List.mapi (fun index item -> index, item) items)
+    else 1
+  in
+  Result.bind
+    (Box.create markdown.context ~id ~should_fill:false ())
+    (fun list_box ->
+      let configure result operation = Result.bind result (fun () -> operation ()) in
+      let result =
+        configure (Renderable.set_width (Box.as_renderable list_box) (Yoga.Percent 100.0))
+          (fun () -> Renderable.set_flex_direction (Box.as_renderable list_box) Yoga.Flex_column)
+      in
+      let result =
+        configure result (fun () -> Renderable.set_flex_shrink (Box.as_renderable list_box) (Some 0.0))
+      in
+      let selections = ref [] in
+      let add_item index item result =
+        Result.bind result (fun () ->
+            let marker = if ordered then string_of_int (start + index) ^ "." else "•" in
+            let marker_text =
+              String.make (marker_width - marker_display_width marker) ' ' ^ marker ^ " "
+            in
+            Result.bind
+              (Box.create markdown.context ~id:(id ^ "-item-" ^ string_of_int index)
+                 ~should_fill:false ())
+              (fun row ->
+                let row_renderable = Box.as_renderable row in
+                let body_id = id ^ "-item-" ^ string_of_int index ^ "-body" in
+                let marker_id = id ^ "-item-" ^ string_of_int index ^ "-marker" in
+                let result =
+                  configure (Renderable.set_width row_renderable (Yoga.Percent 100.0))
+                    (fun () -> Renderable.set_flex_direction row_renderable Yoga.Flex_row)
+                in
+                let result =
+                  configure result (fun () -> Renderable.set_flex_shrink row_renderable (Some 0.0))
+                in
+                let result =
+                  configure result (fun () ->
+                      if has_trailing_blank_line item.Parser.raw then
+                        Renderable.set_margin row_renderable ~edge:Yoga.Bottom
+                          (Yoga.Point 1.0)
+                      else Ok ())
+                in
+                Result.bind result (fun () ->
+                    Result.bind
+                      (Text.create markdown.context ~id:marker_id
+                          ~content:
+                           (Styled.create
+                              [ style_chunk markdown.syntax_style [ "markup.list" ] marker_text ])
+                         ())
+                      (fun marker_text_renderable ->
+                        let marker_renderable = Text.as_renderable marker_text_renderable in
+                        let result =
+                          configure
+                            (Renderable.set_width marker_renderable
+                               (Yoga.Point (float_of_int (marker_width + 1))))
+                            (fun () -> Renderable.set_flex_shrink marker_renderable (Some 0.0))
+                        in
+                        Result.bind result (fun () ->
+                            Result.bind
+                              (Box.create markdown.context ~id:body_id ~should_fill:false ())
+                              (fun body ->
+                                let body_renderable = Box.as_renderable body in
+                                let result =
+                                  configure
+                                    (Renderable.set_flex_direction body_renderable Yoga.Flex_column)
+                                    (fun () -> Renderable.set_flex_grow body_renderable (Some 1.0))
+                                in
+                                let result =
+                                  configure result
+                                    (fun () -> Renderable.set_flex_shrink body_renderable (Some 1.0))
+                                in
+                                Result.bind result (fun () ->
+                                    Result.bind
+                                      (Layout_children.add (Box.children row) marker_renderable)
+                                      (fun _ ->
+                                        Result.bind
+                                          (inline_text_block markdown
+                                             ~id:(body_id ^ "-text") [] item.Parser.inlines)
+                                          (fun text ->
+                                            selections := (fun () -> Text.selected_text text) :: !selections;
+                                            Result.bind
+                                              (Layout_children.add (Box.children body)
+                                                 (Text.as_renderable text))
+                                              (fun _ ->
+                                                let add_child child_index child result =
+                                                  Result.bind result (fun () ->
+                                                      Result.bind
+                                                        (render_token markdown child
+                                                           (body_id ^ "-child-"
+                                                          ^ string_of_int child_index))
+                                                        (fun rendered ->
+                                                          selections := rendered.selected_text :: !selections;
+                                                          Result.map
+                                                            (fun _ -> ())
+                                                            (Layout_children.add
+                                                               (Box.children body)
+                                                               rendered.renderable)))
+                                                in
+                                                let children_result =
+                                                  List.mapi (fun child_index child -> child_index, child)
+                                                    item.Parser.children
+                                                  |> List.fold_left
+                                                       (fun result (child_index, child) ->
+                                                         add_child child_index child result)
+                                                       (Ok ())
+                                                in
+                                                Result.bind children_result (fun () ->
+                                                    Result.bind
+                                                      (Layout_children.add
+                                                         (Box.children row) body_renderable)
+                                                      (fun _ ->
+                                                        Result.map
+                                                          (fun _ -> ())
+                                                          (Layout_children.add
+                                                             (Box.children list_box)
+                                                             row_renderable)))))))))))))
+      in
+      let result =
+        List.mapi (fun index item -> index, item) items
+        |> List.fold_left (fun result (index, item) -> add_item index item result) result
+      in
+      match result with
+      | Error error ->
+          Box.destroy_recursively list_box;
+          Error error
+      | Ok () ->
+          Ok
+            {
+              renderable = Box.as_renderable list_box;
+              selected_text = (fun () ->
+                let values = ref [] in
+                let failure = ref None in
+                List.iter
+                  (fun selected ->
+                    match !failure with
+                    | Some _ -> ()
+                    | None ->
+                        (match selected () with
+                        | Error error -> failure := Some error
+                        | Ok value when String.length value = 0 -> ()
+                        | Ok value -> values := value :: !values))
+                  (List.rev !selections);
+                match !failure with
+                | Some error -> Error error
+                | None -> Ok (String.concat "\n" (List.rev !values)));
+            })
 
 let clear_blocks markdown =
   let destroy_block (block : block_entry) =
@@ -335,7 +519,8 @@ let rebuild ?(reuse = false) markdown =
         match !failure with
         | Some _ -> ()
         | None ->
-            (match render_token markdown token index with
+            (match render_token markdown token
+               (Printf.sprintf "markdown-block-%d" index) with
             | Error error -> failure := Some error
             | Ok rendered_block ->
                 (match Layout_children.add markdown.children rendered_block.renderable with
@@ -359,7 +544,17 @@ let create context ?id ?(content = "") ?syntax_style ?fg ?bg
     ?tree_sitter_client ?background ?(conceal = true) ?(conceal_code = false)
     ?(streaming = false) ?(wrap_mode = Text_buffer_view.Word) ?table_options () =
   let syntax_style, owns_syntax_style = match syntax_style with Some value -> value, false | None -> Syntax_style.create (), true in
-  let table_options = Option.value table_options ~default:{ show_borders = true; outer_border = true; cell_padding_x = 1; cell_padding_y = 0 } in
+  let table_options =
+    Option.value table_options
+      ~default:
+        {
+          show_borders = true;
+          outer_border = true;
+          cell_padding_x = 1;
+          cell_padding_y = 0;
+          column_width_mode = Text_table.Full;
+        }
+  in
   match Renderable.Private.create context ?id () with
   | Error error -> if owns_syntax_style then Syntax_style.destroy syntax_style; Error error
   | Ok renderable ->
@@ -367,7 +562,14 @@ let create context ?id ?(content = "") ?syntax_style ?fg ?bg
         { renderable; children = Layout_children.Private.of_renderable renderable; context; content; syntax_style; owns_syntax_style; fg; bg; tree_sitter_client; background; conceal; conceal_code; streaming; wrap_mode; table_options; parse_state = Parser.parse content; blocks = []; destroyed = false }
       in
       register_default_styles syntax_style;
-      let result = Result.bind (Renderable.set_flex_direction renderable Yoga.Flex_column) (fun () -> rebuild markdown) in
+      let result =
+        Result.bind
+          (Renderable.set_flex_direction renderable Yoga.Flex_column)
+          (fun () ->
+            Result.bind
+              (Renderable.set_flex_shrink renderable (Some 0.0))
+              (fun () -> rebuild markdown))
+      in
       match result with
       | Ok () -> Ok markdown
       | Error error -> Renderable.destroy renderable; if owns_syntax_style then Syntax_style.destroy syntax_style; Error error
@@ -430,7 +632,10 @@ let set_streaming markdown value =
         Parser.parse_incremental
           ~trailing_unstable:(if value then 2 else 0)
           markdown.content (Some markdown.parse_state);
-      rebuild ~reuse:true markdown
+      (* Streaming changes the visibility policy of every fenced Code child;
+         reusing the old block tree would leave those children with the
+         previous [draw_unstyled_text] and [streaming] settings. *)
+      rebuild markdown
 
 let destroy markdown =
   if not markdown.destroyed then begin

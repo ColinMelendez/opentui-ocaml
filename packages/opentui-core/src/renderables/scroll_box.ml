@@ -13,9 +13,13 @@ type t = {
   acceleration : Lib.Scroll_acceleration.t;
   mutable sticky_scroll : bool;
   mutable sticky_start : sticky_start option;
+  mutable has_manual_scroll : bool;
+  mutable applying_sticky_scroll : bool;
   mutable viewport_culling : bool;
   mutable content_width : float;
   mutable content_height : float;
+  mutable last_viewport_width : float;
+  mutable last_viewport_height : float;
   mutable manual_content_size : bool;
   mutable scroll_accumulator_x : float;
   mutable scroll_accumulator_y : float;
@@ -44,19 +48,82 @@ let is_at_right box =
   let maximum = max 0.0 (box.content_width -. Renderable.width box.viewport) in
   Float.compare (Scroll_bar.scroll_position box.horizontal_scrollbar) (maximum -. 0.01) >= 0
 
-let apply_sticky_start box =
+let maximum_scroll_top box =
+  max 0.0 (box.content_height -. Renderable.height box.viewport)
+
+let maximum_scroll_left box =
+  max 0.0 (box.content_width -. Renderable.width box.viewport)
+
+let is_at_sticky_position box =
   match box.sticky_start with
-  | None -> ()
-  | Some Top -> ignore (Scroll_bar.set_scroll_position box.vertical_scrollbar 0.0)
+  | None -> false
+  | Some Top -> Float.compare (Scroll_bar.scroll_position box.vertical_scrollbar) 0.0 <= 0
   | Some Bottom ->
-      ignore
-        (Scroll_bar.set_scroll_position box.vertical_scrollbar
-           (max 0.0 (box.content_height -. Renderable.height box.viewport)))
-  | Some Left -> ignore (Scroll_bar.set_scroll_position box.horizontal_scrollbar 0.0)
+      Float.compare (Scroll_bar.scroll_position box.vertical_scrollbar)
+        (maximum_scroll_top box) >= 0
+  | Some Left -> Float.compare (Scroll_bar.scroll_position box.horizontal_scrollbar) 0.0 <= 0
   | Some Right ->
-      ignore
-        (Scroll_bar.set_scroll_position box.horizontal_scrollbar
-           (max 0.0 (box.content_width -. Renderable.width box.viewport)))
+      Float.compare (Scroll_bar.scroll_position box.horizontal_scrollbar)
+        (maximum_scroll_left box) >= 0
+
+let is_at_sticky_reengage_point box =
+  match box.sticky_start with
+  | None -> false
+  | Some Top ->
+      Float.compare (maximum_scroll_top box) 0.0 > 0
+      && Float.compare (Scroll_bar.scroll_position box.vertical_scrollbar) 0.0 <= 0
+  | Some Bottom ->
+      Float.compare (maximum_scroll_top box) 0.0 > 0
+      && Float.compare (Scroll_bar.scroll_position box.vertical_scrollbar)
+           (maximum_scroll_top box -. 1.0) >= 0
+  | Some Left ->
+      Float.compare (maximum_scroll_left box) 0.0 > 0
+      && Float.compare (Scroll_bar.scroll_position box.horizontal_scrollbar) 0.0 <= 0
+  | Some Right ->
+      Float.compare (maximum_scroll_left box) 0.0 > 0
+      && Float.compare (Scroll_bar.scroll_position box.horizontal_scrollbar)
+           (maximum_scroll_left box -. 1.0) >= 0
+
+let sync_manual_scroll_state box =
+  if not box.sticky_scroll then box.has_manual_scroll <- false
+  else
+    match box.sticky_start with
+    | None -> box.has_manual_scroll <- false
+    | Some _ ->
+        let has_scrollable_content =
+          Float.compare (maximum_scroll_top box) 1.0 > 0
+          || Float.compare (maximum_scroll_left box) 1.0 > 0
+        in
+        if box.applying_sticky_scroll then begin
+          if box.has_manual_scroll && has_scrollable_content
+             && is_at_sticky_position box
+          then box.has_manual_scroll <- false
+        end else
+          box.has_manual_scroll <-
+            has_scrollable_content && not (is_at_sticky_position box)
+
+let with_sticky_application box action =
+  let was_applying = box.applying_sticky_scroll in
+  box.applying_sticky_scroll <- true;
+  Fun.protect action ~finally:(fun () -> box.applying_sticky_scroll <- was_applying)
+
+let apply_sticky_start box =
+  if box.sticky_scroll then
+    with_sticky_application box (fun () ->
+        match box.sticky_start with
+        | None -> ()
+        | Some Top ->
+            ignore (Scroll_bar.set_scroll_position box.vertical_scrollbar 0.0)
+        | Some Bottom ->
+            ignore
+              (Scroll_bar.set_scroll_position box.vertical_scrollbar
+                 (maximum_scroll_top box))
+        | Some Left ->
+            ignore (Scroll_bar.set_scroll_position box.horizontal_scrollbar 0.0)
+        | Some Right ->
+            ignore
+              (Scroll_bar.set_scroll_position box.horizontal_scrollbar
+                 (maximum_scroll_left box)))
 
 let update_translation box =
   ignore
@@ -67,15 +134,16 @@ let update_translation box =
        (-.Scroll_bar.scroll_position box.vertical_scrollbar))
 
 let update_scrollbars box =
-  ignore
-    (Scroll_bar.set_viewport_size box.vertical_scrollbar
-       (Renderable.height box.viewport));
-  ignore
-    (Scroll_bar.set_viewport_size box.horizontal_scrollbar
-       (Renderable.width box.viewport));
-  ignore (Scroll_bar.set_scroll_size box.vertical_scrollbar box.content_height);
-  ignore (Scroll_bar.set_scroll_size box.horizontal_scrollbar box.content_width);
-  update_translation box
+  with_sticky_application box (fun () ->
+      ignore
+        (Scroll_bar.set_viewport_size box.vertical_scrollbar
+           (Renderable.height box.viewport));
+      ignore
+        (Scroll_bar.set_viewport_size box.horizontal_scrollbar
+           (Renderable.width box.viewport));
+      ignore (Scroll_bar.set_scroll_size box.vertical_scrollbar box.content_height);
+      ignore (Scroll_bar.set_scroll_size box.horizontal_scrollbar box.content_width);
+      update_translation box)
 
 let compute_content_size box =
   let width = ref (if box.manual_content_size then box.content_width else 0.0) in
@@ -96,6 +164,18 @@ let compute_content_size box =
     (Renderable.children box.content);
   let width = max 0.0 !width in
   let height = max 0.0 !height in
+  let viewport_width = Renderable.width box.viewport in
+  let viewport_height = Renderable.height box.viewport in
+  let viewport_size_changed =
+    not (Float.equal viewport_width box.last_viewport_width)
+    || not (Float.equal viewport_height box.last_viewport_height)
+  in
+  box.last_viewport_width <- viewport_width;
+  box.last_viewport_height <- viewport_height;
+  let content_size_changed =
+    not (Float.equal width box.content_width)
+    || not (Float.equal height box.content_height)
+  in
   let was_bottom = is_at_bottom box in
   let was_right = is_at_right box in
   if not (Float.equal width box.content_width) then begin
@@ -108,16 +188,26 @@ let compute_content_size box =
   end;
   update_scrollbars box;
   if box.sticky_scroll then begin
-    if was_bottom then
-      ignore
-        (Scroll_bar.set_scroll_position box.vertical_scrollbar
-           (max 0.0 (box.content_height -. Renderable.height box.viewport)));
-    if was_right then
-      ignore
-        (Scroll_bar.set_scroll_position box.horizontal_scrollbar
-           (max 0.0 (box.content_width -. Renderable.width box.viewport)))
+    match box.sticky_start with
+    | Some _ when not box.has_manual_scroll -> apply_sticky_start box
+    | Some _
+      when (content_size_changed || viewport_size_changed)
+           && is_at_sticky_reengage_point box ->
+        box.has_manual_scroll <- false;
+        apply_sticky_start box
+    | Some _ -> ()
+    | None ->
+        if was_bottom then
+          with_sticky_application box (fun () ->
+              ignore
+                (Scroll_bar.set_scroll_position box.vertical_scrollbar
+                   (maximum_scroll_top box)));
+        if was_right then
+          with_sticky_application box (fun () ->
+              ignore
+                (Scroll_bar.set_scroll_position box.horizontal_scrollbar
+                   (maximum_scroll_left box)))
   end;
-  apply_sticky_start box;
   update_translation box
 
 let visible_children box _renderable =
@@ -391,9 +481,13 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                               acceleration = scroll_acceleration;
                               sticky_scroll;
                               sticky_start;
+                              has_manual_scroll = false;
+                              applying_sticky_scroll = false;
                               viewport_culling;
                               content_width = 0.0;
                               content_height = 0.0;
+                              last_viewport_width = 0.0;
+                              last_viewport_height = 0.0;
                               manual_content_size = false;
                               scroll_accumulator_x = 0.0;
                               scroll_accumulator_y = 0.0;
@@ -524,11 +618,12 @@ let create context ?id ?(scroll_x = false) ?(scroll_y = true)
                               let bind_scroll bar =
                                 ignore
                                   (Scroll_bar.on_change bar (fun _ ->
+                                       sync_manual_scroll_state box;
                                        update_translation box))
                               in
                               bind_scroll vertical_scrollbar;
                               bind_scroll horizontal_scrollbar;
-                              apply_sticky_start box;
+                              if box.sticky_scroll then apply_sticky_start box;
                               (match
                                  Render_context.on_selection context
                                    (fun selection ->
@@ -616,11 +711,14 @@ let scroll_by = scroll_by
 let sticky_scroll box = box.sticky_scroll
 let set_sticky_scroll box value =
   box.sticky_scroll <- value;
-  if value then compute_content_size box
+  if value then begin
+    sync_manual_scroll_state box;
+    compute_content_size box
+  end else box.has_manual_scroll <- false
 let sticky_start box = box.sticky_start
 let set_sticky_start box value =
   box.sticky_start <- value;
-  if box.sticky_scroll then apply_sticky_start box
+  sync_manual_scroll_state box
 let viewport_culling box = box.viewport_culling
 let set_viewport_culling box value =
   box.viewport_culling <- value;

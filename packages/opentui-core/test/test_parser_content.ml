@@ -261,6 +261,43 @@ let () =
           if not (String.contains (frame renderer) 'N') then fail "updated Markdown was not rendered";
           Renderables.Markdown.destroy markdown;
           Renderer.destroy renderer);
+      test "Markdown parses nested list blocks instead of flattening them" (fun () ->
+          let parsed =
+            Renderables.Markdown_parser.parse
+              "1. First item\n2. Second item before a nested list:\n   - Nested bullet\n   - Nested bullet before fenced code:\n\n     ```ts\n     const nested = true\n     ```\n3. Third item"
+          in
+          match Renderables.Markdown_parser.tokens parsed with
+          | [ Renderables.Markdown_parser.Ordered_list { items; _ } ] ->
+              equal int 3 (List.length items);
+              (match List.nth_opt items 1 with
+              | Some { children = [ Renderables.Markdown_parser.Unordered_list { items = nested_items; _ } ]; _ } ->
+                  equal int 2 (List.length nested_items);
+                  (match List.nth_opt nested_items 1 with
+                  | Some { children = [ Renderables.Markdown_parser.Code_block { text; _ } ]; _ } ->
+                      equal string "const nested = true" text
+                  | Some _ | None -> fail "nested fenced code was not parsed as a code block")
+              | Some _ | None -> fail "nested list was flattened into paragraph text")
+          | _ -> fail "ordered list with nested blocks was not parsed");
+      test "Markdown retains a streamed list after a paragraph" (fun () ->
+          let parsed =
+            Renderables.Markdown_parser.parse
+              "# Streaming Markdown\n\nA paragraph that must wrap across the viewport.\n\n1. Outer item\n   - Nested item\n   - Nested code:\n\n     ```ts\n     const nested = true\n     ```\n2. Last item"
+          in
+          match Renderables.Markdown_parser.tokens parsed with
+          | [ _; _; Renderables.Markdown_parser.Ordered_list { items; _ } ] ->
+              equal int 2 (List.length items)
+          | _ -> fail "streamed list was not retained after the paragraph");
+      test "Markdown treats an overflowing ordered marker as ordinary text" (fun () ->
+          let parsed =
+            Renderables.Markdown_parser.parse
+              "999999999999999999999999999999999999999999. still text"
+          in
+          match Renderables.Markdown_parser.tokens parsed with
+          | [ Renderables.Markdown_parser.Paragraph { inlines; _ } ] ->
+              equal string
+                "999999999999999999999999999999999999999999. still text"
+                (Renderables.Markdown_parser.inline_text inlines)
+          | _ -> fail "an overflowing ordered marker was parsed as a list");
       test "Markdown table alignment markers affect rendered cell origins" (fun () ->
           let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:36l ~height:8l ()) in
           let markdown =
@@ -273,6 +310,7 @@ let () =
                      outer_border = false;
                      cell_padding_x = 0;
                      cell_padding_y = 0;
+                     column_width_mode = Renderables.Text_table.Full;
                    }
                  ())
           in

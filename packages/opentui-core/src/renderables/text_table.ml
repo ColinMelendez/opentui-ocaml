@@ -806,7 +806,10 @@ let create context ?id ?(content = []) ?(column_alignments = [])
   if cell_padding < 0 || column_gap < 0 then Error Error.Invalid_argument
   else
     Result.bind
-      (Owned_buffer.create ~width:1 ~height:1 ~respect_alpha:false ~width_method ())
+      (* Text tables use a transparent backing color by default, matching the
+         reference TextTable. Preserve that transparency when the table is
+         composited into its parent buffer. *)
+      (Owned_buffer.create ~width:1 ~height:1 ~respect_alpha:true ~width_method ())
       (fun buffer ->
         match Renderable.Private.create context ?id () with
         | Error error -> Owned_buffer.close buffer; Error error
