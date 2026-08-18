@@ -33,6 +33,16 @@ val run : t -> (unit, error) result
     operation returns when [close] is called, the renderer is destroyed, or a
     structural scheduler error occurs. It must run in the clock's owner domain. *)
 
+val set_frames_per_second : t -> int -> (unit, error) result
+(** [set_frames_per_second scheduler frames_per_second] changes the live frame
+    cadence to [frames_per_second] while the scheduler is running or idle. The
+    new interval takes effect on the next deadline computation; the caller is
+    trusted to choose a sensible positive value. Returns [Closed] or
+    [Invalid_frames_per_second] without mutation on failure. *)
+
+val frames_per_second : t -> (int, error) result
+(** [frames_per_second scheduler] reports the current configured cadence. *)
+
 val close : t -> (unit, error) result
 (** [close] idempotently stops the scheduler without destroying its renderer or
     closing its Eio clock when called from the owner domain. Wrong-domain calls

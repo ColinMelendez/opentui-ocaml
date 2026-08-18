@@ -385,6 +385,53 @@ let () =
           | _ -> fail "live rendering produced too few frame timestamps");
           equal int 0 (expect_renderer (Renderer.live_request_count renderer));
           destroy_renderer renderer);
+      test "set_frames_per_second mutates the live cadence and validates" (fun () ->
+          Eio_main.run @@ fun env ->
+          Eio.Switch.run @@ fun sw ->
+          let mono_clock = Eio.Stdenv.mono_clock env in
+          let clock = Eio_clock.create ~sw ~mono_clock in
+          let renderer =
+            expect_renderer
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory
+                 ~clock:(Eio_clock.lib_clock clock) ~width:4l ~height:2l ())
+          in
+          let scheduler =
+            expect_scheduler
+              (Scheduler.create ~sw ~clock ~renderer ~frames_per_second:100 ())
+          in
+          (* Validation rejects non-positive values without touching cadence. *)
+          (match Scheduler.set_frames_per_second scheduler 0 with
+          | Error Scheduler.Invalid_frames_per_second -> ()
+          | Error error -> fail (Scheduler.message error)
+          | Ok () -> fail "zero frames_per_second was accepted by the setter");
+          equal int 100 (expect_scheduler (Scheduler.frames_per_second scheduler));
+          ignore (expect_scheduler (Scheduler.set_frames_per_second scheduler 40));
+          equal int 40 (expect_scheduler (Scheduler.frames_per_second scheduler));
+          let frame_times = ref [] in
+          ignore
+            (expect_renderer
+               (Renderer.add_post_process renderer (fun buffer ~delta_time ->
+                    ignore delta_time;
+                    ignore buffer;
+                    frame_times := Eio_clock.now clock :: !frame_times;
+                    if Int.equal (List.length !frame_times) 2 then begin
+                      ignore (Renderer.drop_live renderer);
+                      close_scheduler scheduler
+                    end;
+                    Eio.Time.Mono.sleep mono_clock 0.005;
+                    Ok ())));
+          let result = start_scheduler ~sw scheduler in
+          ignore (expect_renderer (Renderer.request_live renderer));
+          expect_scheduler_success result;
+          equal int 2 (List.length !frame_times);
+          (match List.rev !frame_times with
+          | first :: second :: _ ->
+              (* 40 fps => ~25ms between frame starts; 100 fps (~10ms) was
+                 replaced by the setter before the loop ran. *)
+              equal bool true
+                (Float.compare (second -. first) 0.015 >= 0)
+          | _ -> fail "live rendering produced too few frame timestamps");
+          destroy_renderer renderer);
       test "extreme positive frame rates do not create deadline catch-up loops" (fun () ->
           Eio_main.run @@ fun env ->
           Eio.Switch.run @@ fun sw ->

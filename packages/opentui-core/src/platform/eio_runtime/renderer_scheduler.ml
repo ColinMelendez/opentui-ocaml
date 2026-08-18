@@ -54,7 +54,7 @@ type renderer_state = {
 type t = {
   clock : Eio_clock.t;
   renderer : Renderer.t;
-  interval : float;
+  mutable interval : float;
   signal : signal;
   mutable wakeup : Render_context.Private.scheduler_wakeup option;
   mutable destroy_subscription : Event_subscription.t option;
@@ -78,6 +78,18 @@ let renderer_state scheduler =
 let reset_timing scheduler =
   scheduler.last_attempt <- None;
   scheduler.next_deadline <- None
+
+let set_frames_per_second scheduler frames_per_second =
+  if scheduler.closed then Error Closed
+  else if Int.compare frames_per_second 0 <= 0 then Error Invalid_frames_per_second
+  else begin
+    scheduler.interval <- 1.0 /. float_of_int frames_per_second;
+    Ok ()
+  end
+
+let frames_per_second scheduler =
+  if scheduler.closed then Error Closed
+  else Ok (int_of_float (Float.div 1.0 scheduler.interval))
 
 let advance_deadline scheduler deadline ~now =
   if Float.compare deadline now > 0 then deadline
