@@ -28,7 +28,7 @@ let () =
     [
       test "renderer destruction closes attached plugin hosts" (fun () ->
           let renderer =
-            expect_core (Core.Renderer.create ~width:2l ~height:1l)
+            expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:2l ~height:1l ())
           in
           let host =
             Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore

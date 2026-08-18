@@ -109,7 +109,7 @@ let test_image_source_boundary () =
       fail "missing Eio image source unexpectedly loaded"
 
 let test_image_renderable () =
-  let renderer = expect_ok (Renderer.create ~width:12l ~height:4l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:12l ~height:4l ()) in
   let source =
     expect_decode_ok
       (Core.Image.from_rgba ~pixels:(rgba_pixels ()) ~width:2 ~height:1 ~stride:8)
@@ -167,7 +167,7 @@ let test_image_renderable () =
   Renderer.destroy renderer
 
 let test_post_filters_and_effects () =
-  let renderer = expect_ok (Renderer.create ~width:6l ~height:3l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:6l ~height:3l ()) in
   let buffer = expect_ok (Renderer.next_buffer renderer) in
   let red = expect_color_ok (Core.Color.rgb ~red:255 ~green:0 ~blue:0) in
   ignore
@@ -248,7 +248,7 @@ let test_post_filters_and_effects () =
   Renderer.destroy renderer
 
 let test_console_owner () =
-  let renderer = expect_ok (Renderer.create ~width:20l ~height:6l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:6l ()) in
   let console = Renderer.console renderer in
   ignore (expect_ok (Core.Console.info console "hello"));
   ignore (expect_ok (Core.Console.error console "failure"));

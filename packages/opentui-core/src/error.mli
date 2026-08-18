@@ -11,6 +11,7 @@ type t =
   | Invalid_anchor
   | Unsupported
   | Io of string
+  | Output of string
   | Native of Native.Error.t
   | Native_image of Opentui_raw.Image.error
 

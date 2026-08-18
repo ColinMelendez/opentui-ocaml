@@ -4,6 +4,7 @@ type error = Invalid_range | Flow_error | Desynchronized
 
 type t = {
   sink : Eio.Flow.sink_ty Eio.Resource.t;
+  mutex : Eio.Mutex.t;
   mutable state : Modes.t;
   mutable status : status;
 }
@@ -20,6 +21,7 @@ let pp formatter error = Format.pp_print_string formatter (message error)
 let create ~sink =
   {
     sink = (sink :> Eio.Flow.sink_ty Eio.Resource.t);
+    mutex = Eio.Mutex.create ();
     state = Modes.initial;
     status = Healthy;
   }
@@ -35,7 +37,7 @@ let valid_range bytes ~off ~len =
   && Int.compare off (Bytes.length bytes) <= 0
   && Int.compare len (Bytes.length bytes - off) <= 0
 
-let write_subbytes output ~bytes ~off ~len =
+let write_subbytes_unlocked output ~bytes ~off ~len =
   if not (valid_range bytes ~off ~len) then Error Invalid_range
   else
     match output.status with
@@ -74,15 +76,40 @@ let write_subbytes output ~bytes ~off ~len =
           done;
           (match !failure with None -> Ok () | Some error -> Error error)
 
-let write output bytes = write_subbytes output ~bytes ~off:0 ~len:(Bytes.length bytes)
+let write_subbytes output ~bytes ~off ~len =
+  Eio.Mutex.use_rw output.mutex ~protect:true (fun () ->
+      write_subbytes_unlocked output ~bytes ~off ~len)
+
+let write output bytes =
+  write_subbytes output ~bytes ~off:0 ~len:(Bytes.length bytes)
+
+let write_frame output chunks =
+  Eio.Mutex.use_rw output.mutex ~protect:true (fun () ->
+      if
+        not
+          (List.for_all
+             (fun bytes -> valid_range bytes ~off:0 ~len:(Bytes.length bytes))
+             chunks)
+      then Error Invalid_range
+      else
+        List.fold_left
+          (fun result bytes ->
+            match result with
+            | Error _ -> result
+            | Ok () ->
+                write_subbytes_unlocked
+                  output ~bytes ~off:0 ~len:(Bytes.length bytes))
+          (Ok ()) chunks)
 
 let apply output make_transition =
-  let transition = make_transition output.state in
-  match write output (Modes.output transition) with
-  | Error error -> Error error
-  | Ok () ->
-      output.state <- Modes.next transition;
-      Ok ()
+  Eio.Mutex.use_rw output.mutex ~protect:true (fun () ->
+      let transition = make_transition output.state in
+      let bytes = Modes.output transition in
+      match write_subbytes_unlocked output ~bytes ~off:0 ~len:(Bytes.length bytes) with
+      | Error error -> Error error
+      | Ok () ->
+          output.state <- Modes.next transition;
+          Ok ())
 
 let set_screen output screen =
   apply output (fun state -> Modes.set_screen state screen)

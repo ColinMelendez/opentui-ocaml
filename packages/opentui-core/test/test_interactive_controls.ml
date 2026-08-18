@@ -54,7 +54,7 @@ let () =
   run "opentui-core-interactive-controls"
     [
       test "native line info and standalone pointer selection stay coherent" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:12l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:12l ~height:4l ()) in
           let text =
             expect_ok
               (Core.Renderables.Text_buffer_renderable.create
@@ -126,7 +126,7 @@ let () =
           Core.Renderables.Text_buffer_renderable.destroy text;
           Renderer.destroy renderer);
       test "input owns focused keyboard and paste constraints and events" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:16l ~height:3l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:16l ~height:3l ()) in
           let input =
             expect_ok
               (Core.Renderables.Input.create (Renderer.context renderer)
@@ -171,7 +171,7 @@ let () =
           Core.Renderables.Input.destroy input;
           Renderer.destroy renderer);
       test "textarea selection editing and submit remain typed" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:12l ~height:5l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:12l ~height:5l ()) in
           let submitted = ref 0 in
           let textarea =
             expect_ok
@@ -197,7 +197,7 @@ let () =
           Core.Renderables.Textarea.destroy textarea;
           Renderer.destroy renderer);
       test "select and tab-select movement follow their directional contracts" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:24l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:24l ~height:8l ()) in
           let options = [ option "one" "first"; option "two" "second"; option "three" "third" ] in
           let select =
             expect_ok
@@ -235,7 +235,7 @@ let () =
           Core.Renderables.Tab_select.destroy tabs;
           Renderer.destroy renderer);
       test "scrollbar, scrollbox, and slider preserve scroll ownership" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:20l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:8l ()) in
           let bar =
             expect_ok
               (Core.Renderables.Scroll_bar.create (Renderer.context renderer)

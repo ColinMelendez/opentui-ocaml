@@ -46,7 +46,7 @@ let () =
   run "opentui-core-renderer-presentation"
     [
       test "background updates the next buffer and requests one repaint" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           assert_color (0, 0, 0, 0) (expect_ok (Renderer.background_color renderer));
           equal bool false (expect_ok (Renderer.has_pending_render renderer));
           let background = expect_color (Color.rgb ~red:12 ~green:34 ~blue:56) in
@@ -62,7 +62,7 @@ let () =
           equal bool false (expect_ok (Renderer.has_pending_render renderer));
           Renderer.destroy renderer);
       test "cursor presentation is native, persistent, and resize-clamped" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:3l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:3l ~height:2l ()) in
           let initial = expect_ok (Renderer.cursor_state renderer) in
           equal int32 1l initial.x;
           equal int32 1l initial.y;
@@ -108,7 +108,7 @@ let () =
           equal bool true (expect_ok (Renderer.has_pending_render renderer));
           Renderer.destroy renderer);
       test "context forwards cursor presentation through the renderer owner" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:3l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:3l ~height:2l ()) in
           let context = Renderer.context renderer in
           ignore
             (expect_ok
@@ -148,7 +148,7 @@ let () =
             (Opentui_core.Render_context.set_cursor_position context ~x:1l
                ~y:1l ()));
       test "presentation APIs follow Core renderer close semantics" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           Renderer.destroy renderer;
           Renderer.destroy renderer;
           expect_error Opentui_core.Error.Closed (Renderer.background_color renderer);
@@ -168,5 +168,5 @@ let () =
           expect_error Opentui_core.Error.Closed
             (Renderer.set_cursor_color renderer ~color:Color.white);
           expect_error Opentui_core.Error.Closed
-            (Renderer.resize renderer ~width:2l ~height:2l))
+            (Renderer.resize renderer ~width:2l ~height:2l) )
     ]

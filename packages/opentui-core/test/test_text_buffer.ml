@@ -90,7 +90,7 @@ let () =
           ignore (expect_ok (Text_buffer_view.close view));
           ignore (expect_ok (Text_buffer.close buffer)));
       test "text-buffer renderable attaches a native measure target" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:5l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:5l ~height:10l ()) in
           let text =
             expect_ok
               (Text_buffer_renderable.create (Renderer.context renderer)
@@ -123,7 +123,7 @@ let () =
           Text_buffer_renderable.destroy text;
           Renderer.destroy renderer);
       test "text-buffer renderable draws its view into the renderer buffer" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:6l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:6l ~height:2l ()) in
           let text =
             expect_ok
               (Text_buffer_renderable.create (Renderer.context renderer)
@@ -146,7 +146,7 @@ let () =
           equal string "AB          " (Bytes.to_string output);
           Renderer.destroy renderer);
       test "text-buffer renderable forwards signed screen coordinates" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:6l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:6l ~height:2l ()) in
           let text =
             expect_ok
               (Text_buffer_renderable.create (Renderer.context renderer)
@@ -168,7 +168,7 @@ let () =
           equal string "B           " (Bytes.to_string output);
           Renderer.destroy renderer);
       test "text mutations invalidate Yoga measurement" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:5l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:5l ~height:10l ()) in
           let text =
             expect_ok
               (Text_buffer_renderable.create (Renderer.context renderer)
@@ -204,7 +204,7 @@ let () =
           expect_float "cleared height" 1.0 cleared_layout.height;
           Renderer.destroy renderer);
       test "resize invalidates the text measure constraints" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:10l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:10l ~height:10l ()) in
           let text =
             expect_ok
               (Text_buffer_renderable.create (Renderer.context renderer)
@@ -233,7 +233,7 @@ let () =
           expect_float "post-resize height" 2.0 after_resize.height;
           Renderer.destroy renderer);
       test "detached text renderables retain their measure owner" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:5l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:5l ~height:10l ()) in
           let text =
             expect_ok
               (Text_buffer_renderable.create (Renderer.context renderer)

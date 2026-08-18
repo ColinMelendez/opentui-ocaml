@@ -121,7 +121,7 @@ let () =
   run "opentui-core-native-hit-grid"
     [
       test "current hit-grid remains visible until the next frame commits" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let _, target = create_box renderer ~id:"target" ~x:0 ~y:0 ~width:1
               ~height:1 () in
           attach_root renderer target;
@@ -137,7 +137,7 @@ let () =
           assert_hit renderer ~x:0 ~y:0 (Some target);
           Renderer.destroy renderer);
       test "a Core render failure preserves current and clears next" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let should_fail = ref false in
           let stable =
             create_renderable renderer ~id:"stable" ~x:0 ~y:0 ~width:1 ~height:1
@@ -178,7 +178,7 @@ let () =
           assert_hit renderer ~x:1 ~y:0 None;
           Renderer.destroy renderer);
       test "an exception during Core rendering preserves current and clears next" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let should_raise = ref false in
           let stable =
             create_renderable renderer ~id:"stable" ~x:0 ~y:0 ~width:1 ~height:1
@@ -223,7 +223,7 @@ let () =
           assert_hit renderer ~x:1 ~y:0 None;
           Renderer.destroy renderer);
       test "a captured ID is omitted while captured and returns after release" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let _, source = create_box renderer ~id:"source" ~x:0 ~y:0 ~width:1
               ~height:1 () in
           let _, target = create_box renderer ~id:"target" ~x:1 ~y:0 ~width:1
@@ -248,7 +248,7 @@ let () =
           assert_hit renderer ~x:0 ~y:0 (Some source);
           Renderer.destroy renderer);
       test "hit-grid scissors clip descendants to an overflow-hidden box" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:4l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:1l ()) in
           let parent_box, parent =
             create_box renderer ~id:"clip-parent" ~x:0 ~y:0 ~width:2 ~height:1 ()
           in
@@ -264,7 +264,7 @@ let () =
           assert_hit renderer ~x:2 ~y:0 None;
           Renderer.destroy renderer);
       test "resize clears stale committed hit-grid cells before the next frame" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let _, target = create_box renderer ~id:"resized" ~x:0 ~y:0 ~width:1
               ~height:1 () in
           attach_root renderer target;
@@ -276,7 +276,7 @@ let () =
           assert_hit renderer ~x:0 ~y:0 (Some target);
           Renderer.destroy renderer);
       test "detached and destroyed IDs are rejected from the committed grid" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let _, detached =
             create_box renderer ~id:"detached" ~x:0 ~y:0 ~width:1 ~height:1 ()
           in
@@ -297,7 +297,7 @@ let () =
           assert_hit renderer ~x:1 ~y:0 None;
           Renderer.destroy renderer);
       test "non-forced frames preserve current when the native backend skips" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let _, stable = create_box renderer ~id:"stable" ~x:0 ~y:0 ~width:1
               ~height:1 () in
           let _, candidate =

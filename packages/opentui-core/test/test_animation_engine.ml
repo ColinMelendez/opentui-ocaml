@@ -45,7 +45,7 @@ let () =
           Animation.Engine.destroy engine);
       test "renderer attachment advances before retained rendering" (fun () ->
           let renderer =
-            match Opentui_core.Renderer.create ~width:2l ~height:1l with
+            match Opentui_core.Renderer.create ~output:Opentui_core.Renderer.Output.Memory ~width:2l ~height:1l () with
             | Ok value -> value
             | Error error -> fail (Opentui_core.Error.message error)
           in

@@ -49,7 +49,7 @@ let highlight_for content =
 let parser ~worker_safety highlight =
   { Types.filetype = "test"; aliases = []; worker_safety; highlight }
 
-let make_renderer () = expect_ok (Renderer.create ~width:40l ~height:8l)
+let make_renderer () = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:40l ~height:8l ())
 
 let make_background env sw =
   expect_background

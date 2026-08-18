@@ -176,7 +176,9 @@ let () =
               equal int 1 raw_attributes.c_vmin;
               equal int 0 raw_attributes.c_vtime;
               let renderer =
-                expect_native_ok (Native.create ~width:2l ~height:1l)
+                expect_native_ok
+                  (Native.create ~output:Native.Output.Memory ~width:2l
+                     ~height:1l ())
               in
               expect_output_ok (Output.set_screen output Modes.Alternate);
               equal string "\x1b[?1049h"

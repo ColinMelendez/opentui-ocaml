@@ -1,3 +1,15 @@
+module Output = struct
+  type remote_mode = Auto | Local | Remote
+
+  type sink = {
+    write_frame : bytes list -> (unit, Error.t) result;
+  }
+
+  let sink ~write_frame = { write_frame }
+
+  type target = Memory | Stdout | Sink of sink
+end
+
 type render_status = Rendered | Skipped | Failed
 
 type cursor_style = Render_context.cursor_style =
@@ -37,6 +49,9 @@ type post_process_id = int
 
 type t = {
   raw : Opentui_raw.Renderer.t;
+  output_sink : Output.sink option;
+  output_feed : Native_span_feed.t option;
+  mutable output_failed : bool;
   context : Render_context.t;
   root : Renderable.t;
   children : Layout_children.t;
@@ -66,6 +81,7 @@ type t = {
   mutable before_destroy : teardown_attachment list;
   mutable live_leases : live_lease list;
   mutable destruction_started : bool;
+  mutable close_error : Error.t option;
 }
 
 and pre_render_driver = {
@@ -383,23 +399,71 @@ let refresh_selection renderer =
            (Render_context.Private.events renderer.context) (Some value));
       Render_context.Private.request_render renderer.context
 
-let create_with_clock_option ~clock ~width ~height =
-  match Opentui_raw.Renderer.create ~width ~height with
-  | Error error -> Error (map_raw_error error)
-  | Ok raw ->
+let raw_remote_mode = function
+  | Output.Auto -> Opentui_raw.Renderer.Auto
+  | Output.Local -> Opentui_raw.Renderer.Local
+  | Output.Remote -> Opentui_raw.Renderer.Remote
+
+let close_output_feed = function
+  | None -> ()
+  | Some feed -> ignore (Native_span_feed.close feed)
+
+let create_raw_renderer ~output ~remote_mode ~width ~height =
+  let create_native raw_output feed =
+    match
+      Opentui_raw.Renderer.create ~output:raw_output
+        ~remote_mode:(raw_remote_mode remote_mode) ~width ~height ()
+    with
+    | Error error -> Error (map_raw_error error)
+    | Ok raw -> Ok (raw, feed)
+  in
+  match output with
+  | Output.Memory -> create_native Opentui_raw.Renderer.Memory None
+  | Output.Stdout -> create_native Opentui_raw.Renderer.Stdout None
+  | Output.Sink sink ->
+      (match Native_span_feed.create () with
+       | Error error -> Error error
+       | Ok feed ->
+           (match Native_span_feed.Private.raw feed with
+            | Error error ->
+                close_output_feed (Some feed);
+                Error error
+            | Ok raw_feed ->
+                (match
+                   create_native (Opentui_raw.Renderer.Feed raw_feed) (Some feed)
+                 with
+                 | Error error ->
+                     close_output_feed (Some feed);
+                     Error error
+                 | Ok (raw, returned_feed) ->
+                     Ok (raw, returned_feed))))
+
+let create_with_clock_option ?remote_mode ~output ~clock ~width ~height () =
+  let remote_mode =
+    match remote_mode with
+    | Some value -> value
+    | None ->
+        (match output with Output.Sink _ -> Output.Remote | _ -> Output.Auto)
+  in
+  match create_raw_renderer ~output ~remote_mode ~width ~height with
+  | Error error -> Error error
+  | Ok (raw, output_feed) ->
       (match Opentui_raw.Renderer.current_buffer raw with
       | Error error ->
           Opentui_raw.Renderer.close raw;
+          close_output_feed output_feed;
           Error (map_raw_error error)
       | Ok current_buffer ->
           (match Opentui_raw.Renderer.next_buffer raw with
           | Error error ->
               Opentui_raw.Renderer.close raw;
+              close_output_feed output_feed;
               Error (map_raw_error error)
           | Ok next_buffer ->
               (match Opentui_raw.Capabilities.snapshot raw with
               | Error error ->
                   Opentui_raw.Renderer.close raw;
+                  close_output_feed output_feed;
                   Error (map_raw_error error)
               | Ok raw_capabilities ->
                   let capabilities =
@@ -416,6 +480,7 @@ let create_with_clock_option ~clock ~width ~height =
                   | Error error ->
                       Render_context.Private.close context;
                       Opentui_raw.Renderer.close raw;
+                      close_output_feed output_feed;
                       Error error
                   | Ok root ->
                       (match
@@ -426,6 +491,7 @@ let create_with_clock_option ~clock ~width ~height =
                           Renderable.destroy root;
                           Render_context.Private.close context;
                           Opentui_raw.Renderer.close raw;
+                          close_output_feed output_feed;
                           Error error
                       | Ok console ->
                           let theme_query_requested = ref false in
@@ -438,9 +504,17 @@ let create_with_clock_option ~clock ~width ~height =
                                 Renderer_theme_mode.create_without_clock
                                   ~query:(fun () -> theme_query_requested := true) ()
                           in
+                          let output_sink =
+                            match output with
+                            | Output.Sink sink -> Some sink
+                            | Output.Memory | Output.Stdout -> None
+                          in
                           let renderer =
                             {
                               raw;
+                              output_sink;
+                              output_feed;
+                              output_failed = false;
                               context;
                               root;
                               children = Layout_children.Private.of_renderable root;
@@ -471,16 +545,18 @@ let create_with_clock_option ~clock ~width ~height =
                               before_destroy = [];
                               live_leases = [];
                               destruction_started = false;
+                              close_error = None;
                             }
                           in
                           Render_context.Private.set_selection_update context
                             (fun () -> refresh_selection renderer);
                           Ok renderer)))))
 
-let create_with_clock ~clock ~width ~height =
-  create_with_clock_option ~clock:(Some clock) ~width ~height
+let create_with_clock ~output ?remote_mode ~clock ~width ~height () =
+  create_with_clock_option ?remote_mode ~output ~clock:(Some clock) ~width ~height ()
 
-let create ~width ~height = create_with_clock_option ~clock:None ~width ~height
+let create ~output ?remote_mode ~width ~height () =
+  create_with_clock_option ?remote_mode ~output ~clock:None ~width ~height ()
 
 let context renderer = renderer.context
 let root renderer = renderer.root
@@ -540,6 +616,50 @@ let failed_frame renderer error =
   Render_context.Private.request_render renderer.context;
   report_render_error renderer error;
   Error error
+
+let output_failure = Error.Output "renderer output sink is unavailable"
+
+let release_output_spans spans =
+  let first_error = ref None in
+  List.iter
+    (fun span ->
+      match Native_span_feed.Span.release span with
+      | Ok () -> ()
+      | Error error ->
+          if Option.is_none !first_error then first_error := Some error)
+    spans;
+  !first_error
+
+let flush_output renderer =
+  match renderer.output_sink, renderer.output_feed with
+  | None, _ -> Ok ()
+  | Some _, None ->
+      renderer.output_failed <- true;
+      Error output_failure
+  | Some sink, Some feed ->
+      (match Native_span_feed.drain feed with
+       | Error error ->
+           renderer.output_failed <- true;
+           Error (Error.Output (Error.message error))
+       | Ok spans ->
+           let chunks =
+             List.map Native_span_feed.Span.bytes spans
+           in
+           let release_error = ref None in
+           let sink_result =
+             Fun.protect
+               ~finally:(fun () ->
+                 release_error := release_output_spans spans)
+               (fun () -> sink.write_frame chunks)
+           in
+           (match sink_result, !release_error with
+            | Error error, _ ->
+                renderer.output_failed <- true;
+                Error (Error.Output (Error.message error))
+            | Ok (), Some error ->
+                renderer.output_failed <- true;
+                Error (Error.Output (Error.message error))
+            | Ok (), None -> Ok ()))
 
 let width renderer = Render_context.width renderer.context
 let height renderer = Render_context.height renderer.context
@@ -1461,6 +1581,7 @@ let render ?(delta_time = 0.0) renderer ~force =
   if renderer.destruction_started
      || not (Render_context.Private.is_open renderer.context)
   then Error Error.Closed
+  else if renderer.output_failed then Error output_failure
   else if not (Float.is_finite delta_time) || Float.compare delta_time 0.0 < 0 then
     Error Error.Invalid_argument
   else begin
@@ -1496,33 +1617,41 @@ let render ?(delta_time = 0.0) renderer ~force =
                       in
                       match native_result with
                       | Error error -> failed_frame renderer (map_raw_error error)
-                      | Ok Opentui_raw.Renderer.Rendered ->
-                          renderer.force_full_repaint <- false;
-                          if Render_context.Private.hit_grid_dirty renderer.context then
-                            recheck_hover_state renderer;
-                          ignore
-                            (Renderer_events.Private.emit_frame
-                               (Render_context.Private.events renderer.context)
-                               { Render_context.frame_id });
-                          Ok Rendered
-                      | Ok Opentui_raw.Renderer.Skipped ->
-                          Render_context.Private.abort_hit_grid renderer.context;
-                          Render_context.Private.request_render renderer.context;
-                          Ok Skipped
-                      | Ok Opentui_raw.Renderer.Failed ->
-                          Render_context.Private.abort_hit_grid renderer.context;
-                          renderer.force_full_repaint <- true;
-                          Render_context.Private.request_render renderer.context;
-                          Ok Failed))
+                      | Ok native_status ->
+                          (match flush_output renderer with
+                           | Error error -> failed_frame renderer error
+                           | Ok () ->
+                               match native_status with
+                               | Opentui_raw.Renderer.Rendered ->
+                                   renderer.force_full_repaint <- false;
+                                   if Render_context.Private.hit_grid_dirty renderer.context then
+                                     recheck_hover_state renderer;
+                                   ignore
+                                     (Renderer_events.Private.emit_frame
+                                        (Render_context.Private.events renderer.context)
+                                        { Render_context.frame_id });
+                                   Ok Rendered
+                               | Opentui_raw.Renderer.Skipped ->
+                                   Render_context.Private.abort_hit_grid renderer.context;
+                                   Render_context.Private.request_render renderer.context;
+                                   Ok Skipped
+                               | Opentui_raw.Renderer.Failed ->
+                                   Render_context.Private.abort_hit_grid renderer.context;
+                                   renderer.force_full_repaint <- true;
+                                   Render_context.Private.request_render renderer.context;
+                                   Ok Failed)))
         in
         frame_finished := true;
         result)
   end
 
-let destroy renderer =
-  if not renderer.destruction_started
-     && Render_context.Private.is_open renderer.context
-  then begin
+let close renderer =
+  if renderer.destruction_started then
+    match renderer.close_error with
+    | None -> Ok ()
+    | Some error -> Error error
+  else if not (Render_context.Private.is_open renderer.context) then Ok ()
+  else begin
     renderer.destruction_started <- true;
     let attachments = renderer.before_destroy in
     renderer.before_destroy <- [];
@@ -1551,7 +1680,25 @@ let destroy renderer =
       (Renderer_events.Private.emit_destroy
          (Render_context.Private.events renderer.context) ());
     Render_context.Private.close renderer.context;
-    Opentui_raw.Renderer.close renderer.raw
+    Opentui_raw.Renderer.close renderer.raw;
+    let output_result = flush_output renderer in
+    let feed_result =
+      match renderer.output_feed with
+      | None -> Ok ()
+      | Some feed -> Native_span_feed.close feed
+    in
+    let result =
+      match output_result, feed_result with
+      | Error error, _ -> Error error
+      | Ok (), Error error -> Error error
+      | Ok (), Ok () -> Ok ()
+    in
+    (match result with
+     | Ok () -> ()
+     | Error error -> renderer.close_error <- Some error);
+    result
   end
+
+let destroy renderer = ignore (close renderer)
 
 let is_destroyed renderer = not (Render_context.Private.is_open renderer.context)

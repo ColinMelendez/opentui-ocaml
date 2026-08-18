@@ -4,6 +4,13 @@
     renderer. Closing a renderer invalidates its buffers and is idempotent. *)
 type t
 
+type output = Memory | Stdout | Feed of Span_feed.t
+(** The native destination selected when the renderer is created. A [Feed] is
+    borrowed from its caller and remains the caller's responsibility. *)
+
+type remote_mode = Auto | Local | Remote
+(** How the native renderer treats its output destination. *)
+
 type render_status = Rendered | Skipped | Failed
 (** The native renderer's frame outcome. *)
 
@@ -127,8 +134,11 @@ module Hit_grid : sig
   end
 end
 
-(** [create ~width ~height] creates a renderer with positive dimensions. *)
-val create : width:int32 -> height:int32 -> (t, Error.t) result
+(** [create ~width ~height] creates a renderer with positive dimensions. The
+    default is the low-level memory destination. *)
+val create :
+  ?output:output -> ?remote_mode:remote_mode ->
+  width:int32 -> height:int32 -> unit -> (t, Error.t) result
 
 (** [resize renderer ...] resizes the renderer and its borrowed buffers. *)
 val resize : t -> width:int32 -> height:int32 -> (unit, Error.t) result
@@ -156,6 +166,11 @@ val cursor_state : t -> (cursor_state, Error.t) result
 
 (** [close renderer] destroys the renderer and invalidates borrowed buffers. *)
 val close : t -> unit
+
+(** [drain_output renderer] copies and returns complete native output spans.
+    It remains available after [close] so the owner can drain native teardown
+    bytes before closing a borrowed feed. *)
+val drain_output : t -> (Span_feed.Span.t list, Error.t) result
 
 (** [current_buffer renderer] returns the current renderer-owned buffer. *)
 val current_buffer : t -> (Buffer.t, Error.t) result

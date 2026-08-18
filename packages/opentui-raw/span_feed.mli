@@ -78,3 +78,9 @@ val drain : t -> (Span.t list, Error.t) result
 (** [close feed] releases the feed and invalidates outstanding spans and
     reservations. It is idempotent after successful close. *)
 val close : t -> (unit, Error.t) result
+
+module Private : sig
+  (** [raw feed] exposes the generation-checked native token to another raw
+      owner. The feed remains owned by the caller and is not retained. *)
+  val raw : t -> (Native_token.Span_feed.t, Error.t) result
+end

@@ -28,7 +28,7 @@ let () =
   run "opentui-core-plugins"
     [
       test "typed plugin installation and uninstallation are transactional" (fun () ->
-          let renderer = expect_core (Core.Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
           let slot_id = expect_id "status" in
           let slot, sink = expect_failure (Slot.create ~host ~id:slot_id) in
@@ -56,7 +56,7 @@ let () =
           ignore (expect_host (Plugin.Host.close host));
           Core.Renderer.destroy renderer);
       test "duplicate plugin identifiers are rejected before setup" (fun () ->
-          let renderer = expect_core (Core.Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:1l ~height:1l ()) in
           let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
           let id = expect_id "same-plugin" in
           let definition = expect_failure (Plugin.define ~id ~order:0 ~install:(fun _ () -> Ok ())) in

@@ -109,6 +109,11 @@ let render_one scheduler =
   in
   scheduler.last_attempt <- Some attempt_time;
   match Renderer.render scheduler.renderer ~delta_time ~force:false with
+  | Error (Error.Output _ as error) ->
+      (* An output failure means the terminal transport may be
+         desynchronized. It is terminal for this scheduler; retrying would
+         only create a hot loop against a poisoned sink. *)
+      Error (Render_error error)
   | Error error ->
       (* [Renderer.render] restores the coalesced request and emits the
          renderer-owned error event. Keep retrying, but pace the next attempt

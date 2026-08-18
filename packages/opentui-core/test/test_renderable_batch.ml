@@ -80,7 +80,7 @@ let () =
             (Core.Text_table_width.allocate_proportional_column_widths
                ~widths:[ 4; 49; 4; 54; 38 ] ~target_width:3 ~min_width:1));
       test "framebuffer owns drawing storage and preserves it through render" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:3l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:3l ()) in
           let value =
             expect_ok
               (Renderables.Frame_buffer.create (Renderer.context renderer)
@@ -116,7 +116,7 @@ let () =
           in
           equal int 3 (Array.length positions);
           equal int 7 positions.(2);
-          let renderer = expect_ok (Renderer.create ~width:16l ~height:6l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:16l ~height:6l ()) in
           let font =
             expect_ok
               (Renderables.Ascii_font.create (Renderer.context renderer)
@@ -143,7 +143,7 @@ let () =
           Renderables.Ascii_font.destroy font;
           Renderer.destroy renderer);
       test "select renders ASCII-font labels without changing selection events" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:24l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:24l ~height:8l ()) in
           let options =
             [ { Renderables.Select.name = "A"; description = "first"; value = Some "a" };
               { name = "B"; description = "second"; value = Some "b" } ]
@@ -171,7 +171,7 @@ let () =
           Renderables.Select.destroy select;
           Renderer.destroy renderer);
       test "time-to-first-draw records once and resets" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:30l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:30l ~height:2l ()) in
           let value =
             expect_ok
               (Renderables.Time_to_first_draw.create (Renderer.context renderer)
@@ -195,7 +195,7 @@ let () =
           Renderables.Time_to_first_draw.destroy value;
           Renderer.destroy renderer);
       test "line-number composition renders logical sources and custom colors" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:20l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:4l ()) in
           let text =
             expect_ok
               (Renderables.Text_buffer_renderable.create
@@ -243,7 +243,7 @@ let () =
           Renderables.Line_number.destroy line_numbers;
           Renderer.destroy renderer);
       test "text table measures, draws borders, updates, and selects cells" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:24l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:24l ~height:8l ()) in
           let table =
             expect_ok
               (Renderables.Text_table.create (Renderer.context renderer)
@@ -277,7 +277,7 @@ let () =
           Renderables.Text_table.destroy table;
           Renderer.destroy renderer);
       test "composition instantiates children into the retained identity tree" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:20l ~height:6l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:6l ()) in
           let child =
             Renderables.Composition.Constructs.box ~id:"child" []
           in
@@ -303,7 +303,7 @@ let () =
           Renderable.destroy_recursively mounted;
           Renderer.destroy renderer);
       test "composition exposes Code and typed styled-text conveniences" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:24l ~height:6l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:24l ~height:6l ()) in
           let styled =
             Renderables.Composition.Constructs.Vstyles.bold
               [ Core.Lib.Styled_text.Text "bold" ]

@@ -69,7 +69,7 @@ let () =
           | Some _ -> fail "an oversized pixel resolution was accepted"));
       test "publishes processed capabilities through shared renderer events"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let context = Renderer.context renderer in
           let events = ref [] in
           ignore
@@ -113,7 +113,7 @@ let () =
           equal bool false (expect_ok (Renderer.has_pending_render renderer));
           Renderer.destroy renderer);
       test "terminal resize invalidates cached pixel resolution" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           equal bool true
             (expect_ok
                (Renderer.handle_input renderer
@@ -130,7 +130,7 @@ let () =
           Renderer.destroy renderer);
       test "capability responses are consumed without reaching key handlers"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           let keypresses = ref 0 in
           ignore
             (expect_ok
@@ -144,7 +144,7 @@ let () =
                (Renderer.handle_input renderer (response "not-a-response")));
           Renderer.destroy renderer);
       test "closed renderers reject capability access and subscriptions" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           let context = Renderer.context renderer in
           Renderer.destroy renderer;
           (match Renderer.capabilities renderer with

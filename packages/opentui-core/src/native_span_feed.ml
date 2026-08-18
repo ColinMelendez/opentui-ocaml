@@ -110,3 +110,8 @@ let close feed =
         feed.closed <- true;
         Ok ()
     | Error error -> Error (map_error error)
+
+module Private = struct
+  let raw feed =
+    if feed.closed then Error Error.Closed else Ok feed.raw
+end

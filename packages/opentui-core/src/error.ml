@@ -9,6 +9,7 @@ type t =
   | Invalid_anchor
   | Unsupported
   | Io of string
+  | Output of string
   | Native of Native.Error.t
   | Native_image of Opentui_raw.Image.error
 
@@ -25,6 +26,7 @@ let message error =
   | Invalid_anchor -> "the insertion anchor is invalid"
   | Unsupported -> "the retained-rendering operation is not available"
   | Io detail -> "I/O error: " ^ detail
+  | Output detail -> "renderer output failed: " ^ detail
   | Native error -> Native.Error.message error
   | Native_image error ->
       "native image operation: " ^ Opentui_raw.Image.message error

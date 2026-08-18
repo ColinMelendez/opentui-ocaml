@@ -96,6 +96,11 @@ static opentui_raw_span_feed_slot *span_feed_from_token(
   return slot;
 }
 
+void *opentui_raw_span_feed_pointer(uint32_t token) {
+  opentui_raw_span_feed_slot *slot = span_feed_from_token(token, NULL);
+  return slot == NULL ? NULL : (void *)slot->stream;
+}
+
 static uint32_t span_feed_allocate(opentui_raw_span_feed_slot **output) {
   for (uint32_t index = 1; index < OPENTUI_RAW_SPAN_FEED_CAPACITY; index++) {
     opentui_raw_span_feed_slot *slot = &span_feed_slots[index];

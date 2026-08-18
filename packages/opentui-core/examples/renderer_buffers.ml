@@ -7,7 +7,7 @@ let expect_ok result =
   | Error error -> failwith (Opentui_core.Error.message error)
 
 let () =
-  let renderer = expect_ok (Renderer.create ~width:14l ~height:3l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:14l ~height:3l ()) in
   let buffer = expect_ok (Renderer.next_buffer renderer) in
   ignore (expect_ok (Buffer.clear buffer ~background:Opentui_core.Color.black));
   ignore

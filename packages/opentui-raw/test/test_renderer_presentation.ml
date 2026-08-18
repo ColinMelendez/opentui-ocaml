@@ -26,7 +26,7 @@ let () =
   run "opentui-raw-renderer-presentation"
     [
       test "background and cursor state are native renderer-owned" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:3l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~width:3l ~height:2l ()) in
           ignore
             (expect_ok
                (Renderer.set_background_color renderer
@@ -98,7 +98,7 @@ let () =
           equal bool true resized.visible;
           Opentui_raw.Renderer.close renderer);
       test "presentation operations report closed ownership" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l ()) in
           Renderer.close renderer;
           Renderer.close renderer;
           expect_error Opentui_raw.Error.Closed (Renderer.cursor_state renderer);
@@ -118,4 +118,39 @@ let () =
             (Renderer.set_cursor_color renderer ~color:Opentui_raw.Color.white);
           expect_error Opentui_raw.Error.Closed
             (Renderer.resize renderer ~width:2l ~height:2l))
+      ;
+      test "feed output preserves styled native frames through teardown" (fun () ->
+          let feed = expect_ok (Opentui_raw.Span_feed.create ()) in
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:(Renderer.Feed feed)
+                 ~remote_mode:Renderer.Remote ~width:3l ~height:1l ())
+          in
+          let buffer = expect_ok (Renderer.next_buffer renderer) in
+          ignore
+            (expect_ok
+               (Opentui_raw.Buffer.draw_text buffer ~text:"A" ~x:0l ~y:0l
+                  ~foreground:Opentui_raw.Color.white
+                  ~background:Opentui_raw.Color.black ~attributes:0l));
+          (match expect_ok (Renderer.render renderer ~force:true) with
+           | Renderer.Rendered -> ()
+           | Renderer.Skipped -> fail "feed renderer unexpectedly skipped"
+           | Renderer.Failed -> fail "feed renderer failed");
+          let spans = expect_ok (Renderer.drain_output renderer) in
+          (match spans with
+           | [] -> fail "feed renderer produced no frame output"
+           | first :: _ ->
+               equal bool true
+                 (String.contains
+                    (Bytes.to_string (Opentui_raw.Span_feed.Span.bytes first))
+                    '\027'));
+          List.iter
+            (fun span -> ignore (Opentui_raw.Span_feed.Span.release span))
+            spans;
+          Renderer.close renderer;
+          let teardown = expect_ok (Renderer.drain_output renderer) in
+          List.iter
+            (fun span -> ignore (Opentui_raw.Span_feed.Span.release span))
+            teardown;
+          ignore (expect_ok (Opentui_raw.Span_feed.close feed)))
     ]

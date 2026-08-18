@@ -48,7 +48,7 @@ let register client value =
   | Error (Types.Failed message) -> fail message
   | Error (Types.No_parser message) -> fail message
 
-let make_renderer () = expect_ok (Renderer.create ~width:40l ~height:8l)
+let make_renderer () = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:40l ~height:8l ())
 
 let make_background env sw =
   expect_background

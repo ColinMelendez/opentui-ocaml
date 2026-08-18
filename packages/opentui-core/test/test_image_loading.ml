@@ -70,7 +70,7 @@ let test_core_error_mapping () =
   | Ok _ -> fail "malformed encoded source unexpectedly loaded")
 
 let test_sync_snapshot_and_direct_destroy () =
-  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
   let pixels = Bytes.of_string "\255\000\000\255" in
   let expected = Bytes.copy pixels in
   let loaded =
@@ -176,7 +176,7 @@ let test_bounded_reads_and_async_replacement () =
   | Ok image ->
       Core.Image.close image;
       fail "oversized image path unexpectedly loaded");
-  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
   let decode_failure = ref None in
   let failed =
     expect_ok
@@ -319,7 +319,7 @@ let test_stale_success_and_reentrant_callbacks () =
   let path = child_path (Eio.Stdenv.cwd env) "__opentui_phase6_stale_image.png" in
   Eio.Path.save ~create:(`Or_truncate 0o600) path
     (Bytes.to_string (fixture_bytes ()));
-  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
   let replacement_calls = ref 0 in
   let replacement =
     expect_ok
@@ -417,7 +417,7 @@ let test_path_cancellation_while_reading () =
       let valid_path = child_path root "__opentui_phase6_cancelled_image.png" in
       Eio.Path.save ~create:(`Or_truncate 0o600) valid_path
         (Bytes.to_string (fixture_bytes ()));
-      let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+      let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
       let callbacks = ref 0 in
       let image =
         expect_ok
@@ -455,7 +455,7 @@ let test_path_cancellation_while_reading () =
 
 let test_exceptional_worker_releases_lease () =
   Eio_main.run @@ fun env ->
-  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
   let root = Eio.Stdenv.cwd env in
   let closed_path =
     Eio.Switch.run @@ fun path_sw ->
@@ -506,7 +506,7 @@ let test_exceptional_worker_releases_lease () =
 
 let test_exceptional_completion_releases_lease () =
   Eio_main.run @@ fun env ->
-  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
   let root = Eio.Stdenv.cwd env in
   let path = child_path root "__opentui_phase6_completion_failure.png" in
   Eio.Path.save ~create:(`Or_truncate 0o600) path
@@ -563,7 +563,7 @@ let test_owner_domain_affinity () =
   require_multiple_domains ();
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
   let image = expect_ok (Renderables.Image.create (Renderer.context renderer) ~sw ()) in
   let wrong_domain =
     Eio.Domain_manager.run (Eio.Stdenv.domain_mgr env) (fun () ->

@@ -23,7 +23,7 @@ let () =
           let sink = Eio.Flow.buffer_sink sink_buffer in
           let output = Output.create ~sink in
           let renderer =
-            expect_renderer_ok (Renderer.create ~width:2l ~height:1l)
+            expect_renderer_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ())
           in
           let buffer = expect_renderer_ok (Renderer.next_buffer renderer) in
           ignore

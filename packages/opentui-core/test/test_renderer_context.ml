@@ -23,7 +23,7 @@ let () =
   run "opentui-core-renderer-context"
     [
       test "context observes renderer-owned dimensions and frame identity" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let context = Renderer.context renderer in
           equal int32 2l (expect_ok (Context.width context));
           equal int32 1l (expect_ok (Context.height context));
@@ -42,7 +42,7 @@ let () =
           equal bool true (expect_ok (Renderer.has_pending_render renderer));
           Renderer.destroy renderer);
       test "renderer and context registrations share one event source" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let context = Renderer.context renderer in
           let events = ref [] in
           ignore
@@ -63,7 +63,7 @@ let () =
             (String.concat "," (List.rev !events));
           Renderer.destroy renderer);
       test "resize subscriptions preserve prepend, snapshot, and once semantics" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let context = Renderer.context renderer in
           let events = ref [] in
           let second = ref None in
@@ -90,8 +90,8 @@ let () =
             (String.concat "," (List.rev !events));
           Renderer.destroy renderer);
       test "renderer contexts have distinct owner identities" (fun () ->
-          let left = expect_ok (Renderer.create ~width:1l ~height:1l) in
-          let right = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let left = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
+          let right = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           equal bool true
             (Context.same_owner (Renderer.context left) (Renderer.context left));
           equal bool false
@@ -99,7 +99,7 @@ let () =
           Renderer.destroy left;
           Renderer.destroy right);
       test "borrowed buffer values survive resize and close with their renderer" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let buffer = expect_ok (Renderer.next_buffer renderer) in
           let same_buffer = expect_ok (Renderer.next_buffer renderer) in
           equal bool true (buffer == same_buffer);
@@ -114,7 +114,7 @@ let () =
           | Error error -> fail (Opentui_core.Error.message error)
           | Ok _ -> fail "a borrowed buffer remained open after renderer destroy"));
       test "destroy is idempotent and closes the shared context" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           let context = Renderer.context renderer in
           Renderer.destroy renderer;
           Renderer.destroy renderer;
@@ -127,7 +127,7 @@ let () =
           | Error error -> fail (Opentui_core.Error.message error)
           | Ok _ -> fail "closed context accepted a new event registration"));
       test "pre-render drivers receive deltas in registration order" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let calls = ref [] in
           let first =
             expect_ok
@@ -153,7 +153,7 @@ let () =
                   (List.rev !calls)));
           Renderer.destroy renderer);
       test "live leases are counted and released idempotently" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           let lease = expect_ok (Renderer.acquire_live_lease renderer) in
           equal int 1 (expect_ok (Renderer.live_request_count renderer));
           Renderer.release_live_lease lease;
@@ -162,7 +162,7 @@ let () =
           Renderer.destroy renderer;
           Renderer.release_live_lease lease);
       test "before-destroy callbacks see a live root and run once in order" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           let root = Renderer.root renderer in
           let calls = ref [] in
           let first =
@@ -190,7 +190,7 @@ let () =
               Renderer.detach_before_destroy attachment;
               fail "destroyed renderer accepted a teardown attachment"));
       test "destroy ignores recursive teardown attempts" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:1l ~height:1l ()) in
           let calls = ref 0 in
           ignore
             (Renderer.attach_before_destroy renderer (fun () ->

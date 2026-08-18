@@ -38,7 +38,7 @@ let () =
   run "opentui-raw"
     [
       test "renderer and buffers preserve ownership through native calls" (fun () ->
-          let renderer = expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l ()) in
           let current = expect_ok (Opentui_raw.Renderer.current_buffer renderer) in
           let next = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
           let white = Opentui_raw.Color.white in
@@ -65,7 +65,7 @@ let () =
           expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.height next));
       test "renderer hit-grid capability preserves native frame ownership" (fun () ->
           let renderer =
-            expect_ok (Opentui_raw.Renderer.create ~width:3l ~height:2l)
+            expect_ok (Opentui_raw.Renderer.create ~width:3l ~height:2l ())
           in
           let hit_grid = Opentui_raw.Renderer.hit_grid renderer in
           expect_error Opentui_raw.Error.Invalid_argument
@@ -154,7 +154,7 @@ let () =
             (Opentui_raw.Renderer.Hit_grid.clear_next_hit_grid hit_grid));
       test "text buffer views draw through the native buffer seam" (fun () ->
           let renderer =
-            expect_ok (Opentui_raw.Renderer.create ~width:6l ~height:2l)
+            expect_ok (Opentui_raw.Renderer.create ~width:6l ~height:2l ())
           in
           let buffer = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
           let text_buffer =
@@ -202,7 +202,7 @@ let () =
           Opentui_raw.Renderer.close renderer);
       test "boxes draw through the native buffer seam" (fun () ->
           let renderer =
-            expect_ok (Opentui_raw.Renderer.create ~width:6l ~height:4l)
+            expect_ok (Opentui_raw.Renderer.create ~width:6l ~height:4l ())
           in
           let buffer = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
           let border_chars =
@@ -273,12 +273,12 @@ let () =
           Opentui_raw.Renderer.close renderer);
       test "invalid dimensions and colors are structured errors" (fun () ->
           expect_error Opentui_raw.Error.Invalid_argument
-            (Opentui_raw.Renderer.create ~width:0l ~height:1l);
+            (Opentui_raw.Renderer.create ~width:0l ~height:1l ());
           expect_error Opentui_raw.Error.Invalid_argument
             (Opentui_raw.Color.rgba ~red:256 ~green:0 ~blue:0 ~alpha:255));
       test "renderer resize preserves borrowed buffer handles" (fun () ->
           let renderer =
-            expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l)
+            expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l ())
           in
           let current = expect_ok (Opentui_raw.Renderer.current_buffer renderer) in
           let next = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
@@ -294,7 +294,7 @@ let () =
           equal int32 3l (expect_ok (Opentui_raw.Buffer.width current));
           Opentui_raw.Renderer.close renderer);
       test "small output is reported without raising" (fun () ->
-          let renderer = expect_ok (Opentui_raw.Renderer.create ~width:1l ~height:1l) in
+          let renderer = expect_ok (Opentui_raw.Renderer.create ~width:1l ~height:1l ()) in
           let buffer = expect_ok (Opentui_raw.Renderer.current_buffer renderer) in
           let output = Bytes.create 0 in
           expect_error Opentui_raw.Error.Output_too_small
@@ -303,7 +303,7 @@ let () =
           Opentui_raw.Renderer.close renderer);
       test "renderer exposes typed frame status" (fun () ->
           let renderer =
-            expect_ok (Opentui_raw.Renderer.create ~width:1l ~height:1l)
+            expect_ok (Opentui_raw.Renderer.create ~width:1l ~height:1l ())
           in
           let buffer = expect_ok (Opentui_raw.Renderer.next_buffer renderer) in
           ignore
@@ -803,7 +803,7 @@ let () =
           expect_ok (Opentui_raw.Text_buffer.close buffer));
       test "capability responses become typed copied snapshots" (fun () ->
           let renderer =
-            expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l)
+            expect_ok (Opentui_raw.Renderer.create ~width:2l ~height:1l ())
           in
           ignore
             (expect_ok

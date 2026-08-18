@@ -99,6 +99,15 @@ let () =
           | Error Output.Desynchronized ->
               fail "invalid range poisoned healthy output"
           | Ok () -> fail "invalid range was accepted");
+      test "writes a frame's chunks without mode interleaving" (fun () ->
+          Eio_main.run @@ fun _env ->
+          let buffer = Buffer.create 16 in
+          let sink = Eio.Flow.buffer_sink buffer in
+          let output = Output.create ~sink in
+          expect_ok
+            (Output.write_frame output
+               [ Bytes.of_string "first"; Bytes.of_string "second" ]);
+          equal string "firstsecond" (Buffer.contents buffer));
       test "writes a mode transition through an Eio OS pipe" (fun () ->
           Eio_main.run @@ fun _env ->
           Eio.Switch.run @@ fun sw ->

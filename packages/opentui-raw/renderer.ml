@@ -1,9 +1,14 @@
 type renderer = {
   handle : Native_token.Renderer.t;
   owner : Native_owner.t;
+  feed : Span_feed.t option;
 }
 
 type t = renderer
+
+type output = Memory | Stdout | Feed of Span_feed.t
+
+type remote_mode = Auto | Local | Remote
 
 type render_status = Rendered | Skipped | Failed
 
@@ -43,11 +48,29 @@ let result_of_status status value =
   | None -> Ok value
   | Some error -> Error error
 
-let create ~width ~height =
-  let status, handle = Native.renderer_create width height in
-  match status with
-  | 0 -> Ok { handle; owner = Native_owner.Private.create () }
-  | _ -> Error (error_of_status status)
+let remote_mode_code = function
+  | Auto -> 0
+  | Local -> 1
+  | Remote -> 2
+
+let create ?(output = Memory) ?(remote_mode = Auto) ~width ~height () =
+  let create_native destination native_feed owner_feed =
+    let status, handle =
+      Native.renderer_create
+        width height destination (remote_mode_code remote_mode) native_feed
+    in
+    match status with
+    | 0 -> Ok { handle; owner = Native_owner.Private.create (); feed = owner_feed }
+    | _ -> Error (error_of_status status)
+  in
+  match output with
+  | Memory -> create_native 1 None None
+  | Stdout -> create_native 0 None None
+  | Feed feed ->
+      (match Span_feed.Private.raw feed with
+       | Error error -> Error error
+       | Ok token ->
+           create_native 1 (Some token) (Some feed))
 
 let resize renderer ~width ~height =
   if not (Native_owner.is_open renderer.owner) then Error Error.Closed
@@ -61,6 +84,11 @@ let close renderer =
     Native.renderer_destroy renderer.handle;
     Native_owner.Private.close renderer.owner
   end
+
+let drain_output renderer =
+  match renderer.feed with
+  | None -> Ok []
+  | Some feed -> Span_feed.drain feed
 
 let buffer renderer ~next =
   if not (Native_owner.is_open renderer.owner) then Error Error.Closed

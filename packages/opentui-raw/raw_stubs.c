@@ -12,6 +12,8 @@
 #include "native/opentui_abi.h"
 #include "raw_status.h"
 
+extern void *opentui_raw_span_feed_pointer(uint32_t token);
+
 static value make_status_handle(int status, opentui_native_handle handle) {
   CAMLparam0();
   CAMLlocal3(result, status_value, handle_value);
@@ -299,17 +301,55 @@ static bool read_optional_text(
   return true;
 }
 
-CAMLprim value opentui_raw_renderer_create(value width_value, value height_value) {
-  CAMLparam2(width_value, height_value);
+CAMLprim value opentui_raw_renderer_create(
+    value width_value,
+    value height_value,
+    value buffered_destination_value,
+    value remote_mode_value,
+    value feed_value) {
+  CAMLparam5(
+      width_value,
+      height_value,
+      buffered_destination_value,
+      remote_mode_value,
+      feed_value);
 
   int32_t width = Int32_val(width_value);
   int32_t height = Int32_val(height_value);
+  int buffered_destination = Int_val(buffered_destination_value);
+  int remote_mode = Int_val(remote_mode_value);
   if (width <= 0 || height <= 0) {
+    CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+  }
+  if (buffered_destination < 0 || buffered_destination > 1
+      || remote_mode < 0 || remote_mode > 2) {
+    CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+  }
+
+  void *feed_pointer = NULL;
+  if (!Is_long(feed_value)) {
+    if (Wosize_val(feed_value) != 1) {
+      CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+    }
+    value token_value = Field(feed_value, 0);
+    if (!Is_block(token_value) || Tag_val(token_value) != Custom_tag) {
+      CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+    }
+    feed_pointer = opentui_raw_span_feed_pointer((uint32_t)Int32_val(token_value));
+    if (feed_pointer == NULL) {
+      CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_STALE_HANDLE, 0));
+    }
+  } else if (Int_val(feed_value) != 0) {
     CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
   }
 
   opentui_native_handle handle =
-      createRenderer((uint32_t)width, (uint32_t)height, 1, 2, NULL);
+      createRenderer(
+          (uint32_t)width,
+          (uint32_t)height,
+          (uint8_t)buffered_destination,
+          (uint8_t)remote_mode,
+          feed_pointer);
   if (handle == 0) {
     CAMLreturn(make_status_handle(OPENTUI_RAW_STATUS_NATIVE_FAILURE, 0));
   }

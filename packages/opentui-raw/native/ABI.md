@@ -139,8 +139,13 @@ passes its storage directly to `bufferWriteResolvedChars`, and checks `A` and
 
 The reference dynamic library is built with Zig 0.16.0 in
 `vendor/opentui/packages/core/src/zig` using `ReleaseSafe`. Its
-memory-output invocation uses `createRenderer(width, height, 1, 2, NULL)` and
-leaves `setUseThread` off. `ReleaseSafe` is required here because the reference Debug
+memory-output smoke paths use `createRenderer(width, height, 1, 2, NULL)` and
+leave `setUseThread` off. The typed raw bridge also supports the reference
+stdout destination (`0`), memory destination (`1`), and feed pointer path with
+remote-mode values `0` (auto), `1` (local), and `2` (remote). Core's explicit
+`Renderer.Output.Sink` owns the feed wrapper and drains it before close;
+`Renderer.Output.Stdout` is a direct low-level fd-1 path. `ReleaseSafe` is
+required here because the reference Debug
 allocator captures stack traces that are not compatible with the OCaml C-call
 frame used by the runtime smoke. The compile-only ABI probe remains Debug.
 The Dune rule verifies the audited SHA-256 of the reference

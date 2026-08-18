@@ -19,13 +19,18 @@ the Zig link seam directly; retained-tree and terminal-runtime tests are in
 
 ## Renderer and event ownership
 
-The renderer API uses memory output with native threaded output disabled.
-Renderer-owned buffer views close when their renderer closes. `Renderer.render`
-returns the renderer's `Rendered`, `Skipped`, or `Failed` status without
-exposing native output state. Event callbacks are copied into a bounded native
-queue and exposed by polling; the package does not re-enter OCaml from a native
-callback. Queue overflow is a structured error. The C callback ABI has no
-context pointer, so one event sink can be active at a time.
+The renderer API exposes the reference creation-time output choices: `Memory`,
+`Stdout`, and a borrowed `Feed` target, together with the `Auto`, `Local`, and
+`Remote` native remote-mode values. The low-level default is `Memory`, and
+native threaded output remains disabled. Feed attachment does not transfer feed
+ownership: the caller closes the feed only after the renderer has been closed
+and its output drained. Renderer-owned buffer views close when their renderer
+closes. `Renderer.render` returns the renderer's `Rendered`, `Skipped`, or
+`Failed` status; feed callers explicitly drain its committed spans. Event
+callbacks are copied into a bounded native queue and exposed by polling; the
+package does not re-enter OCaml from a native callback. Queue overflow is a
+structured error. The C callback ABI has no context pointer, so one event sink
+can be active at a time.
 
 `Renderer.resize` validates positive dimensions at the ABI boundary and resizes
 the renderer's current and next buffers in place. Existing borrowed buffer

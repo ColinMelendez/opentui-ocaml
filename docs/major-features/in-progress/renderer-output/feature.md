@@ -1,6 +1,7 @@
 # Renderer output transport
 
-Status: in progress.
+Status: implemented for the current Core/raw transport; zero-copy feed
+delivery remains a future optimization.
 
 This feature defines how a native renderer presents complete terminal frames
 and how that presentation is composed with the Eio terminal output owner. The
@@ -30,7 +31,7 @@ shutdown bytes then share one serialized output owner.
 | `vendor/opentui/packages/core/src/zig/renderer-output.zig` `BufferedBackend` | Native `Memory` and `Stdout` targets | Keep ANSI generation and buffered diff presentation native. |
 | `vendor/opentui/packages/core/src/zig/renderer-output.zig` `FeedBackend` | `Renderer.Output.Sink` plus `Native_span_feed` | Publish complete native frames before the application sink consumes them. |
 | `vendor/opentui/packages/core/src/renderer.ts` custom `Writable` path | Eio `Output_flow` frame sink | Route frame chunks through the same terminal-output serialization boundary as mode and query writes. |
-| `vendor/opentui/packages/core/src/renderer.ts` renderer destruction | Renderer shutdown drain followed by terminal-session restoration | Ensure native cleanup sequences reach the terminal before the feed and terminal output owner close. |
+| `vendor/opentui/packages/core/src/renderer.ts` renderer destruction | Renderer shutdown drain followed by terminal-session restoration | Ensure any native cleanup/control sequences reach the sink before the feed and terminal output owner close. Eio terminal-session restoration remains authoritative for modes established outside the native renderer. |
 
 ## Public Core contract
 
@@ -55,10 +56,12 @@ val create :
   ?remote_mode:Renderer.Output.remote_mode ->
   width:int32 ->
   height:int32 ->
+  unit ->
   (Renderer.t, Error.t) result
 ```
 
-The clock-aware constructor accepts the same output contract. The output
+The clock-aware constructor accepts the same output contract and trailing
+unit argument. The output
 target is explicit rather than silently defaulting to memory:
 
 - `Memory` selects the native retained output used by headless tests and
@@ -147,7 +150,9 @@ The output lifetime is ordered and explicit:
 
 1. Stop the renderer scheduler and prevent new frame attempts.
 2. Run renderer-owned teardown callbacks and native renderer destruction.
-3. Drain all native cleanup bytes produced by destruction through the sink.
+3. Drain all native cleanup/control bytes produced by destruction through the
+   sink. This may be empty when terminal setup was owned by Eio rather than the
+   native renderer.
 4. Close the renderer-owned feed.
 5. Restore terminal modes through `Terminal_session`.
 
@@ -194,8 +199,9 @@ closed only by the owning high-level renderer after final output drain.
 - A feed-backed render delivers styled ANSI bytes, preserves frame chunk order,
   and releases drained spans.
 - Eio `Output_flow` serializes mode writes and complete renderer frames.
-- A renderer shutdown delivers native cleanup bytes before feed closure and
-  terminal restoration.
+- A renderer shutdown drains any native cleanup bytes before feed closure and
+  terminal restoration; the Eio terminal session remains the owner of the
+  modes it established.
 - Sink failures are reported structurally and do not cause unbounded scheduler
   retries.
 - The vertical demo uses the feed-backed Eio sink path rather than a

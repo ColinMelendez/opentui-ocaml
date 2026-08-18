@@ -112,10 +112,11 @@ source of truth. After renderer close, all checked operations report
 ## Non-goals
 
 This feature does not add debug overlay toggles, hit-grid dumps, arena byte
-introspection, automatic start/stop/auto rendering modes, or a new terminal
-output owner. Session-wide terminal mode setup remains in the Eio terminal
-output boundary; native renderer cursor presentation remains below the Core
-capability boundary.
+introspection, automatic start/stop/auto rendering modes, or a second terminal
+output owner. Renderer output target selection and feed delivery are defined by
+the [`renderer-output` feature record](../renderer-output/feature.md).
+Session-wide terminal mode setup remains in the Eio terminal output boundary;
+native renderer cursor presentation remains below the Core capability boundary.
 
 ## Acceptance evidence
 

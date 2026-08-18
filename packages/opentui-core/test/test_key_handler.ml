@@ -156,7 +156,7 @@ let () =
           equal string "keypress,keyrelease,paste"
             (String.concat "," (List.rev !calls)));
       test "focus owns internal keyboard registrations" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
           let renderable =
             expect_ok
               (Core.Renderables.Box.create (Renderer.context renderer)
@@ -180,7 +180,7 @@ let () =
           equal int 1 !calls;
           Renderer.destroy renderer);
       test "detaching does not blur a focused renderable" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
           let renderable =
             expect_ok
               (Core.Renderables.Box.create (Renderer.context renderer)
@@ -198,7 +198,7 @@ let () =
           equal int 1 !calls;
           Renderer.destroy renderer);
       test "kitty release events route to on_key_release handlers" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
           let renderable =
             expect_ok
               (Core.Renderables.Box.create (Renderer.context renderer)

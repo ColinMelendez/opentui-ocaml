@@ -564,7 +564,7 @@ let () =
           | Error error -> fail (Core.Error.message error)
           | Ok _ -> fail "closed span feed returned statistics");
       test "slider owns value changes and renders through the retained tree" (fun () ->
-          let renderer = expect_ok (Core.Renderer.create ~width:8l ~height:2l) in
+          let renderer = expect_ok (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:8l ~height:2l ()) in
           let slider =
             expect_ok
               (Core.Renderables.Slider.create (Core.Renderer.context renderer)
@@ -590,7 +590,7 @@ let () =
           | Ok () -> fail "destroyed slider accepted a value");
           Core.Renderer.destroy renderer);
       test "renderer exposes palette and split-footer geometry" (fun () ->
-          let renderer = expect_ok (Core.Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:8l ~height:4l ()) in
           equal string "\027[14t" (Core.Renderer.pixel_resolution_query renderer);
           equal string "\027]4;0;?\007" (Core.Renderer.palette_query renderer ~size:1 ());
           let events = ref 0 in

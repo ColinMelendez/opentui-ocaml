@@ -55,7 +55,7 @@ let () =
   run "opentui-core-pointer-dispatch"
     [
       test "hit-grid targets bubble from child to parent" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
           let context = Renderer.context renderer in
           let parent =
             expect_ok (Box.create context ~id:"parent" ())
@@ -108,7 +108,7 @@ let () =
           equal bool true (Renderable.focused child_node);
           Renderer.destroy renderer);
       test "drag capture routes completion and drop to the captured source" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
           let context = Renderer.context renderer in
           let parent = expect_ok (Box.create context ~id:"parent" ()) in
           let child = expect_ok (Box.create context ~id:"child" ()) in
@@ -186,7 +186,7 @@ let () =
           | _ -> fail "drag capture did not produce the reference event sequence");
           Renderer.destroy renderer);
       test "destroying a captured renderable releases capture before the next input" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
           let context = Renderer.context renderer in
           let source = expect_ok (Box.create context ~id:"captured-source" ()) in
           let target = expect_ok (Box.create context ~id:"release-target" ()) in
@@ -239,7 +239,7 @@ let () =
           equal int 1 !target_up;
           Renderer.destroy renderer);
       test "selection drags stay hit-tested instead of capturing the start target" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:1l ()) in
           let source_text, source_node =
             selectable_text renderer ~id:"selection-source" ~left:0 ~width:2
           in
@@ -300,7 +300,7 @@ let () =
           ignore (expect_ok (Text_buffer_renderable.selected_text target_text));
           Renderer.destroy renderer);
       test "left down clears selection in empty space but prevention preserves it" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:1l ()) in
           let selectable, selectable_node =
             selectable_text renderer ~id:"selection-default" ~left:0 ~width:2
           in
@@ -354,7 +354,7 @@ let () =
           ignore (expect_ok (Text_buffer_renderable.selected_text selectable));
           Renderer.destroy renderer);
       test "Ctrl-click moves an active selection without mouse-down or focus" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:6l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:6l ~height:1l ()) in
           let text, node =
             selectable_text renderer ~id:"selection-ctrl" ~left:0 ~width:4
           in
@@ -397,7 +397,7 @@ let () =
           ignore (expect_ok (Text_buffer_renderable.selected_text text));
           Renderer.destroy renderer);
       test "starting a new selection clears every previously touched renderable" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:1l ()) in
           let previous_text, previous_node =
             selectable_text renderer ~id:"selection-previous" ~left:0 ~width:2
           in
@@ -449,7 +449,7 @@ let () =
                next_touched);
           Renderer.destroy renderer);
       test "selection tracks every affected renderable with generic snapshots" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:10l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:10l ~height:1l ()) in
           let first_text, first_node =
             selectable_text renderer ~id:"selection-first" ~left:0 ~width:2
           in
@@ -525,7 +525,7 @@ let () =
                   (mouse Mouse.Up ~x:1 ~y:0 ~button:0)));
           Renderer.destroy renderer);
       test "pointer callback failures publish handler errors" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let context = Renderer.context renderer in
           let box = expect_ok (Box.create context ()) in
           ignore (expect_ok (Box.set_width box (Core.Yoga.Point 2.0)));
@@ -550,7 +550,7 @@ let () =
           equal int 1 !errors;
           Renderer.destroy renderer);
       test "a committed grid rechecks a stationary pointer" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let box = expect_ok (Box.create (Renderer.context renderer) ()) in
           ignore (expect_ok (Box.set_width box (Core.Yoga.Point 2.0)));
           ignore (expect_ok (Box.set_height box (Core.Yoga.Point 1.0)));
@@ -573,7 +573,7 @@ let () =
           equal int 1 !over_count;
           Renderer.destroy renderer);
       test "destroyed hover targets do not receive a later out event" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let box = expect_ok (Box.create (Renderer.context renderer) ()) in
           ignore (expect_ok (Box.set_width box (Core.Yoga.Point 2.0)));
           ignore (expect_ok (Box.set_height box (Core.Yoga.Point 1.0)));
@@ -598,7 +598,7 @@ let () =
           equal int 0 !out_count;
           Renderer.destroy renderer);
       test "resize drops pointer capture" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let box = expect_ok (Box.create (Renderer.context renderer) ()) in
           ignore (expect_ok (Box.set_width box (Core.Yoga.Point 2.0)));
           ignore (expect_ok (Box.set_height box (Core.Yoga.Point 1.0)));
@@ -623,7 +623,7 @@ let () =
           equal int 0 !drag_end_count;
           Renderer.destroy renderer);
       test "a destroyed mousedown target does not turn focus into an input error" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           let box =
             expect_ok (Box.create (Renderer.context renderer) ~focusable:true ())
           in

@@ -112,7 +112,7 @@ let () =
           Eio.Switch.run @@ fun sw ->
           let mono_clock = Eio.Stdenv.mono_clock env in
           let clock = Eio_clock.create ~sw ~mono_clock in
-          let renderer = expect_renderer (Renderer.create ~width:2l ~height:1l) in
+          let renderer = expect_renderer (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ()) in
           (match Scheduler.create ~sw ~clock ~renderer ~frames_per_second:0 () with
           | Error Scheduler.Invalid_frames_per_second -> ()
           | Error error -> fail (Scheduler.message error)
@@ -163,8 +163,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:4l ~height:2l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:4l ~height:2l ())
           in
           let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
           let before_timer = ref 0 in
@@ -201,7 +201,7 @@ let () =
           let timer = Clock.schedule lib_clock ~delay:1.0 (fun () -> ()) in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:lib_clock ~width:2l ~height:1l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:lib_clock ~width:2l ~height:1l ())
           in
           Eio.Switch.run @@ fun wrong_sw ->
           (match Scheduler.create ~sw:wrong_sw ~clock ~renderer () with
@@ -274,8 +274,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:4l ~height:2l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:4l ~height:2l ())
           in
           let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
           let frames = ref 0 in
@@ -299,8 +299,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:4l ~height:2l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:4l ~height:2l ())
           in
           let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
           let frames = ref 0 in
@@ -321,8 +321,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:4l ~height:2l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:4l ~height:2l ())
           in
           let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
           let requested = ref false in
@@ -347,8 +347,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:4l ~height:2l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:4l ~height:2l ())
           in
           let scheduler =
             expect_scheduler
@@ -392,8 +392,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:2l ~height:1l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:2l ~height:1l ())
           in
           let scheduler =
             expect_scheduler
@@ -421,8 +421,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:2l ~height:1l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:2l ~height:1l ())
           in
           let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
           let result = start_scheduler ~sw scheduler in
@@ -439,8 +439,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:2l ~height:1l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:2l ~height:1l ())
           in
           let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
           let attempts = ref 0 in
@@ -493,6 +493,34 @@ let () =
               equal bool true (Float.compare (second -. first) 0.01 >= 0)
           | _ -> fail "renderer recovery attempted too few frames");
           destroy_renderer renderer);
+      test "output failure stops the scheduler without a retry loop" (fun () ->
+          Eio_main.run @@ fun env ->
+          Eio.Switch.run @@ fun sw ->
+          let mono_clock = Eio.Stdenv.mono_clock env in
+          let clock = Eio_clock.create ~sw ~mono_clock in
+          let sink_calls = ref 0 in
+          let sink =
+            Renderer.Output.sink ~write_frame:(fun _ ->
+                incr sink_calls;
+                Error (Core.Error.Io "test output failure"))
+          in
+          let renderer =
+            expect_renderer
+              (Renderer.create_with_clock
+                 ~output:(Renderer.Output.Sink sink)
+                 ~clock:(Eio_clock.lib_clock clock) ~width:2l ~height:1l ())
+          in
+          let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
+          let result = start_scheduler ~sw scheduler in
+          ignore (expect_renderer (Renderer.request_render renderer));
+          (match Eio.Promise.await result with
+           | Error (Scheduler.Render_error (Core.Error.Output _)) -> ()
+           | Error error -> fail (Scheduler.message error)
+           | Ok () -> fail "output failure did not terminate the scheduler");
+          equal int 1 !sink_calls;
+          close_scheduler scheduler;
+          destroy_renderer renderer;
+          close_clock clock);
       test "scheduler attachment and running lifecycle are idempotent" (fun () ->
           Eio_main.run @@ fun env ->
           Eio.Switch.run @@ fun sw ->
@@ -500,8 +528,8 @@ let () =
           let clock = Eio_clock.create ~sw ~mono_clock in
           let renderer =
             expect_renderer
-              (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock clock)
-                 ~width:2l ~height:1l)
+              (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock clock)
+                 ~width:2l ~height:1l ())
           in
           let scheduler = expect_scheduler (Scheduler.create ~sw ~clock ~renderer ()) in
           (match Scheduler.create ~sw ~clock ~renderer () with

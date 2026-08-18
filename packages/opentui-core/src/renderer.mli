@@ -4,6 +4,20 @@ type t
 (** A renderer owner. It owns the native renderer, render context, and its
     current and next borrowed buffer views. *)
 
+module Output : sig
+  type remote_mode = Auto | Local | Remote
+
+  type sink
+
+  (** [sink ~write_frame] constructs a renderer output sink. The callback is
+      given complete, ordered frame chunks and does not own the byte buffers
+      after it returns. *)
+  val sink :
+    write_frame:(bytes list -> (unit, Error.t) result) -> sink
+
+  type target = Memory | Stdout | Sink of sink
+end
+
 type render_status = Rendered | Skipped | Failed
 (** The native outcome of one explicit frame execution. *)
 
@@ -90,12 +104,23 @@ type handler_error = Render_context.handler_error = {
   exception_value : exn;
 }
 
-(** [create ~width ~height] creates a renderer with positive dimensions. *)
-val create : width:int32 -> height:int32 -> (t, Error.t) result
+(** [create ~output ~width ~height ()] creates a renderer with positive
+    dimensions and an explicit native output target. [Memory] is intended for
+    headless retained-buffer inspection; [Stdout] writes directly to fd 1;
+    [Sink] uses an internally owned native span feed. *)
+val create :
+  output:Output.target -> ?remote_mode:Output.remote_mode ->
+  width:int32 -> height:int32 -> unit -> (t, Error.t) result
 
 (** [create_with_clock] injects the clock used for theme query timeouts. *)
 val create_with_clock :
-  clock:Lib.Clock.t -> width:int32 -> height:int32 -> (t, Error.t) result
+  output:Output.target -> ?remote_mode:Output.remote_mode ->
+  clock:Lib.Clock.t -> width:int32 -> height:int32 -> unit ->
+  (t, Error.t) result
+
+(** [close renderer] completes renderer teardown, drains native terminal output
+    produced during destruction, and closes the renderer-owned feed. *)
+val close : t -> (unit, Error.t) result
 
 (** [context renderer] returns the shared capability view used by renderables. *)
 val context : t -> Render_context.t

@@ -19,7 +19,7 @@ drop-in TypeScript API or exact host-runtime parity.
 | Reference source | The OpenTUI source in `vendor/opentui`. It defines the behavior and source paths that the OCaml implementation follows. |
 | ABI | The C-compatible function and data representation used to call the Zig renderer. |
 | Retained UI tree | A tree whose nodes remain allocated and keep their identities while properties change between frames. |
-| Renderer | The `opentui-core.Renderer` owner of the retained root, frame buffers, render-context capabilities, frame lifecycle, transport-neutral render geometry, and renderer-level events. It corresponds to the portable portion of the reference `CliRenderer`; Eio application/terminal output owns terminal setup, output replay, and stream integration. |
+| Renderer | The `opentui-core.Renderer` owner of the retained root, frame buffers, render-context capabilities, frame lifecycle, transport-neutral render geometry, explicit `Memory`/`Stdout`/feed-backed output selection, and renderer-level events. It corresponds to the portable portion of the reference `CliRenderer`; Eio application/terminal output owns terminal setup, output-flow serialization, and stream integration. |
 | Render context | The capability view that gives a renderable access to renderer-owned dimensions, layout, events, input, focus, and render requests. It corresponds to the reference `RenderContext`. |
 | Renderable | A retained node that contributes visual output and participates in parent-child ownership, layout, lifecycle, and rendering. `Box`, `Text`, text editors, scrolling controls, selectors, `Slider`, framebuffer/font renderables, tables, and line-number composition are concrete renderables. |
 | Yoga | The layout engine used by `opentui-core` to calculate node positions and dimensions. |
@@ -83,10 +83,10 @@ lists every deliberate directory, module-name, effect, and platform difference.
 
 ```text
 src/
-├── renderer.ml              CliRenderer ownership, frame lifecycle, geometry
+├── renderer.ml              CliRenderer ownership, frame lifecycle, geometry, output
 ├── render_context.ml        capabilities supplied to renderables
 ├── terminal_capabilities.ml capability snapshots and response state
-├── native_span_feed.ml       synchronous copy-first raw-ABI span-feed wrapper
+├── native_span_feed.ml       synchronous copy-first feed wrapper for renderer sinks
 ├── edit_buffer.ml            pure editing, cursor, history, and extmark state
 ├── editor_view.ml            visual-line and selection view over Edit_buffer
 ├── syntax_style.ml           syntax-style registration and resolution
@@ -234,7 +234,9 @@ The application-facing runtime is Eio-native. One Eio switch can own terminal
 setup, input, output, clocks, cancellation, and cleanup. `opentui-core` keeps
 rendering, parsing, and native image decode synchronous: `Renderer`,
 `Renderable`, Yoga, renderable setters, the byte parser, and the bounded event
-queue do not start fibers or perform terminal I/O. The one image exception is
+queue do not start fibers. `Renderer` may synchronously hand complete native
+frame chunks to the caller-provided output sink; it does not own an Eio flow or
+terminal session. The one image exception is
 the explicit `Renderables.Image` Path mode, whose owner-domain fiber performs
 cooperative file I/O before handing bytes to that synchronous decoder.
 
@@ -243,9 +245,11 @@ renderer exposes explicit frame execution and presentation boundaries, so an
 application may either present explicitly or attach the owner-domain Eio
 scheduler. That scheduler is the semantic adapter for coalesced frame
 requests, live pacing, and recoverable render-error retries; it does not own
-the renderer's clock or terminal output. This boundary keeps scheduling and
-terminal resource lifetime out of per-cell rendering operations while allowing
-Eio to own the surrounding application runtime. Clock and scheduler mutation
+the renderer's clock or terminal resource. Eio `Output_flow` is the serialized
+sink used when terminal setup, queries, frames, and shutdown must share one
+owner. This boundary keeps scheduling and terminal resource lifetime out of
+per-cell rendering operations while allowing Eio to own the surrounding
+application runtime. Clock and scheduler mutation
 is owner-domain checked, including closure; portable clock callbacks fail
 loudly on affinity misuse because their callback shape cannot return a
 structured error. Render-error subscriptions instead expose typed callback
@@ -255,7 +259,9 @@ response recognition, query-string construction, geometry updates, and native
 text-view selection forwarding, and the portable utility services are
 synchronous Core operations. Split-footer geometry is transport-neutral; the
 reference external-output, replay, and scrollback surfaces are not Core APIs.
-Terminal setup and output writing remain Eio/application responsibilities.
+Terminal setup and output writing remain Eio/application responsibilities;
+`Renderer.Output.Stdout` is an explicit low-level escape hatch for applications
+that already own fd 1.
 `Lib.Clock` makes one-shot timing
 injectable for debounce, queues, theme queries, and parser timeouts.
 
@@ -276,7 +282,7 @@ TypeScript class syntax or JavaScript runtime mechanisms.
 | `RenderContext` / renderer reference | Explicit render-context capabilities retained by nodes; Eio capabilities remain at runtime/platform boundaries. |
 | Terminal capability snapshot and response | `Terminal_capabilities.t` is a copied Core value populated through `opentui-raw`; `Lib.Terminal_capability_detection` filters parser responses before synchronous renderer updates and shared notifications. |
 | Reference `RGBA` intent | `Lib.Rgba` is a pure intent-preserving value; `Color` is the separate raw-backed drawing bridge. |
-| Reference native span feed | `Native_span_feed` is a synchronous copy-first wrapper: typed Core spans and reservations are drained over the raw package's foreign lifetime tokens, without the reference async data/error/backpressure/idle surface. |
+| Reference native span feed | `Native_span_feed` remains a synchronous copy-first wrapper for the public span API, and is also the renderer-owned feed lifetime seam for `Renderer.Output.Sink`; complete copied spans are delivered to the sink before `Renderer.render` returns. The reference async data/error/backpressure/idle surface is not exposed. |
 | Reference text editor state | `Edit_buffer`, `Editor_view`, `Lib.Extmarks`, and `Syntax_style` are small composed domain modules; they do not inherit from renderables. |
 | Reference editor controls | `Edit_buffer_renderable` owns the edit/view/native-text synchronization; `Textarea` and `Input` add typed focus, placeholder, constraint, submit, and change contracts. |
 | Reference scrolling controls | `Scroll_box` owns the physical wrapper/viewport/content subtree and composes `Scroll_bar` and `Slider`; scroll acceleration remains a policy value rather than a hidden scheduler. |

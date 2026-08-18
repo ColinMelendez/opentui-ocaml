@@ -87,7 +87,7 @@ let attach_mount renderer mount =
           (Core.Slot_mount.renderable mount)))
 
 let test_modes_and_fallback () =
-  let renderer = expect_core (Core.Renderer.create ~width:20l ~height:6l) in
+  let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:20l ~height:6l ()) in
   let context = Core.Renderer.context renderer in
   let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
   let slot_id = expect_id "mode-slot" in
@@ -150,7 +150,7 @@ let test_modes_and_fallback () =
   Core.Renderer.destroy renderer
 
 let test_props_refresh_replaces_views () =
-  let renderer = expect_core (Core.Renderer.create ~width:16l ~height:4l) in
+  let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:16l ~height:4l ()) in
   let context = Core.Renderer.context renderer in
   let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
   let slot, sink =
@@ -186,7 +186,7 @@ let test_props_refresh_replaces_views () =
   Core.Renderer.destroy renderer
 
 let test_reentrant_invalidation_is_deferred_and_coalesced () =
-  let renderer = expect_core (Core.Renderer.create ~width:16l ~height:4l) in
+  let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:16l ~height:4l ()) in
   let context = Core.Renderer.context renderer in
   let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
   let slot, sink =
@@ -256,7 +256,7 @@ let test_reentrant_invalidation_is_deferred_and_coalesced () =
   Core.Renderer.destroy renderer
 
 let test_placeholder_for_failed_plugin () =
-  let renderer = expect_core (Core.Renderer.create ~width:16l ~height:4l) in
+  let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:16l ~height:4l ()) in
   let context = Core.Renderer.context renderer in
   let reported = ref [] in
   let reporter =
@@ -305,9 +305,9 @@ let test_placeholder_for_failed_plugin () =
   Core.Renderer.destroy renderer
 
 let test_renderer_ownership_is_enforced () =
-  let renderer = expect_core (Core.Renderer.create ~width:12l ~height:4l) in
+  let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:12l ~height:4l ()) in
   let foreign_renderer =
-    expect_core (Core.Renderer.create ~width:12l ~height:4l)
+    expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:12l ~height:4l ())
   in
   let foreign_host =
     Plugin.Host.create ~renderer:foreign_renderer
@@ -364,7 +364,7 @@ let test_renderer_ownership_is_enforced () =
   Core.Renderer.destroy foreign_renderer
 
 let test_mount_destruction_releases_views () =
-  let renderer = expect_core (Core.Renderer.create ~width:12l ~height:4l) in
+  let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:12l ~height:4l ()) in
   let context = Core.Renderer.context renderer in
   let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
   let slot, sink =
@@ -406,7 +406,7 @@ let test_mount_destruction_releases_views () =
   Core.Renderer.destroy renderer
 
 let test_host_close_cleans_attached_mount () =
-  let renderer = expect_core (Core.Renderer.create ~width:12l ~height:4l) in
+  let renderer = expect_core (Core.Renderer.create ~output:Core.Renderer.Output.Memory ~width:12l ~height:4l ()) in
   let context = Core.Renderer.context renderer in
   let host = Plugin.Host.create ~renderer ~reporter:Plugin.Reporter.ignore in
   let slot, sink =

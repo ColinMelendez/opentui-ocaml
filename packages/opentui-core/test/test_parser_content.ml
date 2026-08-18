@@ -93,7 +93,7 @@ let () =
                (Core.Lib.Tree_sitter_client.run_parser parser ~content:"fun"));
           Core.Lib.Tree_sitter_client.destroy client);
       test "Code uses native styled chunks, selection, and parser fallback" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:40l ~height:5l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:40l ~height:5l ()) in
           let style =
             {
               Core.Syntax_style.fg = Some (Core.Lib.Rgba.from_ints 255 0 0);
@@ -246,7 +246,7 @@ let () =
             Renderables.Markdown_parser.parse_incremental ~trailing_unstable:0 "# Title" None
           in
           equal int 1 (Renderables.Markdown_parser.stable_token_count stable);
-          let renderer = expect_ok (Renderer.create ~width:50l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:50l ~height:10l ()) in
           let markdown =
             expect_ok
               (Renderables.Markdown.create (Renderer.context renderer)
@@ -262,7 +262,7 @@ let () =
           Renderables.Markdown.destroy markdown;
           Renderer.destroy renderer);
       test "Markdown table alignment markers affect rendered cell origins" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:36l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:36l ~height:8l ()) in
           let markdown =
             expect_ok
               (Renderables.Markdown.create (Renderer.context renderer)
@@ -301,7 +301,7 @@ let () =
           let diff_text = "--- a/file.ml\n+++ b/file.ml\n@@ -1,2 +1,2 @@\n-old\n+new\n same" in
           let parsed = expect_parser_ok (Renderables.Diff_parser.parse diff_text) in
           equal int 1 (List.length parsed.hunks);
-          let renderer = expect_ok (Renderer.create ~width:60l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:60l ~height:8l ()) in
           let diff =
             expect_ok
               (Renderables.Diff.create (Renderer.context renderer) ~content:diff_text ())

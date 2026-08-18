@@ -37,7 +37,9 @@ type span_feed_stats = int64 * int64 * int32 * int32
 type image_info = int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32
 type cursor_state = int32 * int32 * bool * int * bool * color
 
-val renderer_create : int32 -> int32 -> int * Native_token.Renderer.t
+val renderer_create :
+  int32 -> int32 -> int -> int -> Native_token.Span_feed.t option ->
+  int * Native_token.Renderer.t
 val renderer_resize : Native_token.Renderer.t -> int32 -> int32 -> int
 val renderer_set_background_color :
   Native_token.Renderer.t -> color -> int

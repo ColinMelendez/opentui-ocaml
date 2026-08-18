@@ -38,6 +38,11 @@ val write_subbytes :
   t -> bytes:bytes -> off:int -> len:int -> (unit, error) result
 (** [write_subbytes] writes exactly the validated subrange. *)
 
+val write_frame : t -> bytes list -> (unit, error) result
+(** [write_frame output chunks] writes all chunks while holding one output
+    lock, so a complete renderer frame cannot be interleaved with terminal
+    mode changes or another frame. *)
+
 val set_screen :
   t -> Lib.Terminal_modes.screen -> (unit, error) result
 (** [set_screen] writes and commits a screen transition. *)

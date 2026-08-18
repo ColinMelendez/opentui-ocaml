@@ -220,3 +220,8 @@ let close feed =
         Native_owner.Private.close feed.owner;
         Ok ()
     | status -> Error (error_of_status status)
+
+module Private = struct
+  let raw feed =
+    if Native_owner.is_open feed.owner then Ok feed.token else Error Error.Closed
+end

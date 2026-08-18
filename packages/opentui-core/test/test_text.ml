@@ -113,7 +113,7 @@ let () =
           Text_node.clear parent;
           equal int 0 (Text_node.child_count parent));
       test "text lifecycle synchronizes composition before Yoga layout" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:5l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:5l ~height:10l ()) in
           let text =
             expect_ok
               (Text.create (Renderer.context renderer)
@@ -134,7 +134,7 @@ let () =
             (Styled_text.plain_text (Text.content text));
           Renderer.destroy renderer);
       test "manual text content remains independent of text children" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:5l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:5l ~height:10l ()) in
           let text =
             expect_ok
               (Text.create (Renderer.context renderer)

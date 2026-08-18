@@ -43,7 +43,7 @@ let () =
     [
       test "renderer owns a root and independent children attach without sharing Yoga ownership"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:20l ~height:10l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:10l ()) in
           let context = Renderer.context renderer in
           let root = Renderer.root renderer in
           let child = make_child context ~id:"child" () in
@@ -74,7 +74,7 @@ let () =
           expect_error Core.Error.Closed (Renderable.request_render child));
       test "detaching preserves the renderable and its Yoga node until destruction"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let root = Renderer.root renderer in
           let child = make_child (Renderer.context renderer) () in
           ignore
@@ -92,8 +92,8 @@ let () =
           Renderer.destroy renderer);
       test "cross-renderer attachment fails before changing either tree"
         (fun () ->
-          let left = expect_ok (Renderer.create ~width:4l ~height:2l) in
-          let right = expect_ok (Renderer.create ~width:4l ~height:2l) in
+          let left = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
+          let right = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:4l ~height:2l ()) in
           let child = make_child (Renderer.context left) () in
           ignore
             (expect_ok
@@ -108,7 +108,7 @@ let () =
           Renderer.destroy right);
       test "same-parent attachment reorders without removal callbacks or live-count churn"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let removals = ref 0 in
           let behavior =
@@ -141,7 +141,7 @@ let () =
           Renderer.destroy renderer);
       test "forward indexed moves and insert-before preserve Yoga layout order"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:10l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:10l ~height:8l ()) in
           let context = Renderer.context renderer in
           let root = Renderer.root renderer in
           let first = make_child context ~id:"first" () in
@@ -172,7 +172,7 @@ let () =
           Renderer.destroy renderer);
       test "descendant lookup uses depth-first pre-order"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let root = Renderer.root renderer in
           let branch = make_child context ~id:"branch" () in
@@ -190,7 +190,7 @@ let () =
           Renderer.destroy renderer);
       test "nested coordinates include ancestor layout and translation"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:10l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:10l ~height:8l ()) in
           let context = Renderer.context renderer in
           let root = Renderer.root renderer in
           let parent = make_child context ~id:"parent" () in
@@ -217,7 +217,7 @@ let () =
           Renderer.destroy renderer);
       test "layout invalidation remains separate from render-list revision"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let child = make_child context () in
           let before_layout = expect_ok (Context.layout_generation context) in
@@ -244,7 +244,7 @@ let () =
           Renderer.destroy renderer);
       test "filtered children retain z-order rather than callback order"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let root = Renderer.root renderer in
           let seen = ref [] in
@@ -275,7 +275,7 @@ let () =
           Renderer.destroy renderer);
       test "a render request during a frame remains pending"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let requested = ref false in
           let behavior =
@@ -298,7 +298,7 @@ let () =
           Renderer.destroy renderer);
       test "resize-triggered destruction prevents command generation"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let destroyed = ref None in
           let rendered = ref false in
@@ -327,7 +327,7 @@ let () =
           Renderer.destroy renderer);
       test "opacity and scissor drawing commands execute through native buffers"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let child = make_child (Renderer.context renderer) () in
           ignore (expect_ok (Renderable.set_opacity child 0.5));
           ignore
@@ -338,7 +338,7 @@ let () =
           Renderer.destroy renderer);
       test "overflow scissor clips descendants in the retained hit grid"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let parent = make_child context ~id:"clipped-parent" () in
           let child = make_child context ~id:"wide-child" () in
@@ -365,7 +365,7 @@ let () =
           Renderer.destroy renderer);
       test "focus, visibility, detach, and destruction preserve reference lifecycle order"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let root = Renderer.root renderer in
           let child = make_child context ~id:"focused" () in
@@ -403,7 +403,7 @@ let () =
           Renderer.destroy renderer);
       test "hiding a focused renderable blurs it without restoring focus"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let child = make_child context () in
           ignore (expect_ok (Renderable.set_focusable child true));
@@ -421,7 +421,7 @@ let () =
           Renderer.destroy renderer);
       test "live-count transitions reach the root scheduling boundary"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:8l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l ()) in
           let context = Renderer.context renderer in
           let root = Renderer.root renderer in
           let child = make_child context () in

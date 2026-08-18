@@ -42,3 +42,9 @@ val reserve : t -> min_length:int32 -> (Reservation.t, Error.t) result
 val stats : t -> (stats, Error.t) result
 val drain : t -> (Span.t list, Error.t) result
 val close : t -> (unit, Error.t) result
+
+module Private : sig
+  (** [raw feed] exposes the borrowed raw feed to Core's native renderer
+      owner. The Core wrapper remains responsible for closing [feed]. *)
+  val raw : t -> (Opentui_raw.Span_feed.t, Error.t) result
+end

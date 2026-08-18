@@ -31,8 +31,8 @@ let test_scrollbar_repeat () =
   let manual = Clock.manual () in
   let renderer =
     expect_ok
-      (Renderer.create_with_clock ~clock:(Clock.manual_clock manual) ~width:20l
-         ~height:8l)
+      (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Clock.manual_clock manual) ~width:20l
+         ~height:8l ())
   in
   let bar =
     expect_ok
@@ -67,7 +67,7 @@ let test_scrollbar_repeat () =
   Renderer.destroy renderer
 
 let test_scrollbar_without_clock_keeps_immediate_action () =
-  let renderer = expect_ok (Renderer.create ~width:20l ~height:8l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:8l ()) in
   let bar =
     expect_ok
       (Renderables.Scroll_bar.create (Renderer.context renderer)
@@ -97,7 +97,7 @@ let mouse kind ~x ~y =
     }
 
 let test_scrollbox_auto_scroll_keeps_other_live_owner () =
-  let renderer = expect_ok (Renderer.create ~width:20l ~height:8l) in
+  let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:8l ()) in
   let box =
     expect_ok
       (Renderables.Scroll_box.create (Renderer.context renderer) ~scroll_y:true
@@ -162,8 +162,8 @@ let test_eio_theme_waiter_and_refresh_coalescing () =
   let eio_clock = Eio_clock.create ~sw ~mono_clock in
   let renderer =
     expect_ok
-      (Renderer.create_with_clock ~clock:(Eio_clock.lib_clock eio_clock)
-         ~width:12l ~height:4l)
+      (Renderer.create_with_clock ~output:Renderer.Output.Memory ~clock:(Eio_clock.lib_clock eio_clock)
+         ~width:12l ~height:4l ())
   in
   let owner_domain = (Domain.self () :> int) in
   let waiter_result, resolve_waiter = Eio.Promise.create () in

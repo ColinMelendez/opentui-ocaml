@@ -289,9 +289,11 @@ services:
 - pointer selection routing and renderer-driven selection ownership for
   selectable text/editor renderables (their local translation hooks are
   connected here);
-- terminal setup, output writing, and asynchronous query scheduling; Core now
-  supplies transport-neutral query strings, palette parsing/normalization,
-  pixel resolution, and render geometry;
+- terminal setup, output-flow ownership, and asynchronous query scheduling;
+  Core's explicit renderer targets and complete-frame sink seam are defined by
+  the [`renderer-output` feature record](../renderer-output/feature.md), while
+  this slice supplies transport-neutral query strings, palette
+  parsing/normalization, pixel resolution, and render geometry;
 - scrollback surfaces, animation services, feed-idle retries, and isolated
   snapshot contexts;
 - explicit pause, suspend, and resume services beyond the live scheduler

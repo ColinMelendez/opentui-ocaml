@@ -26,7 +26,7 @@ let () =
     [
       test "renderer and box capabilities attach physical children"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:10l ~height:6l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:10l ~height:6l ()) in
           let context = Renderer.context renderer in
           let parent = expect_ok (Box.create context ~id:"parent" ()) in
           let child = expect_ok (Box.create context ~id:"child" ()) in
@@ -51,7 +51,7 @@ let () =
           Renderer.destroy renderer);
       test "box border and gap setters update Yoga layout"
         (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:12l ~height:8l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:12l ~height:8l ()) in
           let context = Renderer.context renderer in
           let parent = expect_ok (Box.create context ~id:"parent" ()) in
           let first = expect_ok (Box.create context ~id:"first" ()) in
@@ -99,8 +99,8 @@ let () =
           Renderer.destroy renderer);
       test "public layout capabilities preserve indexed and ownership semantics"
         (fun () ->
-          let left = expect_ok (Renderer.create ~width:10l ~height:6l) in
-          let right = expect_ok (Renderer.create ~width:10l ~height:6l) in
+          let left = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:10l ~height:6l ()) in
+          let right = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:10l ~height:6l ()) in
           let context = Renderer.context left in
           let right_context = Renderer.context right in
           let first = expect_ok (Box.create context ~id:"first" ()) in
@@ -145,7 +145,7 @@ let () =
           Renderer.destroy left;
           Renderer.destroy right);
       test "box draws its border at the laid out position" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:6l ~height:4l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:6l ~height:4l ()) in
           let box =
             expect_ok
               (Box.create (Renderer.context renderer) ~border:Box.all_borders
@@ -169,7 +169,7 @@ let () =
           equal string "┌────┐│    ││    │└────┘" rendered;
           Renderer.destroy renderer);
       test "box forwards title and border style options" (fun () ->
-          let renderer = expect_ok (Renderer.create ~width:6l ~height:2l) in
+          let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:6l ~height:2l ()) in
           let box =
             expect_ok
               (Box.create (Renderer.context renderer)

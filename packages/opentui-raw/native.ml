@@ -37,8 +37,10 @@ type span_feed_stats = int64 * int64 * int32 * int32
 type image_info = int32 * int32 * int32 * int32 * int32 * int32 * int32 * int32
 type cursor_state = int32 * int32 * bool * int * bool * color
 
-external renderer_create : int32 -> int32 -> int * Native_token.Renderer.t =
-  "opentui_raw_renderer_create"
+external renderer_create :
+  int32 -> int32 -> int -> int -> Native_token.Span_feed.t option ->
+  int * Native_token.Renderer.t =
+    "opentui_raw_renderer_create"
 
 external renderer_resize :
   Native_token.Renderer.t -> int32 -> int32 -> int =
