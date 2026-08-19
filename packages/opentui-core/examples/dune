@@ -32,3 +32,8 @@
  (name timeline_example)
  (modules timeline_example)
  (libraries opentui-core opentui_examples_lib eio_main))
+
+(executable
+ (name slider_demo)
+ (modules slider_demo)
+ (libraries opentui-core opentui_examples_lib eio_main))
