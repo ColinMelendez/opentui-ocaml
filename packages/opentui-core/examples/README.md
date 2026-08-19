@@ -32,6 +32,9 @@ The examples directory contains executable programs for the public
   `vendor/opentui/packages/examples/src/grayscale-buffer-demo.ts`: animated
   grayscale patterns rendered once at terminal-cell resolution and once with
   native 2x supersampling.
+- `timeline_example.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/timeline-example.ts`: nested timelines,
+  numeric property bindings, easing, looping, alternation, and progress bars.
 
 The shared example helpers live in `lib/`:
 
@@ -108,3 +111,12 @@ nix develop -c dune exec ./packages/opentui-core/examples/grayscale_buffer_demo.
 
 Grayscale keys: Space pauses or resumes animation, `P` cycles the pattern,
 backtick/`"` toggles the console, and Ctrl+C exits.
+
+Run the timeline example:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/timeline_example.exe
+```
+
+Timeline keys: `P` pauses the main timeline, `R` restarts it, backtick/`"`
+toggles the console, and Ctrl+C exits.

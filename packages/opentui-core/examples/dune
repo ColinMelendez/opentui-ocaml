@@ -27,3 +27,8 @@
  (name grayscale_buffer_demo)
  (modules grayscale_buffer_demo)
  (libraries opentui-core opentui_examples_lib eio_main))
+
+(executable
+ (name timeline_example)
+ (modules timeline_example)
+ (libraries opentui-core opentui_examples_lib eio_main))
