@@ -179,3 +179,17 @@ nix develop -c dune exec ./packages/opentui-core/examples/nested_zindex_demo.exe
 
 Nested z-index keys: `+`/`=` speeds up the parent-group animation,
 `-`/`_` slows it down, backtick/`"` toggles the console, and Ctrl+C exits.
+
+Run the notification demo:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/notification_demo.exe
+```
+
+Notification keys: `1`-`4` trigger the four notification actions, mouse click
+triggers a card, `Esc` exits the demo, backtick/`"` toggles the console, and
+Ctrl+C exits. The harness runs the reference capability-probe phase at startup;
+the activity panel records whether the terminal accepted each notification and
+shows the detected OSC transport. Terminal mode setup remains owned by the Eio
+harness, which is why capability probing is an explicit renderer operation in
+the OCaml port rather than part of generic renderer creation.

@@ -49,7 +49,13 @@ recursive free releases a detached subtree and invalidates every node token in
 that subtree.
 
 The capability binding copies terminal strings and decodes the renderer's enum
-codes into a typed snapshot. The `Span_feed` binding preserves the
+codes into a typed snapshot. `Renderer.query_terminal_capabilities` delegates
+the capability-probe phase to the native reference renderer, but does not
+enter an alternate screen or enable terminal modes. That is an intentional
+split from the reference `setupTerminal` operation: the OCaml Eio terminal
+session owns those mode transitions and cleanup, while the native renderer
+still owns probe ordering, multiplexer wrapping, and pending-query retries.
+The `Span_feed` binding preserves the
 `NativeSpanFeed` ownership protocol: it copies drained payloads into OCaml
 bytes, exposes an explicit idempotent release token, and keeps reservation
 commit/cancel explicit through a caller-owned staging buffer. These values are

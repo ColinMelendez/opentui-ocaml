@@ -52,6 +52,11 @@ val deadline : t -> int64 option
 (** [deadline coordinator] is the absolute millisecond deadline for the
     incomplete prefix, if one exists. *)
 
+val update_protocol_context :
+  t -> Stdin_parser.protocol_context -> emit:(event -> delivery) -> delivery
+(** [update_protocol_context coordinator context ~emit] updates the parser's
+    framing context and immediately drains events released by that change. *)
+
 val push :
   t ->
   now_ms:int64 ->

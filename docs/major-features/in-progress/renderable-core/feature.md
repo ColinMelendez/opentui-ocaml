@@ -265,7 +265,9 @@ services. The supported slice includes:
 - hit-grid writes during command execution;
 - the initial typed terminal-capability snapshot, synchronous capability-response
   processing, shared capability notifications, and one-shot forced repaint
-  invalidation; and
+  invalidation;
+- the explicit native terminal-capability probe phase, with terminal-mode
+  ownership remaining at the Eio runtime boundary; and
 - Eio-backed terminal input/output adapters and Unix terminal resource scopes
   at the runtime boundary. `Lib.Clock` remains an injected capability with a
   deterministic manual implementation, and the Eio clock/scheduler path is
@@ -289,10 +291,12 @@ services:
 - pointer selection routing and renderer-driven selection ownership for
   selectable text/editor renderables (their local translation hooks are
   connected here);
-- terminal setup, output-flow ownership, and asynchronous query scheduling;
-  Core's explicit renderer targets and complete-frame sink seam are defined by
-  the [`renderer-output` feature record](../renderer-output/feature.md), while
-  this slice supplies transport-neutral query strings, palette
+- terminal-mode setup, output-flow ownership, and application-level scheduling
+  and timeout policy for capability detection; Core's explicit
+  `Renderer.start_capability_detection` operation emits the native probe phase,
+  while its renderer targets and complete-frame sink seam are defined by the
+  [`renderer-output` feature record](../renderer-output/feature.md). This slice
+  also supplies transport-neutral query strings, palette
   parsing/normalization, pixel resolution, and render geometry;
 - scrollback surfaces, animation services, feed-idle retries, and isolated
   snapshot contexts;
@@ -669,9 +673,11 @@ renderer/context pair shares identity-bearing capability sources, not only
 initially equal values. The capability snapshot itself is a copied immutable
 value from the raw binding; each recognized response replaces that value and
 emits one synchronous notification. Terminal query/setup remains an outer
-runtime concern until its Eio output boundary is ported. The renderer/context
-owns lifecycle pass registration state, and the root executes the registered
-passes at frame start.
+runtime concern except for the explicit native capability-probe operation:
+`Renderer.start_capability_detection` emits reference probe bytes through the
+renderer sink but does not own terminal modes, input-parser context, or timeout
+policy. The renderer/context owns lifecycle pass registration state, and the
+root executes the registered passes at frame start.
 
 ## Frame and layout contract
 

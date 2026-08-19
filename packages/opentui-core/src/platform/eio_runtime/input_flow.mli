@@ -47,6 +47,11 @@ val timeout_ms : t -> int
 val deadline : t -> int64 option
 (** [deadline input] is the parser deadline in monotonic milliseconds. *)
 
+val update_protocol_context :
+  t -> Lib.Stdin_parser.protocol_context -> emit:(event -> delivery) -> delivery
+(** [update_protocol_context input context ~emit] updates protocol framing and
+    drains any events released by the change into the caller-owned sink. *)
+
 val read_once :
   t ->
   clock:_ Eio.Time.Mono.t ->

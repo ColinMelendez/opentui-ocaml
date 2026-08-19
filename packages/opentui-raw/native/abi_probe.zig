@@ -464,6 +464,16 @@ comptime {
         "resizeRenderer",
     );
     expectType(
+        @TypeOf(opentui.queryTerminalCapabilities),
+        fn (opentui.NativeHandle) callconv(.c) void,
+        "queryTerminalCapabilities",
+    );
+    expectType(
+        @TypeOf(opentui.triggerNotification),
+        fn (opentui.NativeHandle, [*]const u8, u32, ?[*]const u8, u32) callconv(.c) bool,
+        "triggerNotification",
+    );
+    expectType(
         @TypeOf(opentui.setBackgroundColor),
         fn (opentui.NativeHandle, [*]const u16) callconv(.c) void,
         "setBackgroundColor",

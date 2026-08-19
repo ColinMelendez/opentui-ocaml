@@ -149,6 +149,19 @@ val resize : t -> width:int32 -> height:int32 -> (unit, Error.t) result
     renderer's configured output backend, preserving order with frame output. *)
 val write_out : t -> bytes -> (unit, Error.t) result
 
+(** [query_terminal_capabilities renderer] emits the reference terminal
+    capability probes, including XTVERSION, protocol-specific capability
+    queries, pending multiplexer retries, and pixel resolution. It deliberately
+    does not enter an alternate screen or enable terminal modes: those belong to
+    the higher-level terminal-session owner in this OCaml port. *)
+val query_terminal_capabilities : t -> (unit, Error.t) result
+
+(** [trigger_notification renderer message title] asks the native terminal
+    owner to emit a supported desktop-notification sequence. The boolean is
+    [false] when the current terminal has no detected notification protocol. *)
+val trigger_notification :
+  t -> message:bytes -> title:bytes option -> (bool, Error.t) result
+
 (** [set_background_color renderer ~color] changes the native backdrop and
     requests the next renderer frame. *)
 val set_background_color : t -> color:Color.t -> (unit, Error.t) result

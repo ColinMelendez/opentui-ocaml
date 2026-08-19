@@ -196,6 +196,26 @@ val background_color : t -> (Color.t, Error.t) result
     the next buffer with that color, and requests one coalesced repaint. *)
 val set_background_color : t -> color:Color.t -> (unit, Error.t) result
 
+(** [start_capability_detection renderer] emits the reference terminal
+    capability-probe phase and is idempotent. Responses are asynchronous:
+    [capabilities] and [on_capabilities] receive the copied snapshot when the
+    input loop passes the responses to {!handle_input}.
+
+    This intentionally exposes only the probe phase. Unlike the reference
+    [CliRenderer.setupTerminal], it does not enter an alternate screen or
+    enable terminal modes because the OCaml Eio terminal-session owner manages
+    those concerns separately. The existing [handle_input] capability-response
+    path remains available for later explicit queries; unlike the reference's
+    temporary startup handler, Core does not install and remove a private
+    input-handler subscription as part of this operation. *)
+val start_capability_detection : t -> (unit, Error.t) result
+
+(** [trigger_notification renderer ~message ?title ()] emits a supported
+    terminal desktop-notification sequence and returns [false] when capability
+    detection found no notification protocol. *)
+val trigger_notification :
+  t -> message:string -> ?title:string -> unit -> (bool, Error.t) result
+
 (** [set_cursor_position renderer ...] updates the native terminal cursor. The
     native renderer clamps coordinates to its one-based dimensions. *)
 val set_cursor_position :

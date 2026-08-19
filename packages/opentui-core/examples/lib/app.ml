@@ -11,6 +11,7 @@
 module O = Opentui_core
 module Output = O.Platform.Eio_runtime.Output_flow
 module Input_flow = O.Platform.Eio_runtime.Input_flow
+module Clock = O.Lib.Clock
 module Eio_clock = O.Platform.Eio_runtime.Eio_clock
 module Dispatch = O.Platform.Eio_runtime.Dispatch
 module Wakeup = O.Platform.Eio_runtime.Wakeup
@@ -20,6 +21,8 @@ module Size_source = O.Platform.Eio_unix_runtime.Terminal_size_source
 module Resize = O.Platform.Eio_unix_runtime.Resize_source
 module Events = O.Lib.Event_queue
 module Input = O.Lib.Input_coordinator
+module Stdin_parser = O.Lib.Stdin_parser
+module Capability_detection = O.Lib.Terminal_capability_detection
 module Modes = O.Lib.Terminal_modes
 module Size = O.Lib.Terminal_size
 
@@ -117,6 +120,29 @@ let emit_to_queue queue wakeup (event : Input.event) =
   | Error Events.Full -> Input.Full
   | Error Events.Invalid_capacity -> assert false
 
+let capability_detection_context =
+  {
+    Stdin_parser.default_protocol_context with
+    private_capability_replies_active = true;
+    pixel_resolution_query_active = true;
+    explicit_width_cpr_active = true;
+  }
+
+let capability_detection_finished_context =
+  {
+    capability_detection_context with
+    private_capability_replies_active = false;
+    pixel_resolution_query_active = false;
+    explicit_width_cpr_active = false;
+  }
+
+let capability_detection_pixel_response_context =
+  { capability_detection_context with pixel_resolution_query_active = false }
+
+let update_capability_protocol_context input context ~queue ~wakeup =
+  Input_flow.update_protocol_context input context
+    ~emit:(emit_to_queue queue wakeup)
+
 (* Pump the tty source through the coordinator into the bounded queue, then
    wait for SIGWINCH to enqueue resize events. *)
 let pump_input input ~clock ~source ~queue ~wakeup =
@@ -153,16 +179,24 @@ let pump_input_timeouts input ~clock ~queue ~wakeup =
   in
   loop ()
 
-let dispatch_handle renderer = function
+let dispatch_handle renderer ~capability_detection_active ~on_pixel_resolution = function
   | Events.Resize size ->
       ignore
         (O.Renderer.resize renderer ~width:(Int32.of_int (Size.columns size))
            ~height:(Int32.of_int (Size.rows size)))
+  | Events.Input
+      (Stdin_parser.Response { bytes; _ } as event) ->
+      ignore (O.Renderer.handle_input renderer event);
+      if !capability_detection_active then
+        if
+          Capability_detection.is_pixel_resolution_response
+            (Bytes.to_string bytes)
+        then on_pixel_resolution ()
   | Events.Input event -> ignore (O.Renderer.handle_input renderer event)
 
 let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
     ?(kitty_events = true) ?(screen = Modes.Alternate) ?(reserve_screen = false)
-    env ~init =
+    ?(detect_terminal_capabilities = false) env ~init =
   Eio.Switch.run @@ fun sw ->
   let mono_clock = Eio.Stdenv.mono_clock env in
   let input_fd, output_fd = open_tty ~sw () in
@@ -196,6 +230,8 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
         | Error error -> Error (O.Error.Output (Output.message error)))
   in
   let input = expect_input (Input_flow.create ()) in
+  let queue = expect_events (Events.create ~capacity:64 ()) in
+  let wakeup = Wakeup.create () in
   let renderer =
     expect_ok
       (O.Renderer.create_with_clock
@@ -228,8 +264,58 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
           ~visible:false ()));
   (match O.Renderer.kitty_keyboard_push renderer ~events:kitty_events () with
   | bytes -> expect_output_ok (Output.write output bytes));
-  let queue = expect_events (Events.create ~capacity:64 ()) in
-  let wakeup = Wakeup.create () in
+  (* The reference setup starts capability detection as part of terminal
+     setup. This harness keeps terminal modes in [Session] and therefore
+     starts only the native probe phase here, after its direct setup writes.
+     The probe itself remains native so XTVERSION ordering, multiplexer
+     wrapping, pending retries, and pixel-resolution querying stay aligned
+     with the reference. *)
+  let capability_detection_timer = ref None in
+  let capability_context_retry_timer = ref None in
+  let capability_detection_active = ref false in
+  let cancel_capability_context_retry () =
+    match !capability_context_retry_timer with
+    | None -> ()
+    | Some timer ->
+        Clock.cancel (Eio_clock.lib_clock clock) timer;
+        capability_context_retry_timer := None
+  in
+  let rec retry_capability_context context () =
+    capability_context_retry_timer := None;
+    match
+      update_capability_protocol_context input context ~queue ~wakeup
+    with
+    | Input.Accepted -> ()
+    | Input.Full ->
+        (* The coordinator retains its pending event. Retry independently of
+           input arrival so a full application queue cannot strand the
+           context transition after the startup window expires. *)
+        let timer =
+          Clock.schedule (Eio_clock.lib_clock clock) ~delay:0.01
+            (retry_capability_context context)
+        in
+        capability_context_retry_timer := Some timer
+  in
+  let schedule_capability_context context =
+    cancel_capability_context_retry ();
+    retry_capability_context context ()
+  in
+  let on_pixel_resolution () =
+    if !capability_detection_active then
+      schedule_capability_context capability_detection_pixel_response_context
+  in
+  if detect_terminal_capabilities then begin
+    capability_detection_active := true;
+    schedule_capability_context capability_detection_context;
+    ignore (expect_ok (O.Renderer.start_capability_detection renderer));
+    let timer =
+      Clock.schedule (Eio_clock.lib_clock clock) ~delay:5.0 (fun () ->
+          capability_detection_timer := None;
+          capability_detection_active := false;
+          schedule_capability_context capability_detection_finished_context)
+    in
+    capability_detection_timer := Some timer
+  end;
   let resize =
     match Resize.create ~sw () with
     | Ok value -> value
@@ -267,6 +353,12 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
        failed cleanup operation must not prevent the terminal session from
        being restored. *)
     ignore (Scheduler.close scheduler);
+    cancel_capability_context_retry ();
+    (match !capability_detection_timer with
+    | None -> ()
+    | Some timer ->
+        Clock.cancel (Eio_clock.lib_clock clock) timer;
+        capability_detection_timer := None);
     ignore (O.Renderer.set_mouse_pointer renderer O.Renderer.Mouse_default);
     ignore
       (Output.write output
@@ -340,4 +432,7 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
              in
              wait_resize ()));
       Eio.Fiber.fork ~sw:bg (fun () ->
-          Dispatch.run ~queue ~wakeup ~handle:(dispatch_handle renderer)))
+          Dispatch.run ~queue ~wakeup
+            ~handle:
+              (dispatch_handle renderer ~capability_detection_active
+                 ~on_pixel_resolution)))

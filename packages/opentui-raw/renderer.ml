@@ -120,6 +120,17 @@ let write_out renderer bytes =
   with_open renderer (fun handle ->
       result_of_status (Native.renderer_write_out handle bytes) ())
 
+let query_terminal_capabilities renderer =
+  with_open renderer (fun handle ->
+      result_of_status (Native.renderer_query_terminal_capabilities handle) ())
+
+let trigger_notification renderer ~message ~title =
+  with_open renderer (fun handle ->
+      let status, triggered =
+        Native.renderer_trigger_notification handle message title
+      in
+      result_of_status status triggered)
+
 let render_status_of_code = function
   | 0 -> Ok Rendered
   | 1 -> Ok Skipped

@@ -207,6 +207,13 @@ void writeOut(
     opentui_native_handle renderer_handle,
     const uint8_t *data,
     uint32_t data_len);
+void queryTerminalCapabilities(opentui_native_handle renderer_handle);
+bool triggerNotification(
+    opentui_native_handle renderer_handle,
+    const uint8_t *message,
+    uint32_t message_len,
+    const uint8_t *title,
+    uint32_t title_len);
 void setBackgroundColor(
     opentui_native_handle renderer_handle,
     const uint16_t *color);
@@ -865,6 +872,13 @@ typedef opentui_native_handle (*opentui_create_renderer_fn)(uint32_t, uint32_t, 
 typedef void (*opentui_set_use_thread_fn)(opentui_native_handle, bool);
 typedef void (*opentui_resize_renderer_fn)(opentui_native_handle, uint32_t, uint32_t);
 typedef void (*opentui_write_out_fn)(opentui_native_handle, const uint8_t *, uint32_t);
+typedef void (*opentui_query_terminal_capabilities_fn)(opentui_native_handle);
+typedef bool (*opentui_trigger_notification_fn)(
+    opentui_native_handle,
+    const uint8_t *,
+    uint32_t,
+    const uint8_t *,
+    uint32_t);
 typedef void (*opentui_set_background_color_fn)(opentui_native_handle, const uint16_t *);
 typedef void (*opentui_set_cursor_position_fn)(opentui_native_handle, int32_t, int32_t, bool);
 typedef void (*opentui_set_cursor_color_fn)(opentui_native_handle, const uint16_t *);
@@ -1029,6 +1043,8 @@ _Static_assert(_Generic(&createRenderer, opentui_create_renderer_fn: 1, default:
 _Static_assert(_Generic(&setUseThread, opentui_set_use_thread_fn: 1, default: 0), "setUseThread ABI drift");
 _Static_assert(_Generic(&resizeRenderer, opentui_resize_renderer_fn: 1, default: 0), "resizeRenderer ABI drift");
 _Static_assert(_Generic(&writeOut, opentui_write_out_fn: 1, default: 0), "writeOut ABI drift");
+_Static_assert(_Generic(&queryTerminalCapabilities, opentui_query_terminal_capabilities_fn: 1, default: 0), "queryTerminalCapabilities ABI drift");
+_Static_assert(_Generic(&triggerNotification, opentui_trigger_notification_fn: 1, default: 0), "triggerNotification ABI drift");
 _Static_assert(_Generic(&setBackgroundColor, opentui_set_background_color_fn: 1, default: 0), "setBackgroundColor ABI drift");
 _Static_assert(_Generic(&setCursorPosition, opentui_set_cursor_position_fn: 1, default: 0), "setCursorPosition ABI drift");
 _Static_assert(_Generic(&setCursorColor, opentui_set_cursor_color_fn: 1, default: 0), "setCursorColor ABI drift");

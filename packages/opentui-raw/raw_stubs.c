@@ -437,6 +437,49 @@ CAMLprim value opentui_raw_renderer_write_out(
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
+CAMLprim value opentui_raw_renderer_query_terminal_capabilities(
+    value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  queryTerminalCapabilities(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_trigger_notification(
+    value handle_value,
+    value message_value,
+    value title_value) {
+  CAMLparam3(handle_value, message_value, title_value);
+  CAMLlocal1(result);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  uint32_t message_length;
+  const uint8_t *title;
+  uint32_t title_length;
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_STALE_HANDLE, false));
+  }
+  if (!Is_block(message_value) || Tag_val(message_value) != String_tag
+      || !read_text_length(message_value, &message_length)
+      || !read_optional_text(title_value, &title, &title_length)) {
+    CAMLreturn(make_status_bool(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, false));
+  }
+
+  bool triggered = triggerNotification(
+      handle,
+      (const uint8_t *)String_val(message_value),
+      message_length,
+      title,
+      title_length);
+  result = make_status_bool(OPENTUI_RAW_STATUS_OK, triggered);
+  CAMLreturn(result);
+}
+
 CAMLprim value opentui_raw_renderer_destroy(value handle_value) {
   CAMLparam1(handle_value);
 

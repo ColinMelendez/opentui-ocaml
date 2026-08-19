@@ -265,6 +265,17 @@ that already own fd 1.
 `Lib.Clock` makes one-shot timing
 injectable for debounce, queues, theme queries, and parser timeouts.
 
+Capability probing is the deliberate exception to the otherwise application-
+owned terminal setup boundary. The reference `CliRenderer.setupTerminal`
+bundles its capability probes with alternate-screen entry, terminal-mode
+changes, feature enabling, and cleanup. The Eio harness already owns those
+mode transitions and the serialized output flow, so calling the complete
+reference setup would duplicate ownership. The native `queryTerminalCapabilities`
+adapter exposes only the reference probe phase instead of reimplementing its
+XTVERSION ordering, multiplexer wrapping, and pending-query retries in OCaml;
+`Renderer.start_capability_detection` is the explicit Core entry point, while
+the application still owns parser framing, timeout policy, and cleanup.
+
 ## Translating TypeScript concepts
 
 The OCaml API follows OpenTUI behavior and source organization without copying

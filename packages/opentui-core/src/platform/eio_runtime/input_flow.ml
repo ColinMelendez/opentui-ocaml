@@ -52,6 +52,9 @@ let timeout_ms input =
 let deadline input =
   Lib.Input_coordinator.deadline input.coordinator
 
+let update_protocol_context input context ~emit =
+  Lib.Input_coordinator.update_protocol_context input.coordinator context ~emit
+
 let now_ms clock =
   let nanoseconds = Mtime.to_uint64_ns (Eio.Time.Mono.now clock) in
   Int64.div nanoseconds 1_000_000L

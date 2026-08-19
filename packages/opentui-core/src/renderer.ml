@@ -72,6 +72,7 @@ type t = {
   output_sink : Output.sink option;
   output_feed : Native_span_feed.t option;
   mutable output_failed : bool;
+  mutable capability_detection_started : bool;
   context : Render_context.t;
   root : Renderable.t;
   children : Layout_children.t;
@@ -568,6 +569,7 @@ let create_with_clock_option ?remote_mode ~output ~clock ~width ~height () =
                               output_sink;
                               output_feed;
                               output_failed = false;
+                              capability_detection_started = false;
                               context;
                               root;
                               children = Layout_children.Private.of_renderable root;
@@ -1158,6 +1160,31 @@ let set_background_color renderer ~color =
             renderer.background_color <- color;
             Render_context.Private.request_render renderer.context;
             Ok ())
+
+let start_capability_detection renderer =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else if renderer.capability_detection_started then Ok ()
+  else
+    match Opentui_raw.Renderer.query_terminal_capabilities renderer.raw with
+    | Error error -> Error (map_raw_error error)
+    | Ok () ->
+        renderer.capability_detection_started <- true;
+        (* The native probe is output side effect, but sink-backed renderers
+           publish native control bytes while a frame drains their output
+           feed. Request that flush even though no retained-tree buffer changed. *)
+        Render_context.Private.request_render renderer.context;
+        Ok ()
+
+let trigger_notification renderer ~message ?title () =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else
+    match
+      Opentui_raw.Renderer.trigger_notification renderer.raw
+        ~message:(Bytes.of_string message)
+        ~title:(Option.map Bytes.of_string title)
+    with
+    | Error error -> Error (map_raw_error error)
+    | Ok triggered -> Ok triggered
 
 let set_cursor_position renderer ~x ~y ?(visible = true) () =
   Render_context.set_cursor_position renderer.context ~x ~y ~visible ()

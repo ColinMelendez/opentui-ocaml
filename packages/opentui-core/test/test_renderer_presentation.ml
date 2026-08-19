@@ -61,6 +61,21 @@ let () =
           ignore (expect_ok (Renderer.render renderer ~force:true));
           equal bool false (expect_ok (Renderer.has_pending_render renderer));
           Renderer.destroy renderer);
+      test "capability detection is idempotent and requests a flush" (fun () ->
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:Renderer.Output.Memory ~width:2l ~height:1l ())
+          in
+          equal bool false (expect_ok (Renderer.has_pending_render renderer));
+          ignore (expect_ok (Renderer.start_capability_detection renderer));
+          equal bool true (expect_ok (Renderer.has_pending_render renderer));
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal bool false (expect_ok (Renderer.has_pending_render renderer));
+          ignore (expect_ok (Renderer.start_capability_detection renderer));
+          equal bool false (expect_ok (Renderer.has_pending_render renderer));
+          Renderer.destroy renderer;
+          expect_error Opentui_core.Error.Closed
+            (Renderer.start_capability_detection renderer));
       test "cursor presentation is native, persistent, and resize-clamped" (fun () ->
           let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:3l ~height:2l ()) in
           let initial = expect_ok (Renderer.cursor_state renderer) in

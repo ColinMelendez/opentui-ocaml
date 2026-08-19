@@ -52,6 +52,14 @@ external renderer_write_out :
   Native_token.Renderer.t -> bytes -> int =
   "opentui_raw_renderer_write_out"
 
+external renderer_query_terminal_capabilities :
+  Native_token.Renderer.t -> int =
+  "opentui_raw_renderer_query_terminal_capabilities"
+
+external renderer_trigger_notification :
+  Native_token.Renderer.t -> bytes -> bytes option -> int * bool =
+  "opentui_raw_renderer_trigger_notification"
+
 external renderer_set_background_color :
   Native_token.Renderer.t -> color -> int =
   "opentui_raw_renderer_set_background_color"

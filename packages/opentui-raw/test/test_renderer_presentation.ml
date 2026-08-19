@@ -22,6 +22,29 @@ let assert_color expected actual =
   equal int expected_blue blue;
   equal int expected_alpha alpha
 
+let contains_substring ~needle haystack =
+  let needle_length = String.length needle in
+  let haystack_length = String.length haystack in
+  let found = ref false in
+  if Int.equal needle_length 0 then found := true
+  else if Int.compare needle_length haystack_length <= 0 then
+    for offset = 0 to haystack_length - needle_length do
+      if String.equal
+           (String.sub haystack offset needle_length)
+           needle
+      then found := true
+    done;
+  !found
+
+let collect_spans spans =
+  let output = Buffer.create 256 in
+  List.iter
+    (fun span ->
+      Buffer.add_bytes output (Opentui_raw.Span_feed.Span.bytes span);
+      ignore (Opentui_raw.Span_feed.Span.release span))
+    spans;
+  Buffer.contents output
+
 let () =
   run "opentui-raw-renderer-presentation"
     [
@@ -99,6 +122,10 @@ let () =
           Opentui_raw.Renderer.close renderer);
       test "presentation operations report closed ownership" (fun () ->
           let renderer = expect_ok (Renderer.create ~width:1l ~height:1l ()) in
+          equal bool false
+            (expect_ok
+               (Renderer.trigger_notification renderer
+                  ~message:(Bytes.of_string "notification test") ~title:None));
           Renderer.close renderer;
           Renderer.close renderer;
           expect_error Opentui_raw.Error.Closed (Renderer.cursor_state renderer);
@@ -117,7 +144,32 @@ let () =
           expect_error Opentui_raw.Error.Closed
             (Renderer.set_cursor_color renderer ~color:Opentui_raw.Color.white);
           expect_error Opentui_raw.Error.Closed
+            (Renderer.trigger_notification renderer
+               ~message:(Bytes.of_string "notification test") ~title:None);
+          expect_error Opentui_raw.Error.Closed
             (Renderer.resize renderer ~width:2l ~height:2l))
+      ;
+      test "capability detection delegates probe construction to native" (fun () ->
+          let feed = expect_ok (Opentui_raw.Span_feed.create ()) in
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:(Renderer.Feed feed)
+                 ~remote_mode:Renderer.Remote ~width:3l ~height:1l ())
+          in
+          ignore (expect_ok (Renderer.query_terminal_capabilities renderer));
+          let output = collect_spans (expect_ok (Renderer.drain_output renderer)) in
+          equal bool true (contains_substring ~needle:"\027[>0q" output);
+          equal bool true
+            (contains_substring
+               ~needle:"\027]99;i=opentui-notifications:p=?;" output);
+          equal bool true (contains_substring ~needle:"\027[14t" output);
+          equal bool false (contains_substring ~needle:"\027[?1049h" output);
+          Renderer.close renderer;
+          let teardown = expect_ok (Renderer.drain_output renderer) in
+          List.iter
+            (fun span -> ignore (Opentui_raw.Span_feed.Span.release span))
+            teardown;
+          ignore (expect_ok (Opentui_raw.Span_feed.close feed)))
       ;
       test "feed output preserves styled native frames through teardown" (fun () ->
           let feed = expect_ok (Opentui_raw.Span_feed.create ()) in

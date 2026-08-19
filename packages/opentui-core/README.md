@@ -58,7 +58,10 @@ boundary. Core does expose the renderer's explicit `Memory`, `Stdout`, and
 feed-backed sink targets; the Eio application normally connects the sink to its
 serialized `Output_flow`. Terminal setup, output-flow ownership, and
 asynchronous query scheduling remain application/Eio concerns; Core does not
-start terminal I/O or fibers.
+start terminal I/O or fibers. Applications that own those boundaries can call
+`Renderer.start_capability_detection` explicitly; it emits the native
+reference probe phase but leaves parser protocol context, timeout policy, and
+terminal-mode cleanup to the application.
 
 ## Core foundations
 

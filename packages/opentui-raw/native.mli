@@ -44,6 +44,9 @@ val renderer_create :
   int * Native_token.Renderer.t
 val renderer_resize : Native_token.Renderer.t -> int32 -> int32 -> int
 val renderer_write_out : Native_token.Renderer.t -> bytes -> int
+val renderer_query_terminal_capabilities : Native_token.Renderer.t -> int
+val renderer_trigger_notification :
+  Native_token.Renderer.t -> bytes -> bytes option -> int * bool
 val renderer_set_background_color :
   Native_token.Renderer.t -> color -> int
 val renderer_set_cursor_position :

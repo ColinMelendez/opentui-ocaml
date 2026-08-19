@@ -65,6 +65,12 @@ let drain coordinator ~emit =
   done;
   !status
 
+let update_protocol_context coordinator context ~emit =
+  Stdin_parser.update_protocol_context coordinator.parser context;
+  let status = drain coordinator ~emit in
+  if Int.equal (pending_bytes coordinator) 0 then coordinator.deadline <- None;
+  status
+
 let valid_range ~size ~off ~len =
   Int.compare off 0 >= 0
   && Int.compare len 0 >= 0

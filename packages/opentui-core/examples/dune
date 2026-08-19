@@ -52,3 +52,8 @@
  (name nested_zindex_demo)
  (modules nested_zindex_demo)
  (libraries opentui-core opentui_examples_lib eio_main))
+
+(executable
+ (name notification_demo)
+ (modules notification_demo)
+ (libraries opentui-core opentui_examples_lib eio_main))

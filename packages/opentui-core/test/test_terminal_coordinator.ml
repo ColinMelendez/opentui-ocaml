@@ -55,6 +55,34 @@ let () =
           | Input.Key { key = Opentui_core.Lib.Key_decoder.Named Escape; _ } ->
               ()
           | _ -> fail "timeout emitted the wrong key");
+      test "capability protocol context drains a deferred response prefix" (fun () ->
+          let coordinator = expect_ok (Coordinator.create ~timeout_ms:20 ()) in
+          let events, emit = sink () in
+          let active_context =
+            {
+              Input.default_protocol_context with
+              private_capability_replies_active = true;
+            }
+          in
+          expect_accepted
+            (Coordinator.update_protocol_context coordinator active_context
+               ~emit);
+          expect_push
+            (expect_ok
+               (Coordinator.push_bytes coordinator ~now_ms:100L ~emit
+                  ~source:(Bytes.of_string "\x1b[?1;") ~off:0 ~len:5));
+          equal int 0 (Queue.length events);
+          expect_accepted
+            (Coordinator.update_protocol_context coordinator
+               Input.default_protocol_context ~emit);
+          equal (option int64) None (Coordinator.deadline coordinator);
+          match Queue.take events with
+          | Input.Response { bytes; _ } ->
+              equal string "\x1b[?1;" (Bytes.to_string bytes)
+          | Input.Key _ -> fail "deferred capability prefix became a key"
+          | Input.Mouse _ -> fail "deferred capability prefix became mouse input"
+          | Input.Paste _ -> fail "deferred capability prefix became paste input"
+          | exception Queue.Empty -> fail "context transition dropped response");
       test "continuation before deadline wins and disarms" (fun () ->
           let coordinator = expect_ok (Coordinator.create ~timeout_ms:20 ()) in
           let events, emit = sink () in
