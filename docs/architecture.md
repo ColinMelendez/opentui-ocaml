@@ -27,12 +27,13 @@ drop-in TypeScript API or exact host-runtime parity.
 
 ## Packages and dependency direction
 
-The repository contains two public OCaml packages:
+The repository contains three public OCaml packages:
 
 | Package | Responsibility | Dependency direction |
 | --- | --- | --- |
 | `opentui-raw` | Calls the reference Zig renderer through C, validates ABI values, and owns foreign resource lifetimes. | Independent of `opentui-core`. |
 | `opentui-core` | Provides the retained UI tree, renderer composition, renderables, terminal protocols, and Eio/Unix terminal modules. | Depends on `opentui-raw`. |
+| `opentui-wgpu` | Provides the typed `webgpu.h` boundary over the pinned official wgpu-native release for the [three renderer](major-features/in-progress/three-renderer/feature.md). | Independent of `opentui-raw` and `opentui-core`; consumes wgpu-native through Nix and pkg-config only. |
 
 The dependency direction is:
 
@@ -40,10 +41,10 @@ The dependency direction is:
 OCaml application
        │
        ▼
-opentui-core
-       │
-       ▼
-opentui-raw
+opentui-core          opentui-wgpu
+       │                   │
+       ▼                   ▼
+opentui-raw          pinned wgpu-native release
        │
        ▼
 reference Zig renderer in vendor/opentui
@@ -52,7 +53,11 @@ reference Zig renderer in vendor/opentui
 `opentui-raw` is a separate package because ABI calls and foreign-resource
 lifetimes have different invariants from retained UI ownership and terminal
 policy. The higher-level package can use checked renderer operations without
-publishing packed handles, raw pointers, or C callback details.
+publishing packed handles, raw pointers, or C callback details. `opentui-wgpu`
+applies the same discipline to the WebGPU device boundary: it stays
+independent of the terminal packages, and the planned `opentui-three` package
+will depend on both `opentui-core` and `opentui-wgpu` without introducing a
+GPU dependency into either.
 
 ## Package-local validation and tooling
 
@@ -65,6 +70,7 @@ Code that exercises one package is stored in that package directory:
 | `packages/opentui-core/reference` | Optional comparisons between core behavior and the TypeScript reference source. |
 | `packages/opentui-core/bench` | Release-profile workloads, allocation baselines, and tracing wrappers for core behavior. |
 | `packages/opentui-raw/test` | Tests for the raw ABI, C stubs, foreign ownership, and the native link seam. |
+| `packages/opentui-wgpu` | Scaffold for the typed WebGPU boundary; binding modules, C stubs, and tests land with the three-renderer phases. |
 
 The repository-level `docs/` directory contains architecture documents,
 source mapping, and cross-cutting feature records. Architecture documents

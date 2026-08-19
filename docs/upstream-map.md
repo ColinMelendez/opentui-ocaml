@@ -29,7 +29,7 @@ correspondence intentionally stops.
 | `packages/examples` | `packages/opentui-core/examples` | Support layout |
 | `packages/qrcode` | `deferred` | Separate feature |
 | `packages/ssh` | `deferred` | Separate feature |
-| `packages/three` | no OCaml package | No corresponding OCaml runtime boundary |
+| `packages/three` | `packages/opentui-wgpu` (native foundation); `opentui-three` planned | Active feature record under `docs/major-features/in-progress/three-renderer/`; phases and acceptance criteria tracked there |
 | `packages/web` | no OCaml package | No corresponding OCaml runtime boundary |
 
 ## `packages/core/src`

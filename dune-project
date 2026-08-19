@@ -36,6 +36,17 @@
   (windtrap :with-test)))
 
 (package
+ (name opentui-wgpu)
+ (synopsis "Typed webgpu.h boundary over the pinned wgpu-native release")
+ (description
+  "The typed low-level WebGPU boundary for the OpenTUI OCaml monorepo. It owns audited webgpu.h C stubs and foreign resource lifetimes over the pinned official wgpu-native release, consumed through Nix and pkg-config only.")
+ (license ISC)
+ (authors "Colin <cwrmcolin@gmail.com>")
+ (maintainers "Colin <cwrmcolin@gmail.com>")
+ (depends
+  (ocaml (>= 5.2))))
+
+(package
  (name opentui-bench)
  (synopsis "Benchmark and tracing harnesses for OpenTUI")
  (description

@@ -1,0 +1,3 @@
+(library
+ (name opentui_wgpu)
+ (public_name opentui-wgpu))

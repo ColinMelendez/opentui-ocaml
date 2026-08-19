@@ -310,12 +310,7 @@ Repository policy:
     paths, structured results at every native boundary, warnings treated as
     errors, no ppx. Matrix inversion returns an option or result, never
     raises. Enforced by review per phase.
-17. Package-count documents drift: `dune-project` declares three packages
-    (`opentui-raw`, `opentui-core`, and the development-only `opentui-bench`),
-    while `docs/architecture.md` states "two public OCaml packages"; both
-    require updates in Phase 0, plus flipping the `packages/three` row in
-    `docs/upstream-map.md`. Retire with those doc commits.
-18. Box2D unit scale is meter-tuned while sprite-effect physics operates at
+17. Box2D unit scale is meter-tuned while sprite-effect physics operates at
     pixel scale; tunneling and weak gravity result from naive scales. One
     pixel-to-meter constant must be agreed and documented in the adapter
     before Phase 5. Retire with the adapter design note.

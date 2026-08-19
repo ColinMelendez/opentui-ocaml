@@ -17,6 +17,9 @@ The repository currently provides:
 - the Dune monorepo, Nix development environment, and fixed OpenTUI reference
   source;
 - `opentui-raw`, which owns the audited Zig/C ABI and native resource boundary;
+- `opentui-wgpu`, a scaffold for the typed `webgpu.h` boundary over the pinned
+  official wgpu-native release, registered for the three-renderer feature
+  record;
 - `opentui-core` renderer/context ownership, borrowed native buffers, and
   independently owned Yoga nodes;
 - typed incremental terminal parsing in `Lib.Stdin_parser`, with
