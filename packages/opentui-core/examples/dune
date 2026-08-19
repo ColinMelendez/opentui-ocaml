@@ -47,3 +47,8 @@
  (name text_truncation_demo)
  (modules text_truncation_demo)
  (libraries opentui-core opentui_examples_lib eio_main))
+
+(executable
+ (name nested_zindex_demo)
+ (modules nested_zindex_demo)
+ (libraries opentui-core opentui_examples_lib eio_main))

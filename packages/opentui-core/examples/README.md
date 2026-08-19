@@ -47,6 +47,9 @@ The examples directory contains executable programs for the public
   `vendor/opentui/packages/examples/src/text-truncation-demo.ts`: single-line,
   multiline, Unicode, and styled text examples with interactive truncation,
   wrapping, column sizing, and pointer-selection details.
+- `nested_zindex_demo.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/nested-zindex-demo.ts`: overlapping
+  child renderables in three animated parent z-index groups.
 
 The shared example helpers live in `lib/`:
 
@@ -167,3 +170,12 @@ Text truncation keys: `T` toggles truncation, `W` cycles no-wrap/character-wrap/
 word-wrap, `R` changes the relative column sizes, `C` clears the selection,
 backtick/`"` toggles the console, and Ctrl+C exits. Drag across the examples to
 see the selected-text summary.
+
+Run the nested z-index demo:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/nested_zindex_demo.exe
+```
+
+Nested z-index keys: `+`/`=` speeds up the parent-group animation,
+`-`/`_` slows it down, backtick/`"` toggles the console, and Ctrl+C exits.
