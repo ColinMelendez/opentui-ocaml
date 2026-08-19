@@ -115,6 +115,37 @@ let fill_rect buffer ~x ~y ~width ~height ~background =
              (Int32.of_int x, Int32.of_int y, Int32.of_int width,
               Int32.of_int height, Color.Private.to_raw background)))
 
+let draw_grayscale_buffer_impl buffer ~supersampled ~x ~y ~intensities ~width
+    ~height ~foreground ~background =
+  Result.bind (ensure_open buffer) (fun () ->
+      if width < 0 || height < 0 then Error Error.Invalid_argument
+      else
+        let args =
+          ( Int32.of_int x,
+            Int32.of_int y,
+            intensities,
+            Int32.of_int width,
+            Int32.of_int height,
+            Option.map Color.Private.to_raw foreground,
+            Option.map Color.Private.to_raw background )
+        in
+        let draw =
+          if supersampled then
+            Opentui_raw.Optimized_buffer.draw_grayscale_buffer_supersampled
+          else Opentui_raw.Optimized_buffer.draw_grayscale_buffer
+        in
+        map_result (draw buffer.raw args))
+
+let draw_grayscale_buffer buffer ~x ~y ~intensities ~width ~height
+    ?foreground ?background () =
+  draw_grayscale_buffer_impl buffer ~supersampled:false ~x ~y ~intensities ~width
+    ~height ~foreground ~background
+
+let draw_grayscale_buffer_supersampled buffer ~x ~y ~intensities ~width ~height
+    ?foreground ?background () =
+  draw_grayscale_buffer_impl buffer ~supersampled:true ~x ~y ~intensities ~width
+    ~height ~foreground ~background
+
 let draw_frame_buffer buffer ~source ~x ~y ?(source_x = 0) ?(source_y = 0)
     ?(source_width = 0) ?(source_height = 0) () =
   Result.bind (ensure_open buffer) (fun () ->

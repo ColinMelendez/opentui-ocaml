@@ -641,6 +641,16 @@ comptime {
         "bufferResize",
     );
     expectType(
+        @TypeOf(opentui.bufferDrawGrayscaleBuffer),
+        fn (opentui.NativeHandle, i32, i32, [*]const f32, u32, u32, ?[*]const u16, ?[*]const u16) callconv(.c) void,
+        "bufferDrawGrayscaleBuffer",
+    );
+    expectType(
+        @TypeOf(opentui.bufferDrawGrayscaleBufferSupersampled),
+        fn (opentui.NativeHandle, i32, i32, [*]const f32, u32, u32, ?[*]const u16, ?[*]const u16) callconv(.c) void,
+        "bufferDrawGrayscaleBufferSupersampled",
+    );
+    expectType(
         @TypeOf(opentui.bufferDrawGrid),
         fn (opentui.NativeHandle, [*]const u32, [*]const u16, [*]const u16, [*]const i32, u32, [*]const i32, u32, *const opentui.ExternalGridDrawOptions) callconv(.c) void,
         "bufferDrawGrid",

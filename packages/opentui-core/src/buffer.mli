@@ -108,6 +108,30 @@ val fill_rect :
   background:Color.t ->
   (unit, Error.t) result
 
+val draw_grayscale_buffer :
+  t ->
+  x:int32 ->
+  y:int32 ->
+  intensities:floatarray ->
+  width:int32 ->
+  height:int32 ->
+  ?foreground:Color.t ->
+  ?background:Color.t ->
+  unit ->
+  (unit, Error.t) result
+
+val draw_grayscale_buffer_supersampled :
+  t ->
+  x:int32 ->
+  y:int32 ->
+  intensities:floatarray ->
+  width:int32 ->
+  height:int32 ->
+  ?foreground:Color.t ->
+  ?background:Color.t ->
+  unit ->
+  (unit, Error.t) result
+
 (** [write_resolved_chars buffer ~output ~add_line_breaks] writes the
     resolved native output into caller-owned [output]. The returned count is
     the defined prefix length; insufficient capacity is a structured error. *)

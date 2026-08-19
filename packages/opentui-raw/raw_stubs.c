@@ -112,6 +112,38 @@ static bool read_int32_array(
   return true;
 }
 
+static bool read_grayscale_floatarray(
+    value array_value,
+    uint32_t width,
+    uint32_t height,
+    float **output) {
+  if (!Is_block(array_value) || Tag_val(array_value) != Double_array_tag) {
+    return false;
+  }
+
+  uint64_t array_length = (uint64_t)Wosize_val(array_value);
+  uint64_t expected_length = (uint64_t)width * (uint64_t)height;
+  if (array_length != expected_length
+      || expected_length > SIZE_MAX / sizeof(float)) {
+    return false;
+  }
+
+  float *values = NULL;
+  if (expected_length > 0) {
+    values = caml_stat_alloc((size_t)expected_length * sizeof(*values));
+  }
+  for (uint64_t index = 0; index < expected_length; index++) {
+    double input = Double_field(array_value, (mlsize_t)index);
+    if (!isfinite(input)) {
+      if (values != NULL) caml_stat_free(values);
+      return false;
+    }
+    values[index] = (float)input;
+  }
+  *output = values;
+  return true;
+}
+
 static bool renderer_buffers_have_dimensions(
     opentui_native_handle renderer,
     uint32_t width,
@@ -1301,6 +1333,70 @@ CAMLprim value opentui_raw_optimized_buffer_fill_rect(
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
+static value optimized_buffer_draw_grayscale_buffer(
+    value handle_value,
+    value args_value,
+    bool supersampled) {
+  CAMLparam2(handle_value, args_value);
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (!optimized_buffer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!Is_block(args_value) || Wosize_val(args_value) != 7) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  int32_t x = Int32_val(Field(args_value, 0));
+  int32_t y = Int32_val(Field(args_value, 1));
+  int32_t width_value = Int32_val(Field(args_value, 3));
+  int32_t height_value = Int32_val(Field(args_value, 4));
+  if (width_value < 0 || height_value < 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  uint32_t width = (uint32_t)width_value;
+  uint32_t height = (uint32_t)height_value;
+  float *intensities = NULL;
+  uint16_t foreground[4];
+  uint16_t background[4];
+  const uint16_t *foreground_pointer;
+  const uint16_t *background_pointer;
+  if (!read_grayscale_floatarray(Field(args_value, 2), width, height,
+                                 &intensities)
+      || !read_optional_color(Field(args_value, 5), foreground,
+                              &foreground_pointer)
+      || !read_optional_color(Field(args_value, 6), background,
+                              &background_pointer)) {
+    if (intensities != NULL) caml_stat_free(intensities);
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  if (supersampled) {
+    bufferDrawGrayscaleBufferSupersampled(
+        handle, x, y, intensities, width, height, foreground_pointer,
+        background_pointer);
+  } else {
+    bufferDrawGrayscaleBuffer(
+        handle, x, y, intensities, width, height, foreground_pointer,
+        background_pointer);
+  }
+  if (intensities != NULL) caml_stat_free(intensities);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_optimized_buffer_draw_grayscale_buffer(
+    value handle_value,
+    value args_value) {
+  return optimized_buffer_draw_grayscale_buffer(handle_value, args_value, false);
+}
+
+CAMLprim value opentui_raw_optimized_buffer_draw_grayscale_buffer_supersampled(
+    value handle_value,
+    value args_value) {
+  return optimized_buffer_draw_grayscale_buffer(handle_value, args_value, true);
+}
+
 CAMLprim value opentui_raw_optimized_buffer_draw_frame_buffer(
     value target_value,
     value args_value) {
@@ -1430,6 +1526,18 @@ CAMLprim value opentui_raw_buffer_fill_rect(
     value handle_value,
     value rect_value) {
   return opentui_raw_optimized_buffer_fill_rect(handle_value, rect_value);
+}
+
+CAMLprim value opentui_raw_buffer_draw_grayscale_buffer(
+    value handle_value,
+    value args_value) {
+  return optimized_buffer_draw_grayscale_buffer(handle_value, args_value, false);
+}
+
+CAMLprim value opentui_raw_buffer_draw_grayscale_buffer_supersampled(
+    value handle_value,
+    value args_value) {
+  return optimized_buffer_draw_grayscale_buffer(handle_value, args_value, true);
 }
 
 CAMLprim value opentui_raw_buffer_push_scissor_rect(

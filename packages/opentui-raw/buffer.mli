@@ -80,6 +80,15 @@ val fill_rect :
   background:Color.t ->
   (unit, Error.t) result
 
+val draw_grayscale_buffer :
+  t ->
+  int32 * int32 * floatarray * int32 * int32 * Color.t option * Color.t option ->
+  (unit, Error.t) result
+val draw_grayscale_buffer_supersampled :
+  t ->
+  int32 * int32 * floatarray * int32 * int32 * Color.t option * Color.t option ->
+  (unit, Error.t) result
+
 val draw_frame_buffer :
   t ->
   source:Optimized_buffer.t ->

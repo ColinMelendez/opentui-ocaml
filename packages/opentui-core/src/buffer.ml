@@ -69,6 +69,38 @@ let fill_rect buffer ~x ~y ~width ~height ~background =
     (Opentui_raw.Buffer.fill_rect (raw buffer)
        ~x ~y ~width ~height ~background:(Color.Private.to_raw background))
 
+let draw_grayscale_buffer_impl buffer ~supersampled ~x ~y ~intensities ~width
+    ~height ~foreground ~background =
+  if width < 0l || height < 0l then Error Error.Invalid_argument
+  else
+    let args =
+      ( x,
+        y,
+        intensities,
+        width,
+        height,
+        Option.map Color.Private.to_raw foreground,
+        Option.map Color.Private.to_raw background )
+    in
+    let draw =
+      if supersampled then Opentui_raw.Buffer.draw_grayscale_buffer_supersampled
+      else Opentui_raw.Buffer.draw_grayscale_buffer
+    in
+    match draw (raw buffer) args with
+    | Ok value -> Ok value
+    | Error Opentui_raw.Error.Invalid_argument -> Error Error.Invalid_argument
+    | Error error -> map_error (Error error)
+
+let draw_grayscale_buffer buffer ~x ~y ~intensities ~width ~height
+    ?foreground ?background () =
+  draw_grayscale_buffer_impl buffer ~supersampled:false ~x ~y ~intensities ~width
+    ~height ~foreground ~background
+
+let draw_grayscale_buffer_supersampled buffer ~x ~y ~intensities ~width ~height
+    ?foreground ?background () =
+  draw_grayscale_buffer_impl buffer ~supersampled:true ~x ~y ~intensities ~width
+    ~height ~foreground ~background
+
 let write_resolved_chars buffer ~output ~add_line_breaks =
   map_error
     (Opentui_raw.Buffer.write_resolved_chars (raw buffer) ~output

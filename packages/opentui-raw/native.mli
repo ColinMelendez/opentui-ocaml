@@ -1,6 +1,8 @@
 type color = int * int * int * int
 type cell = int32 * int32 * int32 * color * color * int32
 type text = string * int32 * int32 * color * color * int32
+type grayscale_buffer =
+  int32 * int32 * floatarray * int32 * int32 * color option * color option
 type box =
   int32 * int32 * int32 * int32 * int32 array * int32 * color * color * color
   * string option * string option
@@ -89,6 +91,10 @@ val buffer_draw_text : Native_token.Buffer.t -> text -> int
 val buffer_set_cell_with_alpha_blending : Native_token.Buffer.t -> cell -> int
 val buffer_fill_rect :
   Native_token.Buffer.t -> int32 * int32 * int32 * int32 * color -> int
+val buffer_draw_grayscale_buffer :
+  Native_token.Buffer.t -> grayscale_buffer -> int
+val buffer_draw_grayscale_buffer_supersampled :
+  Native_token.Buffer.t -> grayscale_buffer -> int
 val buffer_draw_box : Native_token.Buffer.t -> box -> int
 val buffer_draw_text_buffer_view :
   Native_token.Buffer.t -> Native_token.Text_buffer_view.t -> int32 -> int32 -> int
@@ -159,6 +165,10 @@ module Optimized_buffer : sig
     Native_token.Optimized_buffer.t -> Native_token.Text_buffer_view.t -> int32 -> int32 -> int
   val fill_rect :
     Native_token.Optimized_buffer.t -> int32 * int32 * int32 * int32 * color -> int
+  val draw_grayscale_buffer :
+    Native_token.Optimized_buffer.t -> grayscale_buffer -> int
+  val draw_grayscale_buffer_supersampled :
+    Native_token.Optimized_buffer.t -> grayscale_buffer -> int
   val draw_frame_buffer :
     Native_token.Optimized_buffer.t ->
     (int32 * int32 * Native_token.Optimized_buffer.t * int32 * int32 * int32 * int32) -> int

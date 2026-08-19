@@ -316,6 +316,24 @@ void bufferFillRect(
     uint32_t height,
     const uint16_t *background);
 void bufferResize(opentui_native_handle buffer_handle, uint32_t width, uint32_t height);
+void bufferDrawGrayscaleBuffer(
+    opentui_native_handle buffer_handle,
+    int32_t pos_x,
+    int32_t pos_y,
+    const float *intensities,
+    uint32_t source_width,
+    uint32_t source_height,
+    const uint16_t *foreground,
+    const uint16_t *background);
+void bufferDrawGrayscaleBufferSupersampled(
+    opentui_native_handle buffer_handle,
+    int32_t pos_x,
+    int32_t pos_y,
+    const float *intensities,
+    uint32_t source_width,
+    uint32_t source_height,
+    const uint16_t *foreground,
+    const uint16_t *background);
 typedef struct opentui_external_grid_draw_options {
   bool draw_inner;
   bool draw_outer;
@@ -832,6 +850,8 @@ typedef void (*opentui_buffer_set_cell_fn)(opentui_native_handle, uint32_t, uint
 typedef void (*opentui_buffer_set_cell_with_alpha_blending_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, const uint16_t *, const uint16_t *, uint32_t);
 typedef void (*opentui_buffer_fill_rect_fn)(opentui_native_handle, uint32_t, uint32_t, uint32_t, uint32_t, const uint16_t *);
 typedef void (*opentui_buffer_resize_fn)(opentui_native_handle, uint32_t, uint32_t);
+typedef void (*opentui_buffer_draw_grayscale_buffer_fn)(opentui_native_handle, int32_t, int32_t, const float *, uint32_t, uint32_t, const uint16_t *, const uint16_t *);
+typedef void (*opentui_buffer_draw_grayscale_buffer_supersampled_fn)(opentui_native_handle, int32_t, int32_t, const float *, uint32_t, uint32_t, const uint16_t *, const uint16_t *);
 typedef void (*opentui_buffer_draw_grid_fn)(opentui_native_handle, const uint32_t *, const uint16_t *, const uint16_t *, const int32_t *, uint32_t, const int32_t *, uint32_t, const opentui_external_grid_draw_options *);
 typedef void (*opentui_buffer_draw_text_buffer_view_fn)(opentui_native_handle, opentui_native_handle, int32_t, int32_t);
 typedef uint8_t (*opentui_buffer_draw_image_fn)(opentui_native_handle, opentui_native_handle, const opentui_external_image_draw_options *);
@@ -1003,6 +1023,8 @@ _Static_assert(_Generic(&bufferSetCell, opentui_buffer_set_cell_fn: 1, default: 
 _Static_assert(_Generic(&bufferSetCellWithAlphaBlending, opentui_buffer_set_cell_with_alpha_blending_fn: 1, default: 0), "bufferSetCellWithAlphaBlending ABI drift");
 _Static_assert(_Generic(&bufferFillRect, opentui_buffer_fill_rect_fn: 1, default: 0), "bufferFillRect ABI drift");
 _Static_assert(_Generic(&bufferResize, opentui_buffer_resize_fn: 1, default: 0), "bufferResize ABI drift");
+_Static_assert(_Generic(&bufferDrawGrayscaleBuffer, opentui_buffer_draw_grayscale_buffer_fn: 1, default: 0), "bufferDrawGrayscaleBuffer ABI drift");
+_Static_assert(_Generic(&bufferDrawGrayscaleBufferSupersampled, opentui_buffer_draw_grayscale_buffer_supersampled_fn: 1, default: 0), "bufferDrawGrayscaleBufferSupersampled ABI drift");
 _Static_assert(_Generic(&bufferDrawGrid, opentui_buffer_draw_grid_fn: 1, default: 0), "bufferDrawGrid ABI drift");
 _Static_assert(_Generic(&bufferDrawTextBufferView, opentui_buffer_draw_text_buffer_view_fn: 1, default: 0), "bufferDrawTextBufferView ABI drift");
 _Static_assert(_Generic(&bufferDrawImage, opentui_buffer_draw_image_fn: 1, default: 0), "bufferDrawImage ABI drift");

@@ -21,6 +21,14 @@ val draw_text : t -> text -> (unit, Error.t) result
 val draw_text_buffer_view :
   t -> Text_buffer_view.t -> int32 -> int32 -> (unit, Error.t) result
 val fill_rect : t -> int32 * int32 * int32 * int32 * Color.t -> (unit, Error.t) result
+val draw_grayscale_buffer :
+  t ->
+  int32 * int32 * floatarray * int32 * int32 * Color.t option * Color.t option ->
+  (unit, Error.t) result
+val draw_grayscale_buffer_supersampled :
+  t ->
+  int32 * int32 * floatarray * int32 * int32 * Color.t option * Color.t option ->
+  (unit, Error.t) result
 val draw_frame_buffer :
   t -> int32 * int32 * t * int32 * int32 * int32 * int32 -> (unit, Error.t) result
 val draw_grid :

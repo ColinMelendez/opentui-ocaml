@@ -1,6 +1,8 @@
 type color = int * int * int * int
 type cell = int32 * int32 * int32 * color * color * int32
 type text = string * int32 * int32 * color * color * int32
+type grayscale_buffer =
+  int32 * int32 * floatarray * int32 * int32 * color option * color option
 type box =
   int32 * int32 * int32 * int32 * int32 array * int32 * color * color * color
   * string option * string option
@@ -167,6 +169,14 @@ external buffer_fill_rect :
   Native_token.Buffer.t -> int32 * int32 * int32 * int32 * color -> int =
   "opentui_raw_buffer_fill_rect"
 
+external buffer_draw_grayscale_buffer :
+  Native_token.Buffer.t -> grayscale_buffer -> int =
+  "opentui_raw_buffer_draw_grayscale_buffer"
+
+external buffer_draw_grayscale_buffer_supersampled :
+  Native_token.Buffer.t -> grayscale_buffer -> int =
+  "opentui_raw_buffer_draw_grayscale_buffer_supersampled"
+
 external buffer_draw_box : Native_token.Buffer.t -> box -> int =
   "opentui_raw_buffer_draw_box"
 
@@ -320,6 +330,14 @@ module Optimized_buffer = struct
   external fill_rect :
     Native_token.Optimized_buffer.t -> int32 * int32 * int32 * int32 * color -> int =
     "opentui_raw_optimized_buffer_fill_rect"
+
+  external draw_grayscale_buffer :
+    Native_token.Optimized_buffer.t -> grayscale_buffer -> int =
+    "opentui_raw_optimized_buffer_draw_grayscale_buffer"
+
+  external draw_grayscale_buffer_supersampled :
+    Native_token.Optimized_buffer.t -> grayscale_buffer -> int =
+    "opentui_raw_optimized_buffer_draw_grayscale_buffer_supersampled"
 
   external draw_frame_buffer :
     Native_token.Optimized_buffer.t ->

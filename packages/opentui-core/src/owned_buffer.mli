@@ -72,6 +72,30 @@ val fill_rect :
   background:Color.t ->
   (unit, Error.t) result
 
+val draw_grayscale_buffer :
+  t ->
+  x:int ->
+  y:int ->
+  intensities:floatarray ->
+  width:int ->
+  height:int ->
+  ?foreground:Color.t ->
+  ?background:Color.t ->
+  unit ->
+  (unit, Error.t) result
+
+val draw_grayscale_buffer_supersampled :
+  t ->
+  x:int ->
+  y:int ->
+  intensities:floatarray ->
+  width:int ->
+  height:int ->
+  ?foreground:Color.t ->
+  ?background:Color.t ->
+  unit ->
+  (unit, Error.t) result
+
 val draw_frame_buffer :
   t ->
   source:t ->

@@ -247,6 +247,63 @@ let test_post_filters_and_effects () =
   | Ok _ -> fail "negative renderer delta was accepted");
   Renderer.destroy renderer
 
+let test_grayscale_buffers () =
+  let renderer =
+    match Renderer.create ~output:Renderer.Output.Memory ~width:8l ~height:4l () with
+    | Ok renderer -> renderer
+    | Error error -> fail ("grayscale renderer creation failed: " ^ Core.Error.message error)
+  in
+  let buffer =
+    match Renderer.next_buffer renderer with
+    | Ok buffer -> buffer
+    | Error error -> fail ("grayscale next buffer failed: " ^ Core.Error.message error)
+  in
+  (match Core.Buffer.clear buffer ~background:Core.Color.black with
+  | Ok () -> ()
+  | Error error -> fail ("clear before grayscale draw failed: " ^ Core.Error.message error));
+  let standard : floatarray = [| 1.0; 0.0 |] in
+  (match
+     Core.Buffer.draw_grayscale_buffer buffer ~x:0l ~y:0l
+       ~intensities:standard ~width:2l ~height:1l ()
+   with
+  | Ok () -> ()
+  | Error error -> fail ("standard grayscale draw failed: " ^ Core.Error.message error));
+  (match Core.Buffer.snapshot buffer with
+  | Ok _ -> ()
+  | Error error -> fail ("snapshot after standard draw failed: " ^ Core.Error.message error));
+  let supersampled : floatarray = [| 1.0; 1.0; 1.0; 1.0 |] in
+  (match
+     Core.Buffer.draw_grayscale_buffer_supersampled buffer ~x:1l ~y:1l
+       ~intensities:supersampled ~width:2l ~height:2l ()
+   with
+  | Ok () -> ()
+  | Error error -> fail ("supersampled grayscale draw failed: " ^ Core.Error.message error));
+  let characters, _, _, _ =
+    match Core.Buffer.snapshot buffer with
+    | Ok snapshot -> snapshot
+    | Error error -> fail ("snapshot after supersampled draw failed: " ^ Core.Error.message error)
+  in
+  equal int32 (Int32.of_int (Char.code '$')) characters.(0);
+  equal int32 (Int32.of_int (Char.code '$')) characters.(1 + 8);
+  (match
+     Core.Buffer.draw_grayscale_buffer buffer ~x:0l ~y:0l
+       ~intensities:standard ~width:2l ~height:2l ()
+   with
+  | Error Core.Error.Invalid_argument -> ()
+  | Error error -> fail (Core.Error.message error)
+  | Ok () -> fail "grayscale buffer accepted a short intensity array");
+  Renderer.destroy renderer;
+  let owned =
+    expect_ok (Core.Owned_buffer.create ~width:2 ~height:1 ())
+  in
+  ignore
+    (expect_ok
+       (Core.Owned_buffer.draw_grayscale_buffer owned ~x:0 ~y:0
+          ~intensities:standard ~width:2 ~height:1 ()));
+  let owned_characters, _, _, _ = expect_ok (Core.Owned_buffer.snapshot owned) in
+  equal int32 (Int32.of_int (Char.code '$')) owned_characters.(0);
+  Core.Owned_buffer.close owned
+
 let test_console_owner () =
   let renderer = expect_ok (Renderer.create ~output:Renderer.Output.Memory ~width:20l ~height:6l ()) in
   let console = Renderer.console renderer in
@@ -301,4 +358,5 @@ let () =
       test "image loading stays inside the Eio source boundary" test_image_source_boundary;
       test "image renderable retains and releases native image sources" test_image_renderable;
       test "post filters and effects operate through typed buffer seams" test_post_filters_and_effects;
+      test "grayscale buffers preserve native glyph and supersampling behavior" test_grayscale_buffers;
       test "diagnostic console is renderer-owned and non-global" test_console_owner ]

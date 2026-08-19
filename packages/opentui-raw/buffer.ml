@@ -107,6 +107,30 @@ let fill_rect buffer ~x ~y ~width ~height ~background =
            (x, y, width, height, Color.Private.to_native background))
         ())
 
+let native_grayscale_buffer
+    (x, y, intensities, width, height, foreground, background) =
+  ( x,
+    y,
+    intensities,
+    width,
+    height,
+    Option.map Color.Private.to_native foreground,
+    Option.map Color.Private.to_native background )
+
+let draw_grayscale_buffer buffer args =
+  with_open buffer (fun () ->
+      result_of_status
+        (Native.buffer_draw_grayscale_buffer buffer.handle
+           (native_grayscale_buffer args))
+        ())
+
+let draw_grayscale_buffer_supersampled buffer args =
+  with_open buffer (fun () ->
+      result_of_status
+        (Native.buffer_draw_grayscale_buffer_supersampled buffer.handle
+           (native_grayscale_buffer args))
+        ())
+
 let draw_frame_buffer buffer ~source ~x ~y ?(source_x = 0l) ?(source_y = 0l)
     ?(source_width = 0l) ?(source_height = 0l) () =
   with_open buffer (fun () ->

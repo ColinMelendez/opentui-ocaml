@@ -28,6 +28,10 @@ The examples directory contains executable programs for the public
   `vendor/opentui/packages/examples/src/opacity-example.ts`: overlapping boxes
   with individually toggleable opacity, nested opacity multiplication, and a
   live animation driven by the renderer's pre-render hook.
+- `grayscale_buffer_demo.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/grayscale-buffer-demo.ts`: animated
+  grayscale patterns rendered once at terminal-cell resolution and once with
+  native 2x supersampling.
 
 The shared example helpers live in `lib/`:
 
@@ -95,3 +99,12 @@ nix develop -c dune exec ./packages/opentui-core/examples/opacity_example.exe
 Opacity keys: `1`-`4` toggle each overlapping box between full and 30%
 opacity, `A` starts or stops the animation, backtick/`"` toggles the console,
 and Ctrl+C exits. The nested panel shows parent, child, and effective opacity.
+
+Run the grayscale buffer demo:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/grayscale_buffer_demo.exe
+```
+
+Grayscale keys: Space pauses or resumes animation, `P` cycles the pattern,
+backtick/`"` toggles the console, and Ctrl+C exits.
