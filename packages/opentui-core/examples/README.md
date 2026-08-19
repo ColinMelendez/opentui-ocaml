@@ -50,6 +50,10 @@ The examples directory contains executable programs for the public
 - `nested_zindex_demo.ml` is a port of the reference
   `vendor/opentui/packages/examples/src/nested-zindex-demo.ts`: overlapping
   child renderables in three animated parent z-index groups.
+- `simple_layout_example.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/simple-layout-example.ts`: four Yoga
+  layout modes, autoplay, resize-aware absolute positioning, and a movable
+  overlay.
 
 The shared example helpers live in `lib/`:
 
@@ -179,6 +183,16 @@ nix develop -c dune exec ./packages/opentui-core/examples/nested_zindex_demo.exe
 
 Nested z-index keys: `+`/`=` speeds up the parent-group animation,
 `-`/`_` slows it down, backtick/`"` toggles the console, and Ctrl+C exits.
+
+Run the simple layout example:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/simple_layout_example.exe
+```
+
+Simple layout keys: Space advances the layout, `R` restarts at horizontal,
+`P` toggles autoplay, `V` toggles the movable overlay, `W`/`A`/`S`/`D` move
+it, backtick/`"` toggles the console, and Ctrl+C exits.
 
 Run the notification demo:
 
