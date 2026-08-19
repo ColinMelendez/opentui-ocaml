@@ -39,7 +39,7 @@ Reference paths are relative to `vendor/opentui/packages`.
 | `three/src/SpriteResourceManager.ts`, `SpriteAnimator.ts`, `animation/*` effects | Phase 4 sprite modules | Texture-atlas sprites, frame animation, particle explosion effects. |
 | `three/src/physics/physics-interface.ts` | `Three.Physics` module type | Seven-method 2D physics contract; adapters implement it against real engines. |
 | `three/src/physics/PlanckPhysicsAdapter.ts`, `RapierPhysicsAdapter.ts` | `Box2d_adapter` over `opentui-box2d` | Box2D v3 backing; Planck.js is itself a Box2D port, so semantics transfer. |
-| `bun-webgpu` (transitive reference dependency) | `packages/opentui-wgpu` | Typed `webgpu.h` binding: instance, adapter, device, buffers, textures, pipelines, mapAsync bridging. |
+| `bun-webgpu` (transitive reference dependency, backed by Dawn) | `packages/opentui-wgpu` (backed by wgpu-native) | Corresponding typed `webgpu.h` boundary: instance, adapter, device, buffers, textures, pipelines, mapAsync bridging. Backend internals differ; parity is defined at the WebGPU and rendered-cell contracts. |
 
 ## Package layering
 
@@ -56,8 +56,8 @@ Reference paths are relative to `vendor/opentui/packages`.
   Renderer,                               over wgpu-native
   Frame_buffer/Owned_buffer,                   │
   Image decode, pre_render drivers,            ▼
-  live leases, resize events          wgpu-native: vendored source,
-                                      built through Cargo into a static library
+  live leases, resize events          wgpu-native: hash-pinned official release,
+                                      exposed by Nix and linked as a shared library
 
   opentui-box2d         vendored Box2D v3 source, built through CMake into a
        ▲                static library; independent of opentui-core and
@@ -68,8 +68,7 @@ Reference paths are relative to `vendor/opentui/packages`.
 `opentui-core` remains GPU-agnostic and takes no dependency on `opentui-wgpu`;
 `opentui-three` depends on both independently. `opentui-box2d` depends on no
 OCaml package; `opentui-three` acquires its dependency only in phase 5.
-`opentui-wgpu` follows the `opentui-raw`
-ownership discipline: typed tokenized
+`opentui-wgpu` follows the `opentui-raw` ownership discipline: typed tokenized
 handles, explicit close, borrowed-buffer rules, structured errors at every
 boundary. It exposes WebGPU concepts without publishing raw pointers to higher
 levels.
@@ -143,22 +142,43 @@ levels.
 
 ## Native artifacts
 
-All native dependencies build from pinned sources; no prebuilt artifacts are
-consumed at build time.
+Native artifact policy differs by dependency according to its upstream
+distribution:
 
-- wgpu-native is a vendored git submodule built by a dune rule through its
-  Cargo workspace into a static library, following the vendored-Zig build
-  precedent (`build-opentui-native.sh`). The pinned revision, Rust toolchain
-  version, and lockfile state are recorded beside the ABI audit trail.
-- Box2D v3 is a vendored git submodule built by a dune rule through CMake into
-  a static library with tests and examples disabled.
+- wgpu-native comes from an official, version-pinned release archive fetched
+  by a Nix fixed-output derivation with a recorded SHA-256 hash. The derivation
+  selects the archive by `stdenv.hostPlatform.system`, validates the expected
+  `webgpu.h`, `wgpu.h`, metadata tag, and platform shared library, then exposes
+  their immutable store paths through a generated `wgpu-native.pc`. Headers
+  and library always come from the same archive. The initial artifact set pins
+  wgpu-native `v29.0.1.1`; exact archive names and hashes live in `flake.nix` as
+  the implementation source of truth. Supported targets are macOS aarch64 and
+  Linux x86_64/aarch64; an absent upstream artifact is an explicit
+  unsupported-target error rather than an implicit source build.
+- `opentui-wgpu` uses `dune-configurator` and `pkg-config` to generate its C
+  compile and link flags. Dune performs no download and does not search
+  unpinned system locations. The Nix shell supplies wgpu-native as a
+  `buildInput` and `pkg-config` as a `nativeBuildInput`.
+- Development and CI link the wgpu-native shared library. Nix owns store-path
+  runtime linking; a future non-Nix distribution must bundle the matching
+  shared library and install a relative `$ORIGIN`/`@loader_path` rpath. A
+  maintainer-only source derivation may be added for upstream diagnosis, but
+  it is not a silent fallback or a supported product build path.
+- Box2D v3 remains a vendored git submodule built by a dune rule through CMake
+  into a static library with tests and examples disabled.
 
 ## Phases and acceptance criteria
 
 Phase 0 - native foundation spike:
 
-- wgpu-native builds from vendored source inside the Nix shell on macOS
-  (arm64) and Linux (x86_64, aarch64).
+- The Nix wgpu-native derivation fetches, hash-verifies, and validates the
+  pinned official archive for macOS aarch64 and Linux x86_64/aarch64. CI builds
+  each system natively; future cross configurations continue selecting by the
+  target `hostPlatform`, not the build machine.
+- `opentui-wgpu` discovers only the derivation-provided `wgpu-native.pc` and
+  links the shared library. A loader audit (`otool -L` on macOS, `readelf -d`
+  on Linux) proves that a test executable resolves it from the Nix store
+  without global `DYLD_LIBRARY_PATH` or `LD_LIBRARY_PATH` configuration.
 - An `opentui-wgpu` headless test clears an offscreen texture, reads it back,
   and asserts the round trip without a window surface.
 - mapAsync-to-Eio bridging is proven under repeated-frame load with no
@@ -217,16 +237,22 @@ risk is retired by implementation evidence.
 
 Build and artifacts:
 
-1. Cargo hermeticity: building wgpu-native fetches crates.io dependencies on
-   first build unless the vendor tree is committed via `cargo vendor`. Local
-   development tolerates fetching; reproducible CI likely forces vendoring.
-   Retire when the Phase 0 build rule is hermetic end to end.
-2. Rust toolchain pinning: wgpu-core requires a recent MSRV (at least 1.87).
-   `rustc` and `cargo` join the Nix shell version-pinned alongside
-   `zig_0_16`. Retire when the flake pins them and CI passes.
-3. First-build latency: a cold wgpu-native compile takes minutes. The dune
-   stamp-target pattern makes this pay-once per revision. Retire after
-   observing rebuild behavior across two revisions.
+1. Release-asset stability: wgpu-native must continue publishing all three
+   target archives with the expected headers, metadata, and shared-library
+   layout. The fixed-output hashes prevent unnoticed replacement, while the
+   derivation's layout checks make drift loud. Retire for the pinned release
+   when all three derivations build in CI; reconsider the delivery policy
+   explicitly when upgrading or adding a target.
+2. Linux binary baseline: upstream Linux archives target manylinux_2_28, but
+   their actual dynamic dependencies and behavior under Nix must be proven on
+   both x86_64 and aarch64. Do not paper over failures with a global library
+   path. Retire when loader audits and the headless round-trip test pass on
+   both Linux targets.
+3. Shared-library delivery: Nix store rpaths cover development and CI, not a
+   future executable copied outside the store. Non-Nix packaging must place
+   the matching library beside the artifact, use a relative platform rpath,
+   and carry required license notices. Retire when that distribution format
+   exists and is tested; it does not block the Nix-only Phase 0 spike.
 4. CMake option drift for Box2D v3: the dune rule must pin static-library and
    no-test configuration explicitly. Retire when the rule encodes every flag.
 

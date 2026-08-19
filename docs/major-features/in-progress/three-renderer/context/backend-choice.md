@@ -8,22 +8,26 @@ contract is `../feature.md`; nothing here defines API or behavior.
 
 | Concern | Chosen | Discarded alternatives |
 | --- | --- | --- |
-| GPU device layer | wgpu-native (Rust, C API) built from source | Google Dawn; pure-OCaml software rasterizer; OpenGL/OSMesa FFI |
+| GPU device layer | wgpu-native (Rust implementation, C API) from official release binaries | Google Dawn; pure-OCaml software rasterizer; OpenGL/OSMesa FFI |
 | 2D physics engine | Box2D v3 (vendored source) | Jolt (via joltc); Rapier (Rust); Havok WASM |
-| Artifact delivery | Build from pinned source in dune rules | Hash-pinned prebuilt release downloads |
+| Artifact delivery | Hash-pinned wgpu-native release archives through Nix; Box2D from pinned source | Building wgpu-native in Dune; unpinned system or npm binaries |
 
 ## GPU device layer
 
 ### wgpu-native (chosen)
 
-- Same foundation as the reference implementation: upstream `@opentui/three`
-  runs through `bun-webgpu`, which wraps wgpu-native. Choosing it preserves the
-  possibility of semantic parity with the reference renderer's behavior.
+- Upstream `@opentui/three` runs through `bun-webgpu` 0.1.7, which packages a
+  Dawn FFI rather than wgpu-native. The OCaml port therefore does not claim
+  backend-internal identity: parity lives at the common `webgpu.h` behavior,
+  renderer configuration, cell-conversion algorithm, and observable cell
+  output.
 - Implements the stable `webgpu.h` C header designed for bindings into
   higher-level languages; the C surface is flat, handle-based, and matches the
   repository's existing C-stub discipline (`opentui-raw`).
-- Ships a Cargo workspace with lockfile, so building from pinned sources is
-  reproducible given a pinned Rust toolchain.
+- Publishes official release archives for every initial target, including
+  Linux aarch64. Each archive contains the matching `webgpu.h`, wgpu-native
+  extension header, metadata tag, static archive, and shared library, allowing
+  the binding ABI and implementation to be pinned as one hash-verified unit.
 - MIT/Apache-2.0 dual license.
 - Powers Firefox and Deno WebGPU, so the implementation is exercised at scale.
 
@@ -33,12 +37,15 @@ ships with the pinned wgpu-native revision rather than assuming spec currency.
 
 ### Dawn (discarded)
 
-- Chromium-grade and implements the stable `webgpu.h` fully, but has no
-  official prebuilt embedding artifacts and its build system (gn/ninja or
-  large CMake configuration) is disproportionate for this repository's
-  build-from-source dune-rule pattern.
-- C++ toolchain weight in the Nix shell for no benefit over wgpu-native here,
-  since neither choice provides a scene graph - the value is only the device.
+- Dawn is the reference package's actual device backend and implements
+  `webgpu.h`, but `bun-webgpu` distributes Dawn as an implementation detail of
+  its Bun package rather than as a generic, versioned native SDK for this OCaml
+  binding. Consuming those files would couple the Nix build to npm package
+  layout and the reference wrapper's release choices.
+- Building Dawn directly requires a substantially heavier C++ and GN/CMake
+  toolchain, while wgpu-native publishes a smaller official target matrix that
+  includes all three initial systems. Neither backend supplies the scene graph
+  or cell renderer; those parity obligations remain in `opentui-three`.
 
 ### Pure-OCaml software rasterizer (discarded)
 
@@ -95,13 +102,28 @@ it; the differentiators are binding friction and semantics provenance.
 
 ## Artifact delivery
 
-Hash-pinned prebuilt wgpu-native release downloads were considered first and
-discarded when the decision moved to building everything from source:
+wgpu-native uses its official prebuilt releases by default:
 
-- Prebuilt Linux binaries couple to specific glibc versions; static archives
-  ease linking but complicate licensing aggregation; dynamic libraries add
-  rpath concerns on macOS.
-- Source builds match the existing audited-Zig pattern: pinned revision in a
-  submodule, deterministic rule, stamp-target caching of the expensive build.
-- Cost accepted: Rust toolchain joins the Nix shell and cargo hermeticity
-  needs resolving (see risk register items 1-2 in `feature.md`).
+- A Nix fixed-output derivation pins the release URL and SHA-256 for each
+  supported target. It selects by `stdenv.hostPlatform.system`, so native CI
+  and a future cross toolchain resolve the target artifact rather than the
+  build machine's artifact.
+- The initial implementation pins wgpu-native `v29.0.1.1`; `flake.nix` owns
+  the exact asset names and hashes so an upgrade changes one auditable map.
+- The derivation validates the headers, metadata tag, and platform library,
+  then publishes a `wgpu-native.pc`. `dune-configurator` queries that package;
+  Dune itself neither downloads artifacts nor searches unpinned host paths.
+- Development and CI prefer the shared library. The Nix compiler wrapper owns
+  store rpaths; future standalone bundles must ship the same library with a
+  relative `$ORIGIN` or `@loader_path` rpath and the required notices.
+- The Linux archives' manylinux_2_28 baseline and both platforms' loader
+  behavior remain Phase 0 acceptance questions, not reasons to carry a Rust
+  toolchain and vendored Cargo graph before evidence demands it.
+- A maintainer-only source derivation may support upstream debugging, but it
+  is never an automatic fallback. Missing release assets make a target
+  unsupported until the artifact policy is reconsidered explicitly.
+
+Box2D keeps the source-build policy because it is a small C library with an
+official embedding API and an already appropriate CMake path. Artifact policy
+is therefore dependency-specific rather than a repository-wide requirement
+that all native code share one provenance mechanism.

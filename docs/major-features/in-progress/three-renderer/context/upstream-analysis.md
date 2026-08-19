@@ -8,7 +8,7 @@ The active contract is `../feature.md`.
 
 Package root: `vendor/opentui/packages/three` (version 0.5.3 at analysis time).
 Dependencies that matter: `three` 0.177.0 (scene graph + WebGPU renderer),
-`bun-webgpu` 0.1.7 (native WebGPU device via wgpu-native), `jimp`
+`bun-webgpu` 0.1.7 (native WebGPU device through its packaged Dawn FFI), `jimp`
 (image encoding for screenshots), and optional `rapier2d-simd-compat` /
 `planck` physics engines.
 
