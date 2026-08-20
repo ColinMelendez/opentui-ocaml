@@ -12,6 +12,8 @@ type remote_mode = Auto | Local | Remote
 
 type render_status = Rendered | Skipped | Failed
 
+type split_footer_transition = Viewport_scroll | Clear_stale_rows
+
 type cursor_style = Block | Line | Underline | Default
 
 type mouse_pointer_style =
@@ -113,6 +115,103 @@ let render renderer ~force =
 let with_open renderer operation =
   if Native_owner.is_open renderer.owner then operation renderer.handle
   else Error Error.Closed
+
+let write_out renderer bytes =
+  with_open renderer (fun handle ->
+      result_of_status (Native.renderer_write_out handle bytes) ())
+
+let render_status_of_code = function
+  | 0 -> Ok Rendered
+  | 1 -> Ok Skipped
+  | 2 -> Ok Failed
+  | status -> Error (error_of_status status)
+
+let split_render_result (status, offset) =
+  match render_status_of_code status with
+  | Error error -> Error error
+  | Ok render_status -> Ok (offset, render_status)
+
+let set_render_offset renderer ~offset =
+  if Int32.compare offset 0l < 0 then Error Error.Invalid_argument
+  else
+    with_open renderer (fun handle ->
+        result_of_status (Native.renderer_set_render_offset handle offset) ())
+
+let reset_split_scrollback renderer ~seed_rows ~pinned_render_offset =
+  if Int32.compare seed_rows 0l < 0
+     || Int32.compare pinned_render_offset 0l < 0
+  then Error Error.Invalid_argument
+  else
+    with_open renderer (fun handle ->
+        let status, offset =
+          Native.renderer_reset_split_scrollback handle seed_rows
+            pinned_render_offset
+        in
+        result_of_status status offset)
+
+let sync_split_scrollback renderer ~pinned_render_offset =
+  if Int32.compare pinned_render_offset 0l < 0 then Error Error.Invalid_argument
+  else
+    with_open renderer (fun handle ->
+        let status, offset =
+          Native.renderer_sync_split_scrollback handle pinned_render_offset
+        in
+        result_of_status status offset)
+
+let get_split_output_offset renderer ~surface_offset =
+  if Int32.compare surface_offset 0l < 0 then Error Error.Invalid_argument
+  else
+    with_open renderer (fun handle ->
+        let status, offset =
+          Native.renderer_get_split_output_offset handle surface_offset
+        in
+        result_of_status status offset)
+
+let set_pending_split_footer_transition renderer mode ~source_top_line
+    ~source_height ~target_top_line ~target_height ~scroll_lines =
+  let mode_code =
+    match mode with Viewport_scroll -> 1l | Clear_stale_rows -> 2l
+  in
+  if Int32.compare source_top_line 0l < 0
+     || Int32.compare source_height 0l < 0
+     || Int32.compare target_top_line 0l < 0
+     || Int32.compare target_height 0l < 0
+     || Int32.compare scroll_lines 0l < 0
+  then Error Error.Invalid_argument
+  else
+    with_open renderer (fun handle ->
+        result_of_status
+          (Native.renderer_set_pending_split_footer_transition handle
+             (mode_code, source_top_line, source_height, target_top_line,
+              target_height, scroll_lines))
+          ())
+
+let clear_pending_split_footer_transition renderer =
+  with_open renderer (fun handle ->
+      result_of_status
+        (Native.renderer_clear_pending_split_footer_transition handle) ())
+
+let repaint_split_footer renderer ~pinned_render_offset ~force =
+  if Int32.compare pinned_render_offset 0l < 0 then Error Error.Invalid_argument
+  else
+    with_open renderer (fun handle ->
+        split_render_result
+          (Native.renderer_repaint_split_footer handle pinned_render_offset
+             force))
+
+let commit_split_footer_snapshot renderer ~snapshot ~row_columns
+    ~start_on_new_line ~trailing_newline ~pinned_render_offset ~force
+    ~begin_frame ~finalize_frame =
+  if Int32.compare row_columns 0l < 0
+     || Int32.compare pinned_render_offset 0l < 0
+  then Error Error.Invalid_argument
+  else
+    with_open renderer (fun handle ->
+        Optimized_buffer.Private.with_open snapshot (fun snapshot_handle ->
+            split_render_result
+              (Native.renderer_commit_split_footer_snapshot handle snapshot_handle
+                 row_columns start_on_new_line trailing_newline
+                 pinned_render_offset force begin_frame finalize_frame)))
 
 let cursor_style_code = function
   | Block -> 0

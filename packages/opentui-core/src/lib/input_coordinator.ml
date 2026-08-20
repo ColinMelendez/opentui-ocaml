@@ -154,3 +154,6 @@ let reset coordinator =
   Stdin_parser.reset coordinator.parser;
   coordinator.pending <- None;
   coordinator.deadline <- None
+
+let reset_mouse_state coordinator =
+  Stdin_parser.reset_mouse_state coordinator.parser

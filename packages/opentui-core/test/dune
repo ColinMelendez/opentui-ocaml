@@ -230,3 +230,8 @@
  (name test_slot_mount)
  (modules test_slot_mount)
  (libraries opentui-core windtrap))
+
+(test
+ (name test_split_mode)
+ (modules test_split_mode)
+ (libraries opentui-core windtrap))

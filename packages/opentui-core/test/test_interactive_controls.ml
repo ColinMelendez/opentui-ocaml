@@ -188,6 +188,8 @@ let () =
           ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Drag ~x:3 ~y:0)));
           ignore (expect_ok (Renderer.handle_input renderer (mouse Mouse.Up ~x:3 ~y:0)));
           equal string "el" (expect_ok (Core.Renderables.Textarea.selected_text textarea));
+          let pointer_cursor = expect_ok (Core.Renderables.Textarea.cursor textarea) in
+          equal int 3 pointer_cursor.col;
           ignore (expect_ok (Core.Renderables.Textarea.set_selection textarea ~start:1 ~end_:4));
           equal string "ell" (expect_ok (Core.Renderables.Textarea.selected_text textarea));
           ignore (expect_ok (Core.Renderables.Textarea.insert_text textarea "X"));

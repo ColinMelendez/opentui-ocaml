@@ -236,4 +236,7 @@ let restore buffer value =
 
 module Private = struct
   let of_native handle owner = { handle; owner }
+
+  let of_optimized handle owner =
+    { handle = Native.optimized_buffer_as_buffer handle; owner }
 end

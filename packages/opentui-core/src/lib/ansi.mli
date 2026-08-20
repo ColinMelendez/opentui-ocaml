@@ -9,6 +9,8 @@ val clear_screen : string
 val clear_saved_lines : string
 val bracketed_paste_start : string
 val bracketed_paste_end : string
+val modify_other_keys_set : string
+val modify_other_keys_reset : string
 
 val scroll_region : top:int -> bottom:int -> (string, string) result
 val cursor_position : row:int -> column:int -> (string, string) result

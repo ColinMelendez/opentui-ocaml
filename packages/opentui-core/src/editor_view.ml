@@ -238,29 +238,39 @@ let selected_range view =
 
 let has_selection view = Option.is_some (selected_range view)
 
-let local_selection_from_coordinates view ~anchor_x ~anchor_y ~focus_x ~focus_y =
+let local_offset_from_coordinate view ~x ~y =
   let lines = line_segments view in
-  let offset_at x y =
-    let visual_y = y + view.viewport.offset_y in
-    let visual_x =
-      x +
-      (match view.wrap_mode with
-      | No_wrap -> view.viewport.offset_x
-      | Char | Word -> 0)
-    in
-    if visual_y < 0 || visual_y >= Array.length lines then None
-    else
-      let line = lines.(visual_y) in
-      Some
-        (min line.end_offset
-           (max line.start_offset (line.start_offset + visual_x)))
+  let visual_y = y + view.viewport.offset_y in
+  let visual_x =
+    x
+    +
+    match view.wrap_mode with
+    | No_wrap -> view.viewport.offset_x
+    | Char | Word -> 0
   in
-  match offset_at anchor_x anchor_y, offset_at focus_x focus_y with
+  if Int.compare visual_y 0 < 0
+     || Int.compare visual_y (Array.length lines) >= 0
+  then None
+  else
+    let line = lines.(visual_y) in
+    Some
+      (min line.end_offset
+         (max line.start_offset (line.start_offset + visual_x)))
+
+let local_selection_from_coordinates view ~anchor_x ~anchor_y ~focus_x ~focus_y =
+  match
+    local_offset_from_coordinate view ~x:anchor_x ~y:anchor_y,
+    local_offset_from_coordinate view ~x:focus_x ~y:focus_y
+  with
   | Some anchor, Some focus -> Some (normalized_selection anchor focus)
   | _ -> None
 
 let set_local_selection view ~anchor_x ~anchor_y ~focus_x ~focus_y =
-  view.local_selection <- local_selection_from_coordinates view ~anchor_x ~anchor_y ~focus_x ~focus_y
+  view.local_selection <-
+    local_selection_from_coordinates view ~anchor_x ~anchor_y ~focus_x ~focus_y;
+  Option.iter
+    (fun offset -> ignore (Edit_buffer.set_cursor_by_offset view.edit_buffer offset))
+    (local_offset_from_coordinate view ~x:focus_x ~y:focus_y)
 
 let update_local_selection view ~anchor_x ~anchor_y ~focus_x ~focus_y =
   set_local_selection view ~anchor_x ~anchor_y ~focus_x ~focus_y

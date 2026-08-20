@@ -161,4 +161,6 @@ let close buffer =
 
 module Private = struct
   let with_open = with_open
+  let handle buffer = buffer.handle
+  let owner buffer = buffer.owner
 end

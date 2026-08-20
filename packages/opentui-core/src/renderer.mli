@@ -92,6 +92,29 @@ type theme_waiter = Renderer_theme_mode.waiter
 type pixel_resolution = Render_context.pixel_resolution
 type render_geometry = Render_context.render_geometry
 
+type external_output_mode = Passthrough | Capture_stdout
+(** Whether split-footer output is written directly or committed through the
+    renderer-owned scrollback path. Capture is explicit and owner-local; this
+    library does not replace process-global stdout. *)
+
+type scrollback_render_context = {
+  width : int;
+  width_method : Text_buffer.width_method;
+  tail_column : int;
+  render_context : Render_context.t;
+}
+
+type scrollback_snapshot = {
+  root : Renderable.t;
+  width : int;
+  height : int;
+  row_columns : int;
+  start_on_new_line : bool;
+  trailing_newline : bool;
+}
+
+type scrollback_writer = scrollback_render_context -> scrollback_snapshot
+
 type handler_source = Render_context.handler_source = Keyboard | Pointer
 type handler_scope = Render_context.handler_scope = Global | Renderable
 type handler_kind = Render_context.handler_kind = Keypress | Keyrelease | Paste | Mouse
@@ -136,7 +159,9 @@ val children : t -> Layout_children.t
     functions. *)
 val console : t -> Console.t
 
-(** Current renderer dimensions. *)
+(** Current render-surface dimensions. In split-footer mode these describe the
+    footer surface; use [terminal_width] and [terminal_height] for the physical
+    terminal. *)
 val width : t -> (int32, Error.t) result
 val height : t -> (int32, Error.t) result
 val terminal_width : t -> (int32, Error.t) result
@@ -152,6 +177,9 @@ val palette : t -> (Lib.Terminal_palette.normalized option, Error.t) result
 val theme_mode : t -> (theme_mode option, Error.t) result
 val pixel_resolution : t -> (pixel_resolution option, Error.t) result
 val render_geometry : t -> (render_geometry, Error.t) result
+val external_output_mode : t -> (external_output_mode, Error.t) result
+val set_external_output_mode :
+  t -> external_output_mode -> (unit, Error.t) result
 
 (** [has_pending_render renderer] reports whether a coalesced render request is
     waiting for the renderer scheduler. *)
@@ -182,6 +210,16 @@ val set_cursor_color : t -> color:Color.t -> (unit, Error.t) result
 val set_cursor_style :
   t -> cursor_style_options -> (unit, Error.t) result
 val set_mouse_pointer : t -> mouse_pointer_style -> (unit, Error.t) result
+(** [use_mouse renderer] reports whether decoded mouse events are dispatched. *)
+val use_mouse : t -> (bool, Error.t) result
+(** [set_mouse_protocol renderer callback] installs the owner of the terminal
+    mouse-tracking protocol. The callback runs before renderer-side dispatch is
+    toggled and may reject the transition. *)
+val set_mouse_protocol :
+  t -> (bool -> (unit, Error.t) result) -> (unit, Error.t) result
+(** [set_use_mouse renderer enabled] toggles renderer-side mouse dispatch and,
+    when installed, the terminal protocol through [set_mouse_protocol]. *)
+val set_use_mouse : t -> bool -> (unit, Error.t) result
 
 (** [cursor_state renderer] reads native terminal cursor presentation state. *)
 val cursor_state : t -> (cursor_state, Error.t) result
@@ -326,6 +364,16 @@ val feed_palette_response : t -> string -> (bool, Error.t) result
 
 val set_render_geometry :
   t -> Lib.Render_geometry.screen_mode -> footer_height:int -> (unit, Error.t) result
+
+(** [write_to_scrollback renderer writer] renders one app-authored snapshot into
+    a native optimized buffer and queues it for the next split-footer frame.
+    The writer is valid only in split-footer/capture-stdout mode.
+
+    The snapshot [root] returned by [writer] is consumed on every return path:
+    whether the commit is accepted, rejected, or fails, the renderer destroys
+    the root recursively before returning, so callers must never reuse or
+    destroy it themselves. *)
+val write_to_scrollback : t -> scrollback_writer -> (unit, Error.t) result
 
 val on_handler_error :
   t -> (handler_error -> unit) -> (Event_subscription.t, Error.t) result

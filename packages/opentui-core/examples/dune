@@ -37,3 +37,8 @@
  (name slider_demo)
  (modules slider_demo)
  (libraries opentui-core opentui_examples_lib eio_main))
+
+(executable
+ (name split_mode_demo)
+ (modules split_mode_demo)
+ (libraries opentui-core opentui_examples_lib eio_main))

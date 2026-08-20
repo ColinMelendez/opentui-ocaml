@@ -121,3 +121,6 @@ let fire_timeout input ~clock ~emit =
 let reset input =
   Lib.Input_coordinator.reset input.coordinator;
   clear_read input
+
+let reset_mouse_state input =
+  Lib.Input_coordinator.reset_mouse_state input.coordinator

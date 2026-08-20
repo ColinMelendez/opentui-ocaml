@@ -71,11 +71,13 @@ type handler_error = Renderer_events.handler_error = {
     renderer. *)
 val same_owner : t -> t -> bool
 
-(** The current renderer width. *)
+(** The current render-surface width. In split-footer mode this is the footer
+    width; use {!terminal_width} for the physical terminal width. *)
 val width : t -> (int32, Error.t) result
 val terminal_width : t -> (int32, Error.t) result
 
-(** The current renderer height. *)
+(** The current render-surface height. In split-footer mode this is the footer
+    height; use {!terminal_height} for the physical terminal height. *)
 val height : t -> (int32, Error.t) result
 val terminal_height : t -> (int32, Error.t) result
 
@@ -256,10 +258,11 @@ module Private : sig
   val new_owner : unit -> owner
   val create :
     owner:owner -> width:int32 -> height:int32 ->
+    terminal_width:int32 -> terminal_height:int32 ->
     capabilities:Terminal_capabilities.t option ->
     clock:Lib.Clock.t option ->
     hit_grid:Opentui_raw.Renderer.Hit_grid.t ->
-    presentation:Opentui_raw.Renderer.t -> t
+    presentation:Opentui_raw.Renderer.t -> offscreen:bool -> t
   val set_capabilities : t -> Terminal_capabilities.t -> unit
   val set_palette : t -> Lib.Terminal_palette.normalized -> unit
   val set_theme_mode : t -> theme_mode -> unit
@@ -267,6 +270,7 @@ module Private : sig
   val set_render_geometry :
     t -> Lib.Render_geometry.screen_mode -> footer_height:int -> unit
   val resize : t -> width:int32 -> height:int32 -> unit
+  val resize_offscreen : t -> width:int32 -> height:int32 -> unit
   val advance_frame : t -> int64
   val bump_layout_generation : t -> int64
   val bump_render_list_revision : t -> int64

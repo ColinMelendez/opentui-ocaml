@@ -60,9 +60,15 @@ let () =
           in
           equal int32 2l written;
           equal string "A " (Bytes.to_string output);
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.write_out renderer
+                  (Bytes.of_string "\027[2J")));
           Opentui_raw.Renderer.close renderer;
           expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.width current);
-          expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.height next));
+          expect_error Opentui_raw.Error.Closed (Opentui_raw.Buffer.height next);
+          expect_error Opentui_raw.Error.Closed
+            (Opentui_raw.Renderer.write_out renderer Bytes.empty));
       test "renderer hit-grid capability preserves native frame ownership" (fun () ->
           let renderer =
             expect_ok (Opentui_raw.Renderer.create ~width:3l ~height:2l ())
@@ -319,6 +325,63 @@ let () =
           Opentui_raw.Renderer.close renderer;
           expect_error Opentui_raw.Error.Closed
             (Opentui_raw.Renderer.render renderer ~force:true));
+      test "renderer exposes split-footer scrollback primitives" (fun () ->
+          let renderer =
+            expect_ok
+              (Opentui_raw.Renderer.create ~width:4l ~height:3l ())
+          in
+          equal int32 1l
+            (expect_ok
+               (Opentui_raw.Renderer.reset_split_scrollback renderer
+                  ~seed_rows:1l ~pinned_render_offset:2l));
+          equal int32 1l
+            (expect_ok
+               (Opentui_raw.Renderer.get_split_output_offset renderer
+                  ~surface_offset:2l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.set_pending_split_footer_transition
+                  renderer Opentui_raw.Renderer.Clear_stale_rows
+                  ~source_top_line:2l ~source_height:1l ~target_top_line:2l
+                  ~target_height:1l ~scroll_lines:0l));
+          ignore
+            (expect_ok
+               (Opentui_raw.Renderer.clear_pending_split_footer_transition
+                  renderer));
+          (match
+             expect_ok
+               (Opentui_raw.Renderer.repaint_split_footer renderer
+                  ~pinned_render_offset:2l ~force:true)
+           with
+          | _offset, Opentui_raw.Renderer.Rendered -> ()
+          | _offset, Opentui_raw.Renderer.Skipped ->
+              fail "split footer repaint was backpressured"
+          | _offset, Opentui_raw.Renderer.Failed ->
+              fail "split footer repaint failed");
+          let snapshot =
+            expect_ok
+              (Opentui_raw.Optimized_buffer.create ~width:2l ~height:1l
+                 ~respect_alpha:false ~width_method:1l ~id:"split-test")
+          in
+          ignore
+            (expect_ok
+               (Opentui_raw.Optimized_buffer.set_cell snapshot
+                  (0l, 0l, 65l, Opentui_raw.Color.white,
+                   Opentui_raw.Color.black, 0l)));
+          (match
+             expect_ok
+               (Opentui_raw.Renderer.commit_split_footer_snapshot renderer
+                  ~snapshot ~row_columns:2l ~start_on_new_line:true
+                  ~trailing_newline:true ~pinned_render_offset:2l ~force:true
+                  ~begin_frame:true ~finalize_frame:true)
+           with
+          | _offset, Opentui_raw.Renderer.Rendered -> ()
+          | _offset, Opentui_raw.Renderer.Skipped ->
+              fail "split snapshot commit was backpressured"
+          | _offset, Opentui_raw.Renderer.Failed ->
+              fail "split snapshot commit failed");
+          Opentui_raw.Optimized_buffer.close snapshot;
+          Opentui_raw.Renderer.close renderer);
       test "event delivery is polled from an owned copy" (fun () ->
           let sink = expect_ok (Opentui_raw.Event_sink.create ()) in
           equal bool true (emit_event_for_test ());

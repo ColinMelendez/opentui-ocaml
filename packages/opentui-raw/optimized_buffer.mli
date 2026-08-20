@@ -47,4 +47,6 @@ val close : t -> unit
 
 module Private : sig
   val with_open : t -> (Native_token.Optimized_buffer.t -> ('a, Error.t) result) -> ('a, Error.t) result
+  val handle : t -> Native_token.Optimized_buffer.t
+  val owner : t -> Native_owner.t
 end

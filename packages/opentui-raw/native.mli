@@ -43,6 +43,7 @@ val renderer_create :
   int32 -> int32 -> int -> int -> Native_token.Span_feed.t option ->
   int * Native_token.Renderer.t
 val renderer_resize : Native_token.Renderer.t -> int32 -> int32 -> int
+val renderer_write_out : Native_token.Renderer.t -> bytes -> int
 val renderer_set_background_color :
   Native_token.Renderer.t -> color -> int
 val renderer_set_cursor_position :
@@ -58,6 +59,26 @@ val renderer_destroy : Native_token.Renderer.t -> unit
 val renderer_buffer :
   Native_token.Renderer.t -> bool -> int * Native_token.Buffer.t
 val renderer_render : Native_token.Renderer.t -> bool -> int
+val renderer_set_render_offset : Native_token.Renderer.t -> int32 -> int
+val renderer_reset_split_scrollback :
+  Native_token.Renderer.t -> int32 -> int32 -> int * int32
+val renderer_sync_split_scrollback :
+  Native_token.Renderer.t -> int32 -> int * int32
+val renderer_get_split_output_offset :
+  Native_token.Renderer.t -> int32 -> int * int32
+val renderer_set_pending_split_footer_transition :
+  Native_token.Renderer.t ->
+  int32 * int32 * int32 * int32 * int32 * int32 -> int
+val renderer_clear_pending_split_footer_transition :
+  Native_token.Renderer.t -> int
+val renderer_repaint_split_footer :
+  Native_token.Renderer.t -> int32 -> bool -> int * int32
+val renderer_commit_split_footer_snapshot :
+  Native_token.Renderer.t ->
+  Native_token.Optimized_buffer.t ->
+  int32 -> bool -> bool -> int32 -> bool -> bool -> bool -> int * int32
+val optimized_buffer_as_buffer :
+  Native_token.Optimized_buffer.t -> Native_token.Buffer.t
 val renderer_add_to_hit_grid :
   Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> int
 val renderer_add_to_hit_grid_unchecked :

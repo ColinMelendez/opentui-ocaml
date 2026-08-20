@@ -1,7 +1,7 @@
 (* Minimal Eio terminal app harness for the opentui examples.
 
    Owns the parts of the reference `createCliRenderer` plumbing that the OCaml
-   port expresses explicitly: a raw-mode terminal session, an alternate screen,
+   port expresses explicitly: a raw-mode terminal session, selectable terminal screen,
    a bounded input queue fed by one fiber and drained by a dispatch fiber, a
    renderer scheduler driving requested or live frames, and pre-render drivers
    for terminal-size polling and demo-owned animation. Each demo opts into
@@ -161,7 +161,8 @@ let dispatch_handle renderer = function
   | Events.Input event -> ignore (O.Renderer.handle_input renderer event)
 
 let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
-    ?(kitty_events = true) env ~init =
+    ?(kitty_events = true) ?(screen = Modes.Alternate) ?(reserve_screen = false)
+    env ~init =
   Eio.Switch.run @@ fun sw ->
   let mono_clock = Eio.Stdenv.mono_clock env in
   let input_fd, output_fd = open_tty ~sw () in
@@ -175,7 +176,12 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
   in
   expect_session_ok (Session.enter session);
   expect_session_ok
-    (Session.setup_output session ~screen:Modes.Alternate ~bracketed_paste:true);
+    (Session.setup_output session ~screen ~bracketed_paste:true);
+  if reserve_screen then
+    expect_output_ok
+      (Output.write output
+         (Bytes.of_string
+            (String.make (max 0 (Size.rows tty_size - 1)) '\n')));
   (match Output.set_cursor_visible output false with
   | Ok () -> ()
   | Error error -> invalid_arg (Output.message error));
@@ -189,6 +195,7 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
         | Ok () -> Ok ()
         | Error error -> Error (O.Error.Output (Output.message error)))
   in
+  let input = expect_input (Input_flow.create ()) in
   let renderer =
     expect_ok
       (O.Renderer.create_with_clock
@@ -197,17 +204,32 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
          ~width:(Int32.of_int (Size.columns tty_size))
          ~height:(Int32.of_int (Size.rows tty_size)) ())
   in
+  let set_mouse_protocol enabled =
+    let result =
+      if enabled then Output.set_mouse output ~movement:true
+      else Output.disable_mouse output
+    in
+    match result with
+    | Ok () ->
+        Input_flow.reset_mouse_state input;
+        Ok ()
+    | Error error -> Error (O.Error.Output (Output.message error))
+  in
+  ignore (expect_ok (O.Renderer.set_mouse_protocol renderer set_mouse_protocol));
+  expect_output_ok
+    (Output.write output (Bytes.of_string O.Lib.Ansi.modify_other_keys_set));
   (* The output flow also emits a hide-cursor mode, but the renderer has its
      own presentation cursor state and may otherwise re-enable it on the
      first frame. *)
   ignore
     (expect_ok
-       (O.Renderer.set_cursor_position renderer ~x:1l ~y:1l ~visible:false ()));
+       (O.Renderer.set_cursor_position renderer ~x:1l
+          ~y:(if reserve_screen then Int32.of_int (Size.rows tty_size) else 1l)
+          ~visible:false ()));
   (match O.Renderer.kitty_keyboard_push renderer ~events:kitty_events () with
   | bytes -> expect_output_ok (Output.write output bytes));
   let queue = expect_events (Events.create ~capacity:64 ()) in
   let wakeup = Wakeup.create () in
-  let input = expect_input (Input_flow.create ()) in
   let resize =
     match Resize.create ~sw () with
     | Ok value -> value
@@ -246,6 +268,9 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
        being restored. *)
     ignore (Scheduler.close scheduler);
     ignore (O.Renderer.set_mouse_pointer renderer O.Renderer.Mouse_default);
+    ignore
+      (Output.write output
+         (Bytes.of_string O.Lib.Ansi.modify_other_keys_reset));
     ignore
       (O.Renderer.set_cursor_position renderer ~x:1l ~y:1l ~visible:false ());
     ignore (O.Renderer.close renderer);

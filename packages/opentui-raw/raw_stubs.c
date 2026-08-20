@@ -79,6 +79,11 @@ static bool renderer_is_valid(opentui_native_handle handle) {
   return handle != 0 && getCurrentBuffer(handle) != 0;
 }
 
+CAMLprim value opentui_raw_optimized_buffer_as_buffer(value handle_value) {
+  CAMLparam1(handle_value);
+  CAMLreturn(handle_value);
+}
+
 static bool read_int32_array(
     value array_value,
     int32_t **output,
@@ -417,6 +422,21 @@ CAMLprim value opentui_raw_renderer_resize(
   CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
 }
 
+CAMLprim value opentui_raw_renderer_write_out(
+    value handle_value,
+    value bytes_value) {
+  CAMLparam2(handle_value, bytes_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  if (!renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  writeOut(handle, (const uint8_t *)Bytes_val(bytes_value),
+           (uint32_t)caml_string_length(bytes_value));
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
 CAMLprim value opentui_raw_renderer_destroy(value handle_value) {
   CAMLparam1(handle_value);
 
@@ -455,6 +475,224 @@ CAMLprim value opentui_raw_renderer_render(value handle_value, value force_value
   }
 
   CAMLreturn(Val_int((int)render(handle, Bool_val(force_value))));
+}
+
+static value make_split_render_result(uint64_t packed) {
+  uint32_t offset = (uint32_t)(packed & UINT64_C(0xffffffff));
+  int status = (int)((packed >> 32) & UINT64_C(0xff));
+  return make_status_count(status, offset);
+}
+
+CAMLprim value opentui_raw_renderer_set_render_offset(
+    value handle_value,
+    value offset_value) {
+  CAMLparam2(handle_value, offset_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t offset = Int32_val(offset_value);
+  if (handle == 0 || !renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (offset < 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  setRenderOffset(handle, (uint32_t)offset);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_reset_split_scrollback(
+    value handle_value,
+    value seed_rows_value,
+    value pinned_render_offset_value) {
+  CAMLparam3(handle_value, seed_rows_value, pinned_render_offset_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t seed_rows = Int32_val(seed_rows_value);
+  int32_t pinned_render_offset = Int32_val(pinned_render_offset_value);
+  if (handle == 0 || !renderer_is_valid(handle)) {
+    CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_STALE_HANDLE, 0));
+  }
+  if (seed_rows < 0 || pinned_render_offset < 0) {
+    CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+  }
+
+  CAMLreturn(make_status_count(
+      OPENTUI_RAW_STATUS_OK,
+      resetSplitScrollback(
+          handle, (uint32_t)seed_rows, (uint32_t)pinned_render_offset)));
+}
+
+CAMLprim value opentui_raw_renderer_sync_split_scrollback(
+    value handle_value,
+    value pinned_render_offset_value) {
+  CAMLparam2(handle_value, pinned_render_offset_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t pinned_render_offset = Int32_val(pinned_render_offset_value);
+  if (handle == 0 || !renderer_is_valid(handle)) {
+    CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_STALE_HANDLE, 0));
+  }
+  if (pinned_render_offset < 0) {
+    CAMLreturn(make_split_render_result(
+        ((uint64_t)OPENTUI_RENDER_STATUS_FAILED) << 32));
+  }
+
+  CAMLreturn(make_status_count(
+      OPENTUI_RAW_STATUS_OK,
+      syncSplitScrollback(handle, (uint32_t)pinned_render_offset)));
+}
+
+CAMLprim value opentui_raw_renderer_get_split_output_offset(
+    value handle_value,
+    value surface_offset_value) {
+  CAMLparam2(handle_value, surface_offset_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t surface_offset = Int32_val(surface_offset_value);
+  if (handle == 0 || !renderer_is_valid(handle)) {
+    CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_STALE_HANDLE, 0));
+  }
+  if (surface_offset < 0) {
+    CAMLreturn(make_status_count(OPENTUI_RAW_STATUS_INVALID_ARGUMENT, 0));
+  }
+
+  CAMLreturn(make_status_count(
+      OPENTUI_RAW_STATUS_OK,
+      getSplitOutputOffset(handle, (uint32_t)surface_offset)));
+}
+
+CAMLprim value opentui_raw_renderer_set_pending_split_footer_transition(
+    value handle_value,
+    value transition_value) {
+  CAMLparam2(handle_value, transition_value);
+
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (handle == 0 || !renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+  if (!Is_block(transition_value) || Wosize_val(transition_value) != 6) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  int32_t mode = Int32_val(Field(transition_value, 0));
+  int32_t source_top_line = Int32_val(Field(transition_value, 1));
+  int32_t source_height = Int32_val(Field(transition_value, 2));
+  int32_t target_top_line = Int32_val(Field(transition_value, 3));
+  int32_t target_height = Int32_val(Field(transition_value, 4));
+  int32_t scroll_lines = Int32_val(Field(transition_value, 5));
+  if (mode < 0 || mode > 2 || source_top_line < 0 || source_height < 0
+      || target_top_line < 0 || target_height < 0 || scroll_lines < 0) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_INVALID_ARGUMENT));
+  }
+
+  setPendingSplitFooterTransition(
+      handle, (uint8_t)mode, (uint32_t)source_top_line,
+      (uint32_t)source_height, (uint32_t)target_top_line,
+      (uint32_t)target_height, (uint32_t)scroll_lines);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_clear_pending_split_footer_transition(
+    value handle_value) {
+  CAMLparam1(handle_value);
+
+  opentui_native_handle handle =
+      (opentui_native_handle)Int32_val(handle_value);
+  if (handle == 0 || !renderer_is_valid(handle)) {
+    CAMLreturn(Val_int(OPENTUI_RAW_STATUS_STALE_HANDLE));
+  }
+
+  clearPendingSplitFooterTransition(handle);
+  CAMLreturn(Val_int(OPENTUI_RAW_STATUS_OK));
+}
+
+CAMLprim value opentui_raw_renderer_repaint_split_footer(
+    value handle_value,
+    value pinned_render_offset_value,
+    value force_value) {
+  CAMLparam3(handle_value, pinned_render_offset_value, force_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  int32_t pinned_render_offset = Int32_val(pinned_render_offset_value);
+  if (handle == 0 || !renderer_is_valid(handle)) {
+    CAMLreturn(make_split_render_result(
+        ((uint64_t)OPENTUI_RENDER_STATUS_FAILED) << 32));
+  }
+  if (pinned_render_offset < 0) {
+    CAMLreturn(make_split_render_result(
+        ((uint64_t)OPENTUI_RENDER_STATUS_FAILED) << 32));
+  }
+
+  CAMLreturn(make_split_render_result(
+      repaintSplitFooter(handle, (uint32_t)pinned_render_offset,
+                         Bool_val(force_value))));
+}
+
+static value renderer_commit_split_footer_snapshot_impl(
+    value handle_value,
+    value snapshot_value,
+    value row_columns_value,
+    value start_on_new_line_value,
+    value trailing_newline_value,
+    value pinned_render_offset_value,
+    value force_value,
+    value begin_frame_value,
+    value finalize_frame_value) {
+  CAMLparam5(handle_value, snapshot_value, row_columns_value,
+             start_on_new_line_value, trailing_newline_value);
+  CAMLxparam4(pinned_render_offset_value, force_value, begin_frame_value,
+              finalize_frame_value);
+
+  opentui_native_handle handle = (opentui_native_handle)Int32_val(handle_value);
+  opentui_native_handle snapshot =
+      (opentui_native_handle)Int32_val(snapshot_value);
+  int32_t row_columns = Int32_val(row_columns_value);
+  int32_t pinned_render_offset = Int32_val(pinned_render_offset_value);
+  if (handle == 0 || !renderer_is_valid(handle)
+      || snapshot == 0 || !optimized_buffer_is_valid(snapshot)) {
+    CAMLreturn(make_split_render_result(
+        ((uint64_t)OPENTUI_RENDER_STATUS_FAILED) << 32));
+  }
+  if (row_columns < 0 || pinned_render_offset < 0) {
+    CAMLreturn(make_split_render_result(
+        ((uint64_t)OPENTUI_RENDER_STATUS_FAILED) << 32));
+  }
+
+  CAMLreturn(make_split_render_result(
+      commitSplitFooterSnapshot(
+          handle, snapshot, (uint32_t)row_columns,
+          Bool_val(start_on_new_line_value), Bool_val(trailing_newline_value),
+          (uint32_t)pinned_render_offset, Bool_val(force_value),
+          Bool_val(begin_frame_value), Bool_val(finalize_frame_value))));
+}
+
+CAMLprim value opentui_raw_renderer_commit_split_footer_snapshot(
+    value handle_value,
+    value snapshot_value,
+    value row_columns_value,
+    value start_on_new_line_value,
+    value trailing_newline_value,
+    value pinned_render_offset_value,
+    value force_value,
+    value begin_frame_value,
+    value finalize_frame_value) {
+  return renderer_commit_split_footer_snapshot_impl(
+      handle_value, snapshot_value, row_columns_value, start_on_new_line_value,
+      trailing_newline_value, pinned_render_offset_value, force_value,
+      begin_frame_value, finalize_frame_value);
+}
+
+CAMLprim value opentui_raw_renderer_commit_split_footer_snapshot_bytecode(
+    value *arguments,
+    int argument_count) {
+  if (argument_count != 9) {
+    caml_invalid_argument("opentui_raw_renderer_commit_split_footer_snapshot");
+  }
+  return renderer_commit_split_footer_snapshot_impl(
+      arguments[0], arguments[1], arguments[2], arguments[3], arguments[4],
+      arguments[5], arguments[6], arguments[7], arguments[8]);
 }
 
 CAMLprim value opentui_raw_renderer_set_background_color(

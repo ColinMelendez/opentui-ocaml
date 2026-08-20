@@ -203,6 +203,10 @@ void resizeRenderer(
     opentui_native_handle renderer_handle,
     uint32_t width,
     uint32_t height);
+void writeOut(
+    opentui_native_handle renderer_handle,
+    const uint8_t *data,
+    uint32_t data_len);
 void setBackgroundColor(
     opentui_native_handle renderer_handle,
     const uint16_t *color);
@@ -224,6 +228,41 @@ void destroyRenderer(opentui_native_handle renderer_handle);
 opentui_native_handle getCurrentBuffer(opentui_native_handle renderer_handle);
 opentui_native_handle getNextBuffer(opentui_native_handle renderer_handle);
 uint8_t render(opentui_native_handle renderer_handle, bool force);
+void setRenderOffset(opentui_native_handle renderer_handle, uint32_t offset);
+uint32_t resetSplitScrollback(
+    opentui_native_handle renderer_handle,
+    uint32_t seed_rows,
+    uint32_t pinned_render_offset);
+uint32_t syncSplitScrollback(
+    opentui_native_handle renderer_handle,
+    uint32_t pinned_render_offset);
+uint32_t getSplitOutputOffset(
+    opentui_native_handle renderer_handle,
+    uint32_t surface_offset);
+void setPendingSplitFooterTransition(
+    opentui_native_handle renderer_handle,
+    uint8_t mode,
+    uint32_t source_top_line,
+    uint32_t source_height,
+    uint32_t target_top_line,
+    uint32_t target_height,
+    uint32_t scroll_lines);
+void clearPendingSplitFooterTransition(
+    opentui_native_handle renderer_handle);
+uint64_t repaintSplitFooter(
+    opentui_native_handle renderer_handle,
+    uint32_t pinned_render_offset,
+    bool force);
+uint64_t commitSplitFooterSnapshot(
+    opentui_native_handle renderer_handle,
+    opentui_native_handle snapshot_buffer_handle,
+    uint32_t row_columns,
+    bool start_on_new_line,
+    bool trailing_newline,
+    uint32_t pinned_render_offset,
+    bool force,
+    bool begin_frame,
+    bool finalize_frame);
 void addToHitGrid(
     opentui_native_handle renderer_handle,
     int32_t x,
@@ -825,6 +864,7 @@ typedef void (*opentui_edit_buffer_insert_text_fn)(opentui_native_handle, const 
 typedef opentui_native_handle (*opentui_create_renderer_fn)(uint32_t, uint32_t, uint8_t, uint8_t, void *);
 typedef void (*opentui_set_use_thread_fn)(opentui_native_handle, bool);
 typedef void (*opentui_resize_renderer_fn)(opentui_native_handle, uint32_t, uint32_t);
+typedef void (*opentui_write_out_fn)(opentui_native_handle, const uint8_t *, uint32_t);
 typedef void (*opentui_set_background_color_fn)(opentui_native_handle, const uint16_t *);
 typedef void (*opentui_set_cursor_position_fn)(opentui_native_handle, int32_t, int32_t, bool);
 typedef void (*opentui_set_cursor_color_fn)(opentui_native_handle, const uint16_t *);
@@ -988,6 +1028,7 @@ _Static_assert(_Generic(&editBufferInsertText, opentui_edit_buffer_insert_text_f
 _Static_assert(_Generic(&createRenderer, opentui_create_renderer_fn: 1, default: 0), "createRenderer ABI drift");
 _Static_assert(_Generic(&setUseThread, opentui_set_use_thread_fn: 1, default: 0), "setUseThread ABI drift");
 _Static_assert(_Generic(&resizeRenderer, opentui_resize_renderer_fn: 1, default: 0), "resizeRenderer ABI drift");
+_Static_assert(_Generic(&writeOut, opentui_write_out_fn: 1, default: 0), "writeOut ABI drift");
 _Static_assert(_Generic(&setBackgroundColor, opentui_set_background_color_fn: 1, default: 0), "setBackgroundColor ABI drift");
 _Static_assert(_Generic(&setCursorPosition, opentui_set_cursor_position_fn: 1, default: 0), "setCursorPosition ABI drift");
 _Static_assert(_Generic(&setCursorColor, opentui_set_cursor_color_fn: 1, default: 0), "setCursorColor ABI drift");

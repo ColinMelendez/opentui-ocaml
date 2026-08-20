@@ -163,4 +163,5 @@ val restore : t -> snapshot -> (unit, Error.t) result
 module Private : sig
   (** Internal construction of a renderer-owned view. *)
   val of_native : Native_token.Buffer.t -> Native_owner.t -> t
+  val of_optimized : Native_token.Optimized_buffer.t -> Native_owner.t -> t
 end

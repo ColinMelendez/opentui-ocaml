@@ -14,6 +14,8 @@ type remote_mode = Auto | Local | Remote
 type render_status = Rendered | Skipped | Failed
 (** The native renderer's frame outcome. *)
 
+type split_footer_transition = Viewport_scroll | Clear_stale_rows
+
 type cursor_style = Block | Line | Underline | Default
 
 type mouse_pointer_style =
@@ -143,6 +145,10 @@ val create :
 (** [resize renderer ...] resizes the renderer and its borrowed buffers. *)
 val resize : t -> width:int32 -> height:int32 -> (unit, Error.t) result
 
+(** [write_out renderer bytes] appends owner-synchronous terminal bytes to the
+    renderer's configured output backend, preserving order with frame output. *)
+val write_out : t -> bytes -> (unit, Error.t) result
+
 (** [set_background_color renderer ~color] changes the native backdrop and
     requests the next renderer frame. *)
 val set_background_color : t -> color:Color.t -> (unit, Error.t) result
@@ -180,6 +186,40 @@ val next_buffer : t -> (Buffer.t, Error.t) result
 
 (** [render renderer ~force] presents the native frame and reports its status. *)
 val render : t -> force:bool -> (render_status, Error.t) result
+
+(** Split-footer primitives mirror the native scrollback state machine. The
+    returned offset is the output-space render offset selected by native code. *)
+val set_render_offset : t -> offset:int32 -> (unit, Error.t) result
+val reset_split_scrollback :
+  t -> seed_rows:int32 -> pinned_render_offset:int32 -> (int32, Error.t) result
+val sync_split_scrollback :
+  t -> pinned_render_offset:int32 -> (int32, Error.t) result
+val get_split_output_offset :
+  t -> surface_offset:int32 -> (int32, Error.t) result
+val set_pending_split_footer_transition :
+  t ->
+  split_footer_transition ->
+  source_top_line:int32 ->
+  source_height:int32 ->
+  target_top_line:int32 ->
+  target_height:int32 ->
+  scroll_lines:int32 ->
+  (unit, Error.t) result
+val clear_pending_split_footer_transition : t -> (unit, Error.t) result
+val repaint_split_footer :
+  t -> pinned_render_offset:int32 -> force:bool ->
+  (int32 * render_status, Error.t) result
+val commit_split_footer_snapshot :
+  t ->
+  snapshot:Optimized_buffer.t ->
+  row_columns:int32 ->
+  start_on_new_line:bool ->
+  trailing_newline:bool ->
+  pinned_render_offset:int32 ->
+  force:bool ->
+  begin_frame:bool ->
+  finalize_frame:bool ->
+  (int32 * render_status, Error.t) result
 
 (** [hit_grid renderer] creates an opaque capability for native hit-grid
     production and lookup. The capability borrows [renderer]'s owner. *)

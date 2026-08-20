@@ -48,6 +48,10 @@ external renderer_resize :
   Native_token.Renderer.t -> int32 -> int32 -> int =
   "opentui_raw_renderer_resize"
 
+external renderer_write_out :
+  Native_token.Renderer.t -> bytes -> int =
+  "opentui_raw_renderer_write_out"
+
 external renderer_set_background_color :
   Native_token.Renderer.t -> color -> int =
   "opentui_raw_renderer_set_background_color"
@@ -78,6 +82,45 @@ external renderer_buffer :
 
 external renderer_render : Native_token.Renderer.t -> bool -> int =
   "opentui_raw_renderer_render"
+
+external renderer_set_render_offset : Native_token.Renderer.t -> int32 -> int =
+  "opentui_raw_renderer_set_render_offset"
+
+external renderer_reset_split_scrollback :
+  Native_token.Renderer.t -> int32 -> int32 -> int * int32 =
+  "opentui_raw_renderer_reset_split_scrollback"
+
+external renderer_sync_split_scrollback :
+  Native_token.Renderer.t -> int32 -> int * int32 =
+  "opentui_raw_renderer_sync_split_scrollback"
+
+external renderer_get_split_output_offset :
+  Native_token.Renderer.t -> int32 -> int * int32 =
+  "opentui_raw_renderer_get_split_output_offset"
+
+external renderer_set_pending_split_footer_transition :
+  Native_token.Renderer.t ->
+  int32 * int32 * int32 * int32 * int32 * int32 -> int =
+  "opentui_raw_renderer_set_pending_split_footer_transition"
+
+external renderer_clear_pending_split_footer_transition :
+  Native_token.Renderer.t -> int =
+  "opentui_raw_renderer_clear_pending_split_footer_transition"
+
+external renderer_repaint_split_footer :
+  Native_token.Renderer.t -> int32 -> bool -> int * int32 =
+  "opentui_raw_renderer_repaint_split_footer"
+
+external renderer_commit_split_footer_snapshot :
+  Native_token.Renderer.t ->
+  Native_token.Optimized_buffer.t ->
+  int32 -> bool -> bool -> int32 -> bool -> bool -> bool -> int * int32 =
+  "opentui_raw_renderer_commit_split_footer_snapshot_bytecode"
+  "opentui_raw_renderer_commit_split_footer_snapshot"
+
+external optimized_buffer_as_buffer :
+  Native_token.Optimized_buffer.t -> Native_token.Buffer.t =
+  "opentui_raw_optimized_buffer_as_buffer"
 
 external renderer_add_to_hit_grid :
   Native_token.Renderer.t -> int32 -> int32 -> int32 -> int32 -> int32 -> int =

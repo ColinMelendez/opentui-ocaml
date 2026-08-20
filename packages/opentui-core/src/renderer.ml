@@ -12,6 +12,26 @@ end
 
 type render_status = Rendered | Skipped | Failed
 
+type external_output_mode = Passthrough | Capture_stdout
+
+type scrollback_render_context = {
+  width : int;
+  width_method : Text_buffer.width_method;
+  tail_column : int;
+  render_context : Render_context.t;
+}
+
+type scrollback_snapshot = {
+  root : Renderable.t;
+  width : int;
+  height : int;
+  row_columns : int;
+  start_on_new_line : bool;
+  trailing_newline : bool;
+}
+
+type scrollback_writer = scrollback_render_context -> scrollback_snapshot
+
 type cursor_style = Render_context.cursor_style =
   | Block
   | Line
@@ -67,6 +87,8 @@ type t = {
   theme_mode : Renderer_theme_mode.t;
   theme_query_requested : bool ref;
   mutable latest_pointer : (int * int) option;
+  mutable use_mouse : bool;
+  mutable mouse_protocol : (bool -> (unit, Error.t) result) option;
   mutable last_pointer_modifiers : Lib.Mouse_decoder.modifiers;
   mutable last_over : Renderable.t option;
   mutable last_over_num : int option;
@@ -82,6 +104,24 @@ type t = {
   mutable live_leases : live_lease list;
   mutable destruction_started : bool;
   mutable close_error : Error.t option;
+  mutable screen_mode : Lib.Render_geometry.screen_mode;
+  mutable footer_height : int;
+  mutable external_output_mode : external_output_mode;
+  mutable split_render_offset : int32;
+  mutable split_tail_column : int;
+  mutable split_transition_pending : bool;
+  mutable split_transition_source_top_line : int option;
+  mutable split_transition_source_height : int option;
+  (* Snapshots queued for upcoming split-footer frames. *)
+  mutable scrollback_commits : scrollback_commit list;
+}
+
+and scrollback_commit = {
+  snapshot : Owned_buffer.t;
+  row_columns : int;
+  row_widths : int array;
+  start_on_new_line : bool;
+  trailing_newline : bool;
 }
 
 and pre_render_driver = {
@@ -477,9 +517,10 @@ let create_with_clock_option ?remote_mode ~output ~clock ~width ~height () =
                   let context =
                     Render_context.Private.create
                       ~owner:(Render_context.Private.new_owner ()) ~width ~height
+                      ~terminal_width:width ~terminal_height:height
                       ~capabilities:(Some capabilities) ~clock
                       ~hit_grid:(Opentui_raw.Renderer.hit_grid raw)
-                      ~presentation:raw
+                      ~presentation:raw ~offscreen:false
                   in
                   (match Renderable.Private.create_root context with
                   | Error error ->
@@ -535,6 +576,8 @@ let create_with_clock_option ?remote_mode ~output ~clock ~width ~height () =
                               theme_mode;
                               theme_query_requested;
                               latest_pointer = None;
+                              use_mouse = true;
+                              mouse_protocol = None;
                               last_pointer_modifiers =
                                 { Lib.Mouse_decoder.shift = false; alt = false; ctrl = false };
                               last_over = None;
@@ -551,6 +594,15 @@ let create_with_clock_option ?remote_mode ~output ~clock ~width ~height () =
                               live_leases = [];
                               destruction_started = false;
                               close_error = None;
+                              screen_mode = Lib.Render_geometry.Alternate_screen;
+                              footer_height = 0;
+                              external_output_mode = Passthrough;
+                              split_render_offset = 0l;
+                              split_tail_column = 0;
+                              split_transition_pending = false;
+                              split_transition_source_top_line = None;
+                              split_transition_source_height = None;
+                              scrollback_commits = [];
                             }
                           in
                           Render_context.Private.set_selection_update context
@@ -677,6 +729,366 @@ let palette renderer = Render_context.palette renderer.context
 let theme_mode renderer = Render_context.theme_mode renderer.context
 let pixel_resolution renderer = Render_context.pixel_resolution renderer.context
 let render_geometry renderer = Render_context.render_geometry renderer.context
+let external_output_mode renderer =
+  if Render_context.Private.is_open renderer.context then
+    Ok renderer.external_output_mode
+  else Error Error.Closed
+
+let is_split_screen = function
+  | Lib.Render_geometry.Split_footer -> true
+  | Lib.Render_geometry.Alternate_screen | Lib.Render_geometry.Main_screen -> false
+
+let is_capture_output = function
+  | Capture_stdout -> true
+  | Passthrough -> false
+
+let same_external_output_mode left right =
+  match left, right with
+  | Passthrough, Passthrough | Capture_stdout, Capture_stdout -> true
+  | Passthrough, Capture_stdout | Capture_stdout, Passthrough -> false
+
+let has_scrollback_commits renderer =
+  match renderer.scrollback_commits with [] -> false | _ :: _ -> true
+
+let split_pinned_render_offset renderer (geometry : Lib.Render_geometry.t) =
+  match renderer.screen_mode with
+  | Lib.Render_geometry.Split_footer -> Int32.of_int geometry.render_offset
+  | Lib.Render_geometry.Alternate_screen | Lib.Render_geometry.Main_screen -> 0l
+
+let split_cursor_seed_rows renderer =
+  let terminal_height =
+    match Render_context.terminal_height renderer.context with
+    | Ok height -> max 1 (Int32.to_int height)
+    | Error _ -> 1
+  in
+  match Opentui_raw.Renderer.cursor_state renderer.raw with
+  | Ok { y; _ } ->
+      Int32.of_int
+        (max 1 (min terminal_height (max 1 (Int32.to_int y))))
+  | Error _ -> 1l
+
+let set_split_native_state renderer geometry ~preserve_scrollback =
+  let pinned_render_offset = split_pinned_render_offset renderer geometry in
+  let reset_state () =
+    if is_split_screen renderer.screen_mode
+       && is_capture_output renderer.external_output_mode
+       && preserve_scrollback
+    then
+      match
+        Opentui_raw.Renderer.sync_split_scrollback renderer.raw
+          ~pinned_render_offset
+      with
+      | Error error -> Error (map_raw_error error)
+      | Ok offset -> Ok offset
+    else
+      let seed_rows =
+        if is_split_screen renderer.screen_mode
+           && is_capture_output renderer.external_output_mode
+        then split_cursor_seed_rows renderer
+        else 0l
+      in
+      (match
+         Opentui_raw.Renderer.reset_split_scrollback renderer.raw ~seed_rows
+           ~pinned_render_offset
+       with
+       | Error error -> Error (map_raw_error error)
+       | Ok offset -> Ok offset)
+  in
+  Result.bind (reset_state ()) (fun native_offset ->
+      let render_offset =
+        if is_split_screen renderer.screen_mode
+           && not (is_capture_output renderer.external_output_mode)
+        then pinned_render_offset
+        else native_offset
+      in
+      match
+        Opentui_raw.Renderer.set_render_offset renderer.raw
+          ~offset:render_offset
+      with
+      | Error error -> Error (map_raw_error error)
+      | Ok () ->
+          renderer.split_render_offset <- render_offset;
+          if not preserve_scrollback then renderer.split_tail_column <- 0;
+          if not (is_split_screen renderer.screen_mode) then
+            renderer.split_tail_column <- 0;
+          Ok ())
+
+let advance_split_tail_column ~tail_column ~columns ~width =
+  if Int.compare columns 0 <= 0 || Int.compare width 0 <= 0 then
+    max 0 tail_column
+  else
+    let tail = ref (max 0 (min tail_column width)) in
+    let remaining = ref columns in
+    while Int.compare !remaining 0 > 0 do
+      if Int.compare !tail width >= 0 then tail := 0;
+      let available = width - !tail in
+      let step = min !remaining available in
+      tail := !tail + step;
+      remaining := !remaining - step;
+      if Int.compare !remaining 0 > 0 && Int.compare !tail width >= 0 then
+        tail := 0
+    done;
+    !tail
+
+let snapshot_row_widths buffer ~width ~height ~row_columns =
+  match Opentui_raw.Optimized_buffer.snapshot (Owned_buffer.raw buffer) with
+  | Error error -> Error (map_raw_error error)
+  | Ok (characters, _, _, _) ->
+      let continuation_mask = Int32.of_int (-1073741824) in
+      let widths = Array.make height 0 in
+      let limit = max 0 (min row_columns width) in
+      for row = 0 to height - 1 do
+        let x = ref limit in
+        let found_character = ref false in
+        while Int.compare !x 0 > 0 && not !found_character do
+          let character = characters.((row * width) + !x - 1) in
+          if
+            Int32.equal character 0l
+            || Int32.equal (Int32.logand character continuation_mask)
+                 continuation_mask
+          then decr x
+          else found_character := true
+        done;
+        widths.(row) <- !x
+      done;
+      Ok widths
+
+let split_tail_after_commit ~tail_column ~width commit =
+  let tail = ref tail_column in
+  if commit.start_on_new_line && Int.compare !tail 0 > 0 then tail := 0;
+  let row_count = Array.length commit.row_widths in
+  for row = 0 to row_count - 1 do
+    tail :=
+      advance_split_tail_column ~tail_column:!tail
+        ~columns:commit.row_widths.(row) ~width;
+    if Int.compare row (row_count - 1) < 0 || commit.trailing_newline then
+      tail := 0
+  done;
+  !tail
+
+let projected_split_tail_column renderer (geometry : Lib.Render_geometry.t) =
+  let width = max 1 geometry.render_width in
+  let tail = ref renderer.split_tail_column in
+  List.iter
+    (fun commit ->
+      tail := split_tail_after_commit ~tail_column:!tail ~width commit)
+    renderer.scrollback_commits;
+  !tail
+
+let update_split_tail_column renderer (geometry : Lib.Render_geometry.t) commits =
+  let width = max 1 geometry.render_width in
+  List.iter
+    (fun commit ->
+      renderer.split_tail_column <-
+        split_tail_after_commit ~tail_column:renderer.split_tail_column ~width
+          commit)
+    commits
+
+let current_split_pinned_render_offset renderer =
+  match Render_context.render_geometry renderer.context with
+  | Ok geometry -> split_pinned_render_offset renderer geometry
+  | Error _ -> 0l
+
+let commit_scrollback_commits renderer ~force =
+  let repaint_without_commits () =
+    match
+      Opentui_raw.Renderer.repaint_split_footer renderer.raw
+        ~pinned_render_offset:(current_split_pinned_render_offset renderer)
+        ~force
+    with
+    | Error error -> Error (map_raw_error error)
+    | Ok (offset, status) ->
+        renderer.split_render_offset <- offset;
+        (match status with
+        | Opentui_raw.Renderer.Rendered ->
+            renderer.split_transition_pending <- false;
+            renderer.split_transition_source_top_line <- None;
+            renderer.split_transition_source_height <- None
+        | Opentui_raw.Renderer.Skipped
+        | Opentui_raw.Renderer.Failed -> ());
+        Ok status
+  in
+  match renderer.scrollback_commits with
+  | [] -> repaint_without_commits ()
+  | commits ->
+      let last_index = List.length commits - 1 in
+      let next_offset = ref renderer.split_render_offset in
+      let outcome :
+          (Opentui_raw.Renderer.render_status option, Error.t) result ref =
+        ref (Ok None)
+      in
+      List.iteri
+        (fun index commit ->
+          match !outcome with
+          | Error _ | Ok (Some _) -> ()
+          | Ok None ->
+              let begin_frame = Int.equal index 0 in
+              let finalize_frame = Int.equal index last_index in
+              (match
+                 Opentui_raw.Renderer.commit_split_footer_snapshot renderer.raw
+                   ~snapshot:(Owned_buffer.raw commit.snapshot)
+                   ~row_columns:(Int32.of_int commit.row_columns)
+                   ~start_on_new_line:commit.start_on_new_line
+                   ~trailing_newline:commit.trailing_newline
+                   ~pinned_render_offset:
+                     (current_split_pinned_render_offset renderer)
+                   ~force:(force && finalize_frame) ~begin_frame ~finalize_frame
+               with
+               | Error error -> outcome := Error (map_raw_error error)
+               | Ok (offset, Opentui_raw.Renderer.Rendered) ->
+                   next_offset := offset
+               | Ok (_, (Opentui_raw.Renderer.Skipped as status))
+               | Ok (_, (Opentui_raw.Renderer.Failed as status)) ->
+                   outcome := Ok (Some status)))
+        commits;
+      (match !outcome with
+      | Error error ->
+          (* Native batching restores the complete batch on failure. Keep every
+             queued snapshot so the next frame retries the same FIFO payload. *)
+          renderer.force_full_repaint <- true;
+          Render_context.Private.request_render renderer.context;
+          Error error
+      | Ok (Some Opentui_raw.Renderer.Skipped) ->
+          Render_context.Private.request_render renderer.context;
+          Ok Opentui_raw.Renderer.Skipped
+      | Ok (Some Opentui_raw.Renderer.Failed) ->
+          renderer.force_full_repaint <- true;
+          Render_context.Private.request_render renderer.context;
+          Ok Opentui_raw.Renderer.Failed
+      | Ok (Some Opentui_raw.Renderer.Rendered) ->
+          Error Error.Unsupported
+      | Ok None ->
+          renderer.split_render_offset <- !next_offset;
+          renderer.split_transition_pending <- false;
+          renderer.split_transition_source_top_line <- None;
+          renderer.split_transition_source_height <- None;
+          (match Render_context.render_geometry renderer.context with
+          | Error error -> Error error
+          | Ok geometry ->
+              update_split_tail_column renderer geometry commits;
+              List.iter (fun commit -> Owned_buffer.close commit.snapshot) commits;
+              renderer.scrollback_commits <- [];
+              Ok Opentui_raw.Renderer.Rendered))
+
+let flush_scrollback_for_transition renderer =
+  if not (has_scrollback_commits renderer) then Ok ()
+  else
+    match commit_scrollback_commits renderer ~force:true with
+    | Error error -> Error error
+    | Ok Opentui_raw.Renderer.Rendered -> Ok ()
+    | Ok Opentui_raw.Renderer.Skipped
+    | Ok Opentui_raw.Renderer.Failed -> Error Error.Unsupported
+
+let schedule_split_footer_transition renderer ~previous_mode ~previous_capture
+    ~previous_geometry ~previous_render_offset
+    ~next_geometry:(next_geometry : Lib.Render_geometry.t) =
+  let clear_pending () =
+    match
+      Opentui_raw.Renderer.clear_pending_split_footer_transition renderer.raw
+    with
+    | Ok () ->
+        renderer.split_transition_pending <- false;
+        renderer.split_transition_source_top_line <- None;
+        renderer.split_transition_source_height <- None;
+        Ok ()
+    | Error error -> Error (map_raw_error error)
+  in
+  match previous_geometry with
+  | None -> clear_pending ()
+  | Some (source_geometry : Lib.Render_geometry.t) ->
+      let same_split_capture_transition =
+        is_split_screen previous_mode
+        && is_split_screen renderer.screen_mode
+        && is_capture_output renderer.external_output_mode
+        && Int.compare source_geometry.render_height 0 > 0
+        && Int.compare next_geometry.render_height 0 > 0
+      in
+      if not same_split_capture_transition then clear_pending ()
+      else
+        let source_top_line = max 1 (Int32.to_int previous_render_offset + 1) in
+        let target_top_line =
+          max 1 (Int32.to_int renderer.split_render_offset + 1)
+        in
+        let source_height = source_geometry.render_height in
+        let target_height = next_geometry.render_height in
+        let scroll_lines =
+          if previous_capture then max 0 (source_top_line - target_top_line)
+          else 0
+        in
+        let mode =
+          if Int.compare scroll_lines 0 > 0 then
+            Opentui_raw.Renderer.Viewport_scroll
+          else
+            Opentui_raw.Renderer.Clear_stale_rows
+        in
+        if
+          Int.equal source_top_line target_top_line
+          && Int.equal source_height target_height
+          && Int.equal scroll_lines 0
+        then clear_pending ()
+        else
+          match
+            Opentui_raw.Renderer.set_pending_split_footer_transition renderer.raw
+              mode ~source_top_line:(Int32.of_int source_top_line)
+              ~source_height:(Int32.of_int source_height)
+              ~target_top_line:(Int32.of_int target_top_line)
+              ~target_height:(Int32.of_int target_height)
+              ~scroll_lines:(Int32.of_int scroll_lines)
+          with
+          | Ok () ->
+              renderer.split_transition_pending <- true;
+              renderer.split_transition_source_top_line <- Some source_top_line;
+              renderer.split_transition_source_height <- Some source_height;
+              Ok ()
+          | Error error -> Error (map_raw_error error)
+
+let set_external_output_mode renderer mode =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else if is_capture_output mode && not (is_split_screen renderer.screen_mode) then
+    Error Error.Invalid_argument
+  else if same_external_output_mode mode renderer.external_output_mode then Ok ()
+  else begin
+    let previous_mode = renderer.external_output_mode in
+    let previous_geometry =
+      match Render_context.render_geometry renderer.context with
+      | Ok geometry -> Some geometry
+      | Error _ -> None
+    in
+    (match
+       flush_scrollback_for_transition renderer
+     with
+    | Error error -> Error error
+    | Ok () ->
+        let previous_render_offset = renderer.split_render_offset in
+        renderer.external_output_mode <- mode;
+        (match Render_context.render_geometry renderer.context with
+        | Error error ->
+            renderer.external_output_mode <- previous_mode;
+            Error error
+        | Ok geometry ->
+            (match
+               set_split_native_state renderer geometry ~preserve_scrollback:false
+             with
+            | Error error ->
+                renderer.external_output_mode <- previous_mode;
+                Error error
+            | Ok () ->
+                (match
+                   schedule_split_footer_transition renderer
+                     ~previous_mode:renderer.screen_mode
+                     ~previous_capture:(is_capture_output previous_mode)
+                     ~previous_geometry ~previous_render_offset
+                     ~next_geometry:geometry
+                 with
+                | Error error ->
+                    renderer.external_output_mode <- previous_mode;
+                    Error error
+                | Ok () ->
+                    renderer.force_full_repaint <- true;
+                    Render_context.Private.request_render renderer.context;
+                    Ok ()))))
+  end
+
 let has_pending_render renderer =
   Render_context.has_pending_render renderer.context
 
@@ -824,6 +1236,42 @@ let clear_selection renderer =
     Render_context.Private.request_render renderer.context;
     Ok ()
   end
+
+let clear_mouse_dispatch_state renderer =
+  Option.iter Event_subscription.cancel renderer.captured_destroy_subscription;
+  renderer.captured_destroy_subscription <- None;
+  renderer.captured <- None;
+  renderer.latest_pointer <- None;
+  renderer.last_over <- None;
+  renderer.last_over_num <- None;
+  renderer.last_pointer_modifiers <-
+    { Lib.Mouse_decoder.shift = false; alt = false; ctrl = false };
+  Render_context.Private.set_captured_num renderer.context None;
+  ignore (clear_selection renderer)
+
+let use_mouse renderer =
+  if Render_context.Private.is_open renderer.context then Ok renderer.use_mouse
+  else Error Error.Closed
+
+let set_mouse_protocol renderer callback =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else begin
+    renderer.mouse_protocol <- Some callback;
+    Ok ()
+  end
+
+let set_use_mouse renderer enabled =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else if Bool.equal renderer.use_mouse enabled then Ok ()
+  else
+    let transition () =
+      renderer.use_mouse <- enabled;
+      if enabled then Render_context.Private.request_render renderer.context
+      else clear_mouse_dispatch_state renderer
+    in
+    match renderer.mouse_protocol with
+    | Some callback -> Result.bind (callback enabled) (fun () -> transition (); Ok ())
+    | None -> transition (); Ok ()
 
 let on_resize renderer callback =
   Render_context.on_resize renderer.context callback
@@ -987,22 +1435,248 @@ let feed_palette_response renderer response =
 
 let set_render_geometry renderer screen_mode ~footer_height =
   if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
-  else if footer_height < 0 then Error Error.Invalid_argument
-  else begin
-    Render_context.Private.set_render_geometry renderer.context screen_mode
-      ~footer_height;
-    match Render_context.render_geometry renderer.context with
-    | Error error -> Error error
-    | Ok geometry ->
-        Result.bind
-          (Renderable.Private.resize_root renderer.root
-             ~width:(Int32.of_int geometry.render_width)
-             ~height:(Int32.of_int geometry.render_height))
-          (fun () ->
-            renderer.force_full_repaint <- true;
-            Render_context.Private.request_render renderer.context;
-            Ok ())
-  end
+  else if Int.compare footer_height 0 < 0 then Error Error.Invalid_argument
+  else
+    let previous_mode = renderer.screen_mode in
+    let previous_capture = is_capture_output renderer.external_output_mode in
+    let previous_geometry =
+      match Render_context.render_geometry renderer.context with
+      | Ok geometry -> Some geometry
+      | Error _ -> None
+    in
+    let flush_result =
+      flush_scrollback_for_transition renderer
+    in
+    Result.bind flush_result (fun () ->
+        let previous_render_offset = renderer.split_render_offset in
+        match Render_context.terminal_width renderer.context,
+          Render_context.terminal_height renderer.context with
+        | Error error, _ | _, Error error -> Error error
+        | Ok terminal_width, Ok terminal_height ->
+            let geometry =
+              Lib.Render_geometry.calculate screen_mode
+                ~terminal_width:(Int32.to_int terminal_width)
+                ~terminal_height:(Int32.to_int terminal_height) ~footer_height
+            in
+            let native_width = Int32.of_int (max 1 geometry.render_width) in
+            let native_height = Int32.of_int (max 1 geometry.render_height) in
+            let preserve_scrollback =
+              is_split_screen renderer.screen_mode
+              && is_capture_output renderer.external_output_mode
+            in
+            Result.bind
+              (match
+                 Opentui_raw.Renderer.resize renderer.raw ~width:native_width
+                   ~height:native_height
+               with
+              | Error error -> Error (map_raw_error error)
+              | Ok () -> Ok ())
+              (fun () ->
+                Render_context.Private.set_render_geometry renderer.context
+                  screen_mode ~footer_height;
+                renderer.screen_mode <- screen_mode;
+                renderer.footer_height <- footer_height;
+                if not (is_split_screen screen_mode) then
+                  renderer.external_output_mode <- Passthrough;
+                Result.bind
+                  (Renderable.Private.resize_root renderer.root
+                     ~width:(Int32.of_int geometry.render_width)
+                     ~height:(Int32.of_int geometry.render_height))
+                  (fun () ->
+                    Result.bind
+                      (Console.resize renderer.console
+                         ~width:(max 1 geometry.render_width)
+                         ~height:(max 1 geometry.render_height))
+                      (fun () ->
+                        Result.bind
+                          (set_split_native_state renderer geometry
+                             ~preserve_scrollback)
+                          (fun () ->
+                            Result.bind
+                              (schedule_split_footer_transition renderer
+                                 ~previous_mode ~previous_capture
+                                 ~previous_geometry ~previous_render_offset
+                                 ~next_geometry:geometry)
+                              (fun () ->
+                                renderer.force_full_repaint <- true;
+                                Render_context.Private.request_render
+                                  renderer.context;
+                                Ok ()))))))
+
+let raw_render_status = function
+  | Rendered -> Opentui_raw.Renderer.Rendered
+  | Skipped -> Opentui_raw.Renderer.Skipped
+  | Failed -> Opentui_raw.Renderer.Failed
+
+let core_render_status = function
+  | Opentui_raw.Renderer.Rendered -> Rendered
+  | Opentui_raw.Renderer.Skipped -> Skipped
+  | Opentui_raw.Renderer.Failed -> Failed
+
+let commit_scrollback_frames renderer ~force =
+  Result.map core_render_status (commit_scrollback_commits renderer ~force)
+
+let text_width_method = function
+  | Terminal_capabilities.Wcwidth -> Text_buffer.Wcwidth
+  | Terminal_capabilities.Unicode -> Text_buffer.Unicode
+
+let owned_buffer_as_buffer buffer =
+  Buffer_internal.of_raw
+    (Opentui_raw.Buffer.Private.of_optimized
+       (Opentui_raw.Optimized_buffer.Private.handle (Owned_buffer.raw buffer))
+       (Opentui_raw.Optimized_buffer.Private.owner (Owned_buffer.raw buffer)))
+
+let write_to_scrollback renderer writer =
+  if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else
+    match renderer.screen_mode, renderer.external_output_mode with
+    | Lib.Render_geometry.Split_footer, Capture_stdout ->
+        (match Render_context.render_geometry renderer.context with
+        | Error error -> Error error
+        | Ok geometry when Int.compare geometry.render_height 0 <= 0 ->
+            Error Error.Invalid_argument
+        | Ok geometry ->
+            (match
+               Render_context.capabilities renderer.context,
+               Render_context.clock renderer.context,
+               Render_context.width_method renderer.context,
+               Render_context.terminal_width renderer.context,
+               Render_context.terminal_height renderer.context
+             with
+            | Error error, _, _, _, _
+            | _, Error error, _, _, _
+            | _, _, Error error, _, _
+            | _, _, _, Error error, _
+            | _, _, _, _, Error error ->
+                Error error
+            | Ok capabilities, Ok clock, Ok unicode, Ok terminal_width,
+              Ok terminal_height ->
+                let snapshot_context =
+                  Render_context.Private.create
+                    ~owner:(Render_context.Private.new_owner ())
+                    ~width:(Int32.of_int (max 1 geometry.render_width))
+                    ~height:(Int32.of_int (max 1 geometry.render_height))
+                    ~terminal_width ~terminal_height
+                    ~capabilities ~clock
+                    ~hit_grid:(Opentui_raw.Renderer.hit_grid renderer.raw)
+                    ~presentation:renderer.raw ~offscreen:true
+                in
+                Fun.protect
+                  ~finally:(fun () -> Render_context.Private.close snapshot_context)
+                  (fun () ->
+                    let width_method = text_width_method unicode in
+                    let context =
+                      {
+                        width = max 1 geometry.render_width;
+                        width_method;
+                        tail_column = projected_split_tail_column renderer geometry;
+                        render_context = snapshot_context;
+                      }
+                    in
+                    let snapshot : scrollback_snapshot = writer context in
+                    let root = snapshot.root in
+                    let snapshot_root_ref : Renderable.t option ref = ref None in
+                    let cleanup_snapshot_root () =
+                      Option.iter
+                        (fun snapshot_root ->
+                          Renderable.destroy_recursively snapshot_root)
+                        !snapshot_root_ref;
+                      if not (Renderable.is_destroyed root) then
+                        Renderable.destroy_recursively root
+                    in
+                    Fun.protect ~finally:cleanup_snapshot_root (fun () ->
+                        if Renderable.is_destroyed root
+                           || Option.is_some (Renderable.parent root)
+                           || not (Render_context.same_owner
+                                     (Renderable.context root) snapshot_context)
+                        then Error Error.Invalid_argument
+                        else
+                          let snapshot_width =
+                            max 1 (min snapshot.width (max 1 geometry.render_width))
+                          in
+                          let snapshot_height = max 1 snapshot.height in
+                          let row_columns =
+                            max 0 (min snapshot.row_columns snapshot_width)
+                          in
+                          match
+                            Render_context.Private.resize_offscreen snapshot_context
+                              ~width:(Int32.of_int snapshot_width)
+                              ~height:(Int32.of_int snapshot_height)
+                          with
+                          | () ->
+                              (match
+                                 Renderable.Private.create_root snapshot_context
+                               with
+                              | Error error -> Error error
+                              | Ok snapshot_root ->
+                                  snapshot_root_ref := Some snapshot_root;
+                                  let result =
+                                match
+                                  Renderable.Private.attach ~parent:snapshot_root
+                                    ~child:root ~index:0
+                                with
+                                | Error error -> Error error
+                                | Ok _ ->
+                                    (match
+                                       Renderable.Private.resize_root snapshot_root
+                                         ~width:(Int32.of_int snapshot_width)
+                                         ~height:(Int32.of_int snapshot_height)
+                                     with
+                                    | Error error -> Error error
+                                    | Ok () ->
+                                        (match
+                                           Owned_buffer.create ~width:snapshot_width
+                                             ~height:snapshot_height ~width_method ()
+                                         with
+                                        | Error error -> Error error
+                                        | Ok buffer ->
+                                            let render_result =
+                                              let target = owned_buffer_as_buffer buffer in
+                                              Result.bind
+                                                (Owned_buffer.clear buffer
+                                                   ~background:Color.transparent)
+                                                (fun () ->
+                                                  Result.bind
+                                                    (Renderable.Private.render_root
+                                                       snapshot_root target
+                                                       ~delta_time:0.0)
+                                                    (fun () ->
+                                                      (match
+                                                         snapshot_row_widths buffer
+                                                           ~width:snapshot_width
+                                                           ~height:snapshot_height
+                                                           ~row_columns
+                                                       with
+                                                      | Error error ->
+                                                          Owned_buffer.close buffer;
+                                                          Error error
+                                                      | Ok row_widths ->
+                                                          renderer.scrollback_commits <-
+                                                          renderer.scrollback_commits
+                                                            @ [ {
+                                                                  snapshot = buffer;
+                                                                  row_columns;
+                                                                  row_widths;
+                                                                  start_on_new_line =
+                                                                    snapshot.start_on_new_line;
+                                                                  trailing_newline =
+                                                                    snapshot.trailing_newline;
+                                                                } ];
+                                                          Render_context.Private.request_render
+                                                            renderer.context;
+                                                          Ok ())))
+                                            in
+                                            (match render_result with
+                                            | Ok () -> Ok ()
+                                            | Error error ->
+                                                Owned_buffer.close buffer;
+                                                Error error)))
+                                  in
+                                  result))
+                  )))
+    | Lib.Render_geometry.Alternate_screen, _
+    | Lib.Render_geometry.Main_screen, _
+    | Lib.Render_geometry.Split_footer, Passthrough -> Error Error.Invalid_argument
 
 let on_handler_error renderer callback =
   Render_context.on_handler_error renderer.context callback
@@ -1251,7 +1925,7 @@ let pointer_event_is_motion = function
   | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Drag -> true
   | Lib.Mouse_decoder.Down | Lib.Mouse_decoder.Up | Lib.Mouse_decoder.Scroll -> false
 
-let dispatch_pointer renderer (decoded : Lib.Mouse_decoder.event) =
+let dispatch_pointer_in_surface renderer (decoded : Lib.Mouse_decoder.event) =
   renderer.latest_pointer <-
     Some (decoded.Lib.Mouse_decoder.x, decoded.Lib.Mouse_decoder.y);
   renderer.last_pointer_modifiers <- decoded.Lib.Mouse_decoder.modifiers;
@@ -1478,6 +2152,25 @@ let dispatch_pointer renderer (decoded : Lib.Mouse_decoder.event) =
         | Lib.Mouse_decoder.Move | Lib.Mouse_decoder.Drag
         | Lib.Mouse_decoder.Scroll -> dispatch_regular ()
 
+let dispatch_pointer renderer (decoded : Lib.Mouse_decoder.event) =
+  if not renderer.use_mouse then Ok false
+  else
+    let render_offset =
+      if is_split_screen renderer.screen_mode then
+        Int32.to_int renderer.split_render_offset
+      else 0
+    in
+    if is_split_screen renderer.screen_mode
+       && Int.compare decoded.Lib.Mouse_decoder.y render_offset < 0
+    then Ok false
+    else
+      let decoded =
+        if is_split_screen renderer.screen_mode then
+          { decoded with Lib.Mouse_decoder.y = decoded.Lib.Mouse_decoder.y - render_offset }
+        else decoded
+      in
+      dispatch_pointer_in_surface renderer decoded
+
 let process_capability_response renderer bytes =
   let sequence = Bytes.to_string bytes in
   let theme_response = Renderer_theme_mode.handle_sequence renderer.theme_mode sequence in
@@ -1549,40 +2242,125 @@ let hit_test renderer ~x ~y =
   if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
   else Ok (hit_target renderer ~x ~y)
 
+let write_terminal_output renderer bytes =
+  match Opentui_raw.Renderer.write_out renderer.raw bytes with
+  | Ok () -> Ok ()
+  | Error error -> Error (map_raw_error error)
+
 let resize renderer ~width ~height =
   if not (Render_context.Private.is_open renderer.context) then Error Error.Closed
+  else if Int32.compare width 0l <= 0 || Int32.compare height 0l <= 0 then
+    Error Error.Invalid_argument
   else
-    match Opentui_raw.Renderer.resize renderer.raw ~width ~height with
-    | Error error -> Error (map_raw_error error)
-    | Ok () ->
-      release_capture renderer;
-      ignore (clear_selection renderer);
-        Render_context.Private.resize renderer.context ~width ~height;
-        let geometry =
-          match Render_context.render_geometry renderer.context with
-          | Ok geometry -> geometry
-          | Error _ ->
-              Lib.Render_geometry.calculate Lib.Render_geometry.Alternate_screen
-                ~terminal_width:(Int32.to_int width)
-                ~terminal_height:(Int32.to_int height) ~footer_height:0
+    let previous_geometry =
+      match Render_context.render_geometry renderer.context with
+      | Ok geometry -> Some geometry
+      | Error _ -> None
+    in
+    match Render_context.terminal_width renderer.context,
+      Render_context.terminal_height renderer.context with
+    | Error error, _ | _, Error error -> Error error
+    | Ok previous_terminal_width, Ok previous_terminal_height ->
+        let previous_footer_height =
+          match previous_geometry with
+          | Some geometry -> geometry.effective_footer_height
+          | None -> 0
         in
-        (match
-           Renderable.Private.resize_root renderer.root
-             ~width:(Int32.of_int geometry.render_width)
-             ~height:(Int32.of_int geometry.render_height)
-         with
-        | Error error -> Error error
-        | Ok () ->
+        let pending_transition_start =
+          if renderer.split_transition_pending then
+            renderer.split_transition_source_top_line
+          else None
+        in
+        let visible_previous_split_height =
+          match renderer.split_transition_source_height with
+          | Some height -> height
+          | None -> previous_footer_height
+        in
+        let clear_start =
+          if not (is_split_screen renderer.screen_mode)
+             || Int.compare visible_previous_split_height 0 <= 0
+          then None
+          else
+            let width_shrink_start =
+              if Int32.compare width previous_terminal_width < 0 then
+                Some
+                  (max 1
+                     (Int32.to_int previous_terminal_height
+                     - (visible_previous_split_height * 2)))
+              else None
+            in
+            match pending_transition_start, width_shrink_start with
+            | None, None -> None
+            | Some start, None -> Some (max 1 start)
+            | None, Some start -> Some start
+            | Some transition_start, Some width_start ->
+                Some (max 1 (min transition_start width_start))
+        in
+        let geometry =
+          Lib.Render_geometry.calculate renderer.screen_mode
+            ~terminal_width:(Int32.to_int width)
+            ~terminal_height:(Int32.to_int height)
+            ~footer_height:renderer.footer_height
+        in
+        Result.bind (flush_scrollback_for_transition renderer) (fun () ->
             Result.bind
-              (Console.resize renderer.console ~width:(Int32.to_int width)
-                 ~height:(Int32.to_int height))
+              (if is_split_screen renderer.screen_mode then
+                 Buffer.clear renderer.current_buffer
+                   ~background:renderer.background_color
+               else Ok ())
               (fun () ->
-                ignore
-                  (Renderer_events.Private.emit_resize
-                     (Render_context.Private.events renderer.context)
-                     { Render_context.width; height });
-                Render_context.Private.request_render renderer.context;
-                Ok ()))
+                Result.bind
+                  (match clear_start with
+                  | None -> Ok ()
+                  | Some row ->
+                      (match Lib.Ansi.move_cursor_and_clear ~row ~column:1 with
+                      | Error _ -> Error Error.Invalid_argument
+                      | Ok sequence ->
+                          write_terminal_output renderer
+                            (Bytes.of_string sequence)))
+                  (fun () ->
+                    match
+                      Opentui_raw.Renderer.clear_pending_split_footer_transition
+                        renderer.raw
+                    with
+                    | Error error -> Error (map_raw_error error)
+                    | Ok () ->
+                        renderer.split_transition_pending <- false;
+                        renderer.split_transition_source_top_line <- None;
+                        renderer.split_transition_source_height <- None;
+                        match
+                          Opentui_raw.Renderer.resize renderer.raw
+                            ~width:(Int32.of_int (max 1 geometry.render_width))
+                            ~height:(Int32.of_int (max 1 geometry.render_height))
+                        with
+                        | Error error -> Error (map_raw_error error)
+                        | Ok () ->
+                            release_capture renderer;
+                            ignore (clear_selection renderer);
+                            Render_context.Private.resize renderer.context ~width ~height;
+                            (match
+                               Renderable.Private.resize_root renderer.root
+                                 ~width:(Int32.of_int geometry.render_width)
+                                 ~height:(Int32.of_int geometry.render_height)
+                             with
+                            | Error error -> Error error
+                            | Ok () ->
+                                Result.bind
+                                  (Console.resize renderer.console
+                                     ~width:(max 1 geometry.render_width)
+                                     ~height:(max 1 geometry.render_height))
+                                  (fun () ->
+                                    Result.bind
+                                      (set_split_native_state renderer geometry
+                                         ~preserve_scrollback:true)
+                                      (fun () ->
+                                        ignore
+                                          (Renderer_events.Private.emit_resize
+                                             (Render_context.Private.events renderer.context)
+                                             { Render_context.width; height });
+                                        Render_context.Private.request_render
+                                          renderer.context;
+                                        Ok ()))))))
 
 let render ?(delta_time = 0.0) renderer ~force =
   if renderer.destruction_started
@@ -1620,10 +2398,33 @@ let render ?(delta_time = 0.0) renderer ~force =
                   | Ok () ->
                       let native_force = force || renderer.force_full_repaint in
                       let native_result =
-                        Opentui_raw.Renderer.render renderer.raw ~force:native_force
+                        if is_split_screen renderer.screen_mode
+                           && is_capture_output renderer.external_output_mode
+                        then
+                          Result.map raw_render_status
+                            (commit_scrollback_frames renderer
+                               ~force:native_force)
+                        else
+                          let render_offset =
+                            if is_split_screen renderer.screen_mode then
+                              renderer.split_render_offset
+                            else 0l
+                          in
+                          (match
+                             Opentui_raw.Renderer.set_render_offset renderer.raw
+                               ~offset:render_offset
+                           with
+                           | Error error -> Error (map_raw_error error)
+                           | Ok () ->
+                               (match
+                                  Opentui_raw.Renderer.render renderer.raw
+                                    ~force:native_force
+                                with
+                                | Error error -> Error (map_raw_error error)
+                                | Ok status -> Ok status))
                       in
                       match native_result with
-                      | Error error -> failed_frame renderer (map_raw_error error)
+                      | Error error -> failed_frame renderer error
                       | Ok native_status ->
                           (match flush_output renderer with
                            | Error error -> failed_frame renderer error
@@ -1674,6 +2475,37 @@ let close renderer =
       renderer.live_leases;
     renderer.live_leases <- [];
     renderer.pre_render_drivers <- [];
+    let scrollback_result =
+      if is_split_screen renderer.screen_mode
+         && is_capture_output renderer.external_output_mode
+      then begin
+        let commit_result =
+          if has_scrollback_commits renderer then
+            commit_scrollback_commits renderer ~force:true
+          else Ok Opentui_raw.Renderer.Rendered
+        in
+        let reset_result =
+          match
+            Opentui_raw.Renderer.reset_split_scrollback renderer.raw
+              ~seed_rows:0l ~pinned_render_offset:0l
+          with
+          | Ok _ -> Ok ()
+          | Error error -> Error (map_raw_error error)
+        in
+        renderer.split_render_offset <- 0l;
+        renderer.split_tail_column <- 0;
+        let committed_result =
+          match commit_result with
+          | Error error -> Error error
+          | Ok Opentui_raw.Renderer.Rendered -> Ok ()
+          | Ok Opentui_raw.Renderer.Skipped
+          | Ok Opentui_raw.Renderer.Failed -> Error Error.Unsupported
+        in
+        (match committed_result, reset_result with
+        | Error error, _ | Ok (), Error error -> Error error
+        | Ok (), Ok () -> Ok ())
+      end else Ok ()
+    in
     release_capture renderer;
     ignore (clear_selection renderer);
     renderer.last_over <- None;
@@ -1683,6 +2515,9 @@ let close renderer =
     Renderer_theme_mode.dispose renderer.theme_mode;
     Console.destroy renderer.console;
     Renderable.destroy_recursively renderer.root;
+    List.iter (fun commit -> Owned_buffer.close commit.snapshot)
+      renderer.scrollback_commits;
+    renderer.scrollback_commits <- [];
     ignore
       (Renderer_events.Private.emit_destroy
          (Render_context.Private.events renderer.context) ());
@@ -1695,10 +2530,11 @@ let close renderer =
       | Some feed -> Native_span_feed.close feed
     in
     let result =
-      match output_result, feed_result with
-      | Error error, _ -> Error error
-      | Ok (), Error error -> Error error
-      | Ok (), Ok () -> Ok ()
+      match scrollback_result, output_result, feed_result with
+      | Error error, _, _ -> Error error
+      | Ok (), Error error, _ -> Error error
+      | Ok (), Ok (), Error error -> Error error
+      | Ok (), Ok (), Ok () -> Ok ()
     in
     (match result with
      | Ok () -> ()

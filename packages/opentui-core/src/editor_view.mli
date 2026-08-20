@@ -39,6 +39,7 @@ val selected_range : t -> (int * int) option
 val has_selection : t -> bool
 val set_local_selection :
   t -> anchor_x:int -> anchor_y:int -> focus_x:int -> focus_y:int -> unit
+(** [set_local_selection] also places the edit cursor at the focus point. *)
 val update_local_selection :
   t -> anchor_x:int -> anchor_y:int -> focus_x:int -> focus_y:int -> unit
 val reset_local_selection : t -> unit

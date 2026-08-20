@@ -39,6 +39,10 @@ The examples directory contains executable programs for the public
   `vendor/opentui/packages/examples/src/slider-demo.ts`: horizontal and vertical
   sliders with different ranges, viewport sizes, dimensions, mouse dragging,
   focus controls, and animated values.
+- `split_mode_demo.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/split-mode-demo.ts`: a live composer
+  in split-footer mode, renderer-owned scrollback snapshots, streaming
+  messages, mode transitions, and footer resizing.
 
 The shared example helpers live in `lib/`:
 
@@ -135,3 +139,16 @@ Slider keys: `R` resets all values, `1`–`7` focuses a slider, backtick/`"`
 toggles the console, and Ctrl+C exits. After focusing a slider, its orientation-
 appropriate arrow keys adjust the value; Page Up/Down and Home/End also work.
 Mouse click-drag changes slider values.
+
+Run the split-mode demo:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/split_mode_demo.exe
+```
+
+Split-mode keys: Ctrl+Enter sends the composer, Enter inserts a newline,
+Ctrl+S toggles streaming, Ctrl+0 switches between split-footer and fullscreen,
+Ctrl+R queues a transcript, Shift+Up/Down changes the footer height (Ctrl+Up/Down
+also works when the terminal delivers it), and
+Escape focuses the composer. Use Shift+U or `/mouse on|off`, plus `/help`, `/demo`, `/stream on|off`,
+`/speed <ms>`, and `/footer <n>` in the composer. Ctrl+C exits.

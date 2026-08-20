@@ -7,6 +7,8 @@ let clear_screen = "\x1b[2J"
 let clear_saved_lines = "\x1b[3J"
 let bracketed_paste_start = "\x1b[200~"
 let bracketed_paste_end = "\x1b[201~"
+let modify_other_keys_set = "\x1b[>4;1m"
+let modify_other_keys_reset = "\x1b[>4;0m"
 let reset_background = "\x1b[49m"
 
 let positive value = Int.compare value 0 > 0

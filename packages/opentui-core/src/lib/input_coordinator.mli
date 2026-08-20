@@ -101,3 +101,7 @@ val fire_timeout :
 val reset : t -> unit
 (** [reset coordinator] discards pending bytes, typed events, and deadline
     state. *)
+
+val reset_mouse_state : t -> unit
+(** [reset_mouse_state coordinator] forgets pressed buttons without discarding
+    keyboard framing or queued input. *)

@@ -84,6 +84,7 @@ type scheduler_wakeup_state = {
 
 type t = {
   owner : owner;
+  offscreen : bool;
   clock : Lib.Clock.t option;
   mutable width : int32;
   mutable height : int32;
@@ -126,16 +127,22 @@ let map_raw_error error =
 let width context =
   match ensure_open context with
   | Error error -> Error error
-  | Ok () -> Ok context.width
+  | Ok () -> Ok (Int32.of_int context.render_geometry.render_width)
 
-let terminal_width context = width context
+let terminal_width context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok context.width
 
 let height context =
   match ensure_open context with
   | Error error -> Error error
-  | Ok () -> Ok context.height
+  | Ok () -> Ok (Int32.of_int context.render_geometry.render_height)
 
-let terminal_height context = height context
+let terminal_height context =
+  match ensure_open context with
+  | Error error -> Error error
+  | Ok () -> Ok context.height
 
 let frame_id context =
   match ensure_open context with
@@ -198,7 +205,8 @@ let notify_scheduler context =
   Option.iter (fun wakeup -> wakeup.callback ()) context.scheduler_wakeup
 
 let request_render_state context =
-  if not context.render_requested then begin
+  if context.offscreen then ()
+  else if not context.render_requested then begin
     context.render_requested <- true;
     notify_scheduler context
   end
@@ -213,6 +221,7 @@ let request_render context =
 let request_selection_update context =
   match ensure_open context with
   | Error error -> Error error
+  | Ok () when context.offscreen -> Ok ()
   | Ok () ->
       Option.iter (fun callback -> callback ()) context.selection_update;
       Ok ()
@@ -225,6 +234,7 @@ let has_pending_render context =
 let set_cursor_position context ~x ~y ?(visible = true) () =
   match ensure_open context with
   | Error error -> Error error
+  | Ok () when context.offscreen -> Ok ()
   | Ok () ->
       (match
          Opentui_raw.Renderer.set_cursor_position context.presentation ~x ~y
@@ -236,6 +246,7 @@ let set_cursor_position context ~x ~y ?(visible = true) () =
 let set_cursor_color context ~color =
   match ensure_open context with
   | Error error -> Error error
+  | Ok () when context.offscreen -> Ok ()
   | Ok () ->
       (match
          Opentui_raw.Renderer.set_cursor_color context.presentation
@@ -247,6 +258,7 @@ let set_cursor_color context ~color =
 let set_cursor_style context (options : cursor_style_options) =
   match ensure_open context with
   | Error error -> Error error
+  | Ok () when context.offscreen -> Ok ()
   | Ok () ->
       let raw_options : Opentui_raw.Renderer.cursor_style_options =
         {
@@ -502,7 +514,8 @@ module Private = struct
     { source = Keyboard; scope; kind; owner_num = error.owner_num;
       exception_value = error.exception_value }
 
-  let create ~owner ~width ~height ~capabilities ~clock ~hit_grid ~presentation =
+  let create ~owner ~width ~height ~terminal_width ~terminal_height
+      ~capabilities ~clock ~hit_grid ~presentation ~offscreen =
     let events = Renderer_events.Private.create () in
     let key_handler =
       Lib.Key_handler.create ~on_error:(fun error ->
@@ -512,9 +525,10 @@ module Private = struct
     in
     {
       owner;
+      offscreen;
       clock;
-      width;
-      height;
+      width = terminal_width;
+      height = terminal_height;
       frame_id = 0L;
       capabilities;
       palette = None;
@@ -578,8 +592,9 @@ module Private = struct
         ~terminal_width:(Int32.to_int width)
         ~terminal_height:(Int32.to_int height)
         ~footer_height:context.footer_height;
-    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
-      context.hit_grid
+    if not context.offscreen then
+      Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
+        context.hit_grid
 
   let advance_frame context =
     context.frame_id <- Int64.add context.frame_id 1L;
@@ -664,25 +679,36 @@ module Private = struct
     Option.map (fun focused -> focused.id) context.focused
 
   let request_live context =
-    let was_live = Int.compare context.live_request_count 0 > 0 in
-    let was_pending = context.render_requested in
-    context.live_request_count <- context.live_request_count + 1;
-    context.render_requested <- true;
-    (match context.live_control with
-    | Idle -> context.live_control <- Auto_started
-    | Auto_started | Explicit_started -> ())
-    ;
-    if not was_live || not was_pending then notify_scheduler context
+    if not context.offscreen then begin
+      let was_live = Int.compare context.live_request_count 0 > 0 in
+      let was_pending = context.render_requested in
+      context.live_request_count <- context.live_request_count + 1;
+      context.render_requested <- true;
+      (match context.live_control with
+      | Idle -> context.live_control <- Auto_started
+      | Auto_started | Explicit_started -> ())
+      ;
+      if not was_live || not was_pending then notify_scheduler context
+    end
 
   let drop_live context =
-    let was_live = Int.compare context.live_request_count 0 > 0 in
-    context.live_request_count <- max 0 (context.live_request_count - 1);
-    (match context.live_control with
-    | Auto_started when Int.equal context.live_request_count 0 ->
-        context.live_control <- Idle
-    | Idle | Auto_started | Explicit_started -> ());
-    if was_live && Int.equal context.live_request_count 0 then
-      notify_scheduler context
+    if not context.offscreen then begin
+      let was_live = Int.compare context.live_request_count 0 > 0 in
+      context.live_request_count <- max 0 (context.live_request_count - 1);
+      (match context.live_control with
+      | Auto_started when Int.equal context.live_request_count 0 ->
+          context.live_control <- Idle
+      | Idle | Auto_started | Explicit_started -> ());
+      if was_live && Int.equal context.live_request_count 0 then
+        notify_scheduler context
+    end
+
+  let resize_offscreen context ~width ~height =
+    if context.offscreen then
+      context.render_geometry <-
+        Lib.Render_geometry.calculate Lib.Render_geometry.Alternate_screen
+          ~terminal_width:(Int32.to_int width)
+          ~terminal_height:(Int32.to_int height) ~footer_height:0
 
   let live_request_count context = context.live_request_count
 
@@ -710,30 +736,35 @@ module Private = struct
     if not context.closed then context.selection_update <- Some callback
 
   let clear_hit_grid_scissors context =
-    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
-      context.hit_grid
+    if not context.offscreen then
+      Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
+        context.hit_grid
 
   let push_hit_scissor context ~x ~y ~width ~height =
-    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_push_scissor_rect_unchecked
-      context.hit_grid ~x:(Int32.of_int x) ~y:(Int32.of_int y)
-      ~width:(Int32.of_int (max 0 width))
-      ~height:(Int32.of_int (max 0 height))
+    if not context.offscreen then
+      Opentui_raw.Renderer.Hit_grid.Private.hit_grid_push_scissor_rect_unchecked
+        context.hit_grid ~x:(Int32.of_int x) ~y:(Int32.of_int y)
+        ~width:(Int32.of_int (max 0 width))
+        ~height:(Int32.of_int (max 0 height))
 
   let pop_hit_scissor context =
-    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_pop_scissor_rect_unchecked
-      context.hit_grid
+    if not context.offscreen then
+      Opentui_raw.Renderer.Hit_grid.Private.hit_grid_pop_scissor_rect_unchecked
+        context.hit_grid
 
   let add_hit_grid context ~x ~y ~width ~height ~id =
-    match context.captured_num with
-    | Some captured when Int.equal captured id -> ()
-    | Some _ | None ->
-        Opentui_raw.Renderer.Hit_grid.Private.add_to_hit_grid_unchecked
-          context.hit_grid ~x:(Int32.of_int x) ~y:(Int32.of_int y)
-          ~width:(Int32.of_int (max 0 width))
-          ~height:(Int32.of_int (max 0 height)) ~id:(Int32.of_int (max 0 id))
+    if not context.offscreen then
+      match context.captured_num with
+      | Some captured when Int.equal captured id -> ()
+      | Some _ | None ->
+          Opentui_raw.Renderer.Hit_grid.Private.add_to_hit_grid_unchecked
+            context.hit_grid ~x:(Int32.of_int x) ~y:(Int32.of_int y)
+            ~width:(Int32.of_int (max 0 width))
+            ~height:(Int32.of_int (max 0 height)) ~id:(Int32.of_int (max 0 id))
 
   let hit_test context ~x ~y =
-    if Int.compare x 0 < 0 || Int.compare y 0 < 0
+    if context.offscreen then None
+    else if Int.compare x 0 < 0 || Int.compare y 0 < 0
        || Int.compare x (Int32.to_int context.width) >= 0
        || Int.compare y (Int32.to_int context.height) >= 0
     then None
@@ -745,14 +776,18 @@ module Private = struct
       if Int.equal id 0 then None else Some id
 
   let abort_hit_grid context =
-    Opentui_raw.Renderer.Hit_grid.Private.clear_next_hit_grid_unchecked
-      context.hit_grid;
-    Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
-      context.hit_grid
+    if not context.offscreen then begin
+      Opentui_raw.Renderer.Hit_grid.Private.clear_next_hit_grid_unchecked
+        context.hit_grid;
+      Opentui_raw.Renderer.Hit_grid.Private.hit_grid_clear_scissor_rects_unchecked
+        context.hit_grid
+    end
 
   let hit_grid_dirty context =
-    Opentui_raw.Renderer.Hit_grid.Private.get_hit_grid_dirty_unchecked
-      context.hit_grid
+    if context.offscreen then false
+    else
+      Opentui_raw.Renderer.Hit_grid.Private.get_hit_grid_dirty_unchecked
+        context.hit_grid
 
   let set_captured_num context num =
     if not context.closed then context.captured_num <- num

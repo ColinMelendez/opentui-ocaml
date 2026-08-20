@@ -71,3 +71,7 @@ val fire_timeout :
 
 val reset : t -> unit
 (** [reset input] discards parser, pending-input, and deadline state. *)
+
+val reset_mouse_state : t -> unit
+(** [reset_mouse_state input] forgets pressed buttons without discarding other
+    buffered terminal input. *)
