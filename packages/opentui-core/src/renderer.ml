@@ -112,7 +112,14 @@ type t = {
   mutable split_transition_pending : bool;
   mutable split_transition_source_top_line : int option;
   mutable split_transition_source_height : int option;
-  (* Snapshots queued for upcoming split-footer frames. *)
+  (* Snapshots queued for upcoming split-footer frames. Intentionally
+     unbounded at enqueue time: writers can publish bursts faster than frames
+     consume them (streamed transcripts, pasted history), and rejecting or
+     dropping a snapshot would silently lose transcript content the caller
+     already rendered. Pacing is a consumer concern instead: normal rendering
+     commits at most [max_scrollback_commits_per_render] snapshots per frame
+     and requests another render for the remainder, while mode transitions and
+     close drain the queue fully before switching or tearing down. *)
   mutable scrollback_commits : scrollback_commit list;
 }
 
@@ -750,6 +757,30 @@ let same_external_output_mode left right =
 let has_scrollback_commits renderer =
   match renderer.scrollback_commits with [] -> false | _ :: _ -> true
 
+(* Upper bound on queued snapshots consumed by one normal split-footer frame,
+   matching the reference renderer's per-frame pacing. Transition and close
+   flushes ignore this bound and drain the queue fully. *)
+let max_scrollback_commits_per_render = 8
+
+(* Splits the queue FIFO into the batch to commit now and the retained suffix
+   that stays queued for later frames. *)
+let take_scrollback_batch limit commits =
+  match limit with
+  | None -> (commits, [])
+  | Some capacity ->
+      let accepted = ref [] in
+      let remaining = ref commits in
+      let count = ref capacity in
+      while Int.compare !count 0 > 0 do
+        match !remaining with
+        | [] -> count := 0
+        | first :: rest ->
+            accepted := first :: !accepted;
+            remaining := rest;
+            decr count
+      done;
+      (List.rev !accepted, !remaining)
+
 let split_pinned_render_offset renderer (geometry : Lib.Render_geometry.t) =
   match renderer.screen_mode with
   | Lib.Render_geometry.Split_footer -> Int32.of_int geometry.render_offset
@@ -889,7 +920,7 @@ let current_split_pinned_render_offset renderer =
   | Ok geometry -> split_pinned_render_offset renderer geometry
   | Error _ -> 0l
 
-let commit_scrollback_commits renderer ~force =
+let commit_scrollback_commits renderer ~force ~limit =
   let repaint_without_commits () =
     match
       Opentui_raw.Renderer.repaint_split_footer renderer.raw
@@ -910,7 +941,8 @@ let commit_scrollback_commits renderer ~force =
   in
   match renderer.scrollback_commits with
   | [] -> repaint_without_commits ()
-  | commits ->
+  | queued ->
+      let commits, retained_commits = take_scrollback_batch limit queued in
       let last_index = List.length commits - 1 in
       let next_offset = ref renderer.split_render_offset in
       let outcome :
@@ -967,13 +999,19 @@ let commit_scrollback_commits renderer ~force =
           | Ok geometry ->
               update_split_tail_column renderer geometry commits;
               List.iter (fun commit -> Owned_buffer.close commit.snapshot) commits;
-              renderer.scrollback_commits <- [];
+              renderer.scrollback_commits <- retained_commits;
+              (match retained_commits with
+              | [] -> ()
+              | _ :: _ ->
+                  (* Paced consumption: leave a request pending so the
+                     scheduler commits the retained suffix next frame. *)
+                  Render_context.Private.request_render renderer.context);
               Ok Opentui_raw.Renderer.Rendered))
 
 let flush_scrollback_for_transition renderer =
   if not (has_scrollback_commits renderer) then Ok ()
   else
-    match commit_scrollback_commits renderer ~force:true with
+    match commit_scrollback_commits renderer ~force:true ~limit:None with
     | Error error -> Error error
     | Ok Opentui_raw.Renderer.Rendered -> Ok ()
     | Ok Opentui_raw.Renderer.Skipped
@@ -1514,7 +1552,9 @@ let core_render_status = function
   | Opentui_raw.Renderer.Failed -> Failed
 
 let commit_scrollback_frames renderer ~force =
-  Result.map core_render_status (commit_scrollback_commits renderer ~force)
+  Result.map core_render_status
+    (commit_scrollback_commits renderer ~force
+       ~limit:(Some max_scrollback_commits_per_render))
 
 let text_width_method = function
   | Terminal_capabilities.Wcwidth -> Text_buffer.Wcwidth
@@ -2481,7 +2521,7 @@ let close renderer =
       then begin
         let commit_result =
           if has_scrollback_commits renderer then
-            commit_scrollback_commits renderer ~force:true
+            commit_scrollback_commits renderer ~force:true ~limit:None
           else Ok Opentui_raw.Renderer.Rendered
         in
         let reset_result =
