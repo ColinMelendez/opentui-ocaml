@@ -43,6 +43,10 @@ The examples directory contains executable programs for the public
   `vendor/opentui/packages/examples/src/split-mode-demo.ts`: a live composer
   in split-footer mode, renderer-owned scrollback snapshots, streaming
   messages, mode transitions, and footer resizing.
+- `text_truncation_demo.ml` is a port of the reference
+  `vendor/opentui/packages/examples/src/text-truncation-demo.ts`: single-line,
+  multiline, Unicode, and styled text examples with interactive truncation,
+  wrapping, column sizing, and pointer-selection details.
 
 The shared example helpers live in `lib/`:
 
@@ -152,3 +156,14 @@ Ctrl+R queues a transcript, Shift+Up/Down changes the footer height (Ctrl+Up/Dow
 also works when the terminal delivers it), and
 Escape focuses the composer. Use Shift+U or `/mouse on|off`, plus `/help`, `/demo`, `/stream on|off`,
 `/speed <ms>`, and `/footer <n>` in the composer. Ctrl+C exits.
+
+Run the text truncation demo:
+
+```sh
+nix develop -c dune exec ./packages/opentui-core/examples/text_truncation_demo.exe
+```
+
+Text truncation keys: `T` toggles truncation, `W` cycles no-wrap/character-wrap/
+word-wrap, `R` changes the relative column sizes, `C` clears the selection,
+backtick/`"` toggles the console, and Ctrl+C exits. Drag across the examples to
+see the selected-text summary.
