@@ -1,0 +1,4 @@
+(test
+ (name test_wgpu_headless)
+ (modules test_wgpu_headless)
+ (libraries opentui-wgpu windtrap))

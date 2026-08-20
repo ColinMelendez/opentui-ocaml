@@ -264,8 +264,12 @@ Runtime and GPU environment:
    proven in CI.
 6. mapAsync threading: completion callbacks fire on wgpu-owned threads; stubs
    must register those threads with the OCaml runtime before signaling, and
-   polling must not deadlock the owner domain. Retire when the Phase 0
-   repeated-frame bridge test passes under sanitizers or stress load.
+   polling must not deadlock the owner domain. Retired by design before the
+   stress test became necessary: buffer-map callbacks are registered with
+   `WGPUCallbackMode_WaitAnyOnly`, which forbids firing everywhere except
+   inside our own `wgpuDevicePoll` calls on the calling thread, so no callback
+   can ever enter OCaml from a foreign thread. The repeated-frame headless
+   test passes 30 frames with no deadlock.
 7. Readback serialization: per-frame mapAsync stalls CPU-GPU overlap. This is
    reference parity - the reference also awaits readback immediately, owns one
    readback buffer per path, and rejects concurrent draw calls - so no
@@ -274,8 +278,9 @@ Runtime and GPU environment:
    specified with ordering, cancellation, buffer-lifetime, and backpressure
    contracts.
 8. Copy alignment: `copyTextureToBuffer` requires 256-byte row alignment; the
-   readback path must handle padded strides. Retire with the first readback
-   test on an unaligned width.
+   readback path must handle padded strides. Retired: the headless round-trip
+   renders at 61-pixel width (244-byte natural row) through the padded 256-byte
+   stride and verifies exact pixel values.
 9. Cross-backend float divergence: Metal and lavapipe may differ in low-order
    bits, breaking naive golden snapshots. Snapshot tests assert cell structure
    (glyph indices, coarse luminance buckets) rather than exact RGB. Retire
@@ -285,32 +290,55 @@ Runtime and GPU environment:
     flips images vertically and sets `flipY = false`. One normalization note
     must be written before Phase 1 geometry work. Retire with a documented
     convention plus a textured-cube test proving orientation.
+11. wgpu-native v29.0.1.1 known quirks (re-validate on every pin upgrade):
+    first, buffer-map completion is not wired into the futures API - a map
+    registered under either wait-any mode panics "not implemented" inside
+    wgpu-native when completion is awaited - so the binding drives map
+    callbacks through the `wgpuDevicePoll` extension instead, which keeps
+    completion on the calling thread and is documented in the stub source.
+    Second, descriptors whose `WGPUStringView` fields are `{NULL, 0}` are
+    misparsed downstream (validation then observes garbage in the following
+    field), so every descriptor carries a real label. Both quirks were
+    reproduced against a pure C driver before the OCaml binding adopted its
+    workarounds; both deserve upstream reports. Retire when a pin upgrade
+    makes either workaround unnecessary.
 
 API and semantics:
 
-11. Color-space mistakes produce washed-out or dark output. Lock the linear
+12. Color-space mistakes produce washed-out or dark output. Lock the linear
     working-space decision behind a mid-gray reference-value test. Retire in
     Phase 1 snapshots.
-12. Scene-graph cycles (adding an ancestor as descendant) need explicit
+13. Scene-graph cycles (adding an ancestor as descendant) need explicit
     structured validation errors. Retire with a unit test.
-13. Geometry cache invalidation after attribute mutation is contractual;
+14. Geometry cache invalidation after attribute mutation is contractual;
     silent staleness is forbidden. Retire with the invalidation API and test.
-14. Save-to-file depends on emitting encoded PNG bytes out of `Image`; the
+15. Save-to-file depends on emitting encoded PNG bytes out of `Image`; the
     extraction path needs verification against `ensure_encoded_png`. Retire in
     Phase 2 with the first saved screenshot test.
-15. `CELL_ASPECT_RATIO` override parity is small but observable. Retire with
+16. `CELL_ASPECT_RATIO` override parity is small but observable. Retire with
     an aspect-construction test.
+16b. Uncaptured GPU errors have no structured path into OCaml yet: the device
+     is created without an error callback, so void C-API calls
+     (`begin_render_pass`, `copy_texture_to_buffer`, and from Phase 1 onward
+     pipeline creation and buffer uploads) can fail silently while the frame
+     returns [Ok]. The Phase 0 round-trip catches such failures through pixel
+     assertions, which stops working once scenes are non-trivial. Before any
+     pipeline work lands, `opentui-wgpu` must capture the uncaptured-error and
+     device-lost callbacks into owner-local state and surface them as
+     structured errors after submission. Blocking polls also hold the OCaml
+     domain for the readback duration; acceptable at current resolutions,
+     revisit if measured frame timing demands overlap.
 
 Repository policy:
 
-16. Repository constraints apply throughout: byte-exact staging for all
+17. Repository constraints apply throughout: byte-exact staging for all
     GPU-facing data (see the staging contract above), `floatarray` reserved
     for arithmetic scratch such as intensity fields, no polymorphic comparison
     (matrix equality uses dedicated functions), loops over recursion in hot
     paths, structured results at every native boundary, warnings treated as
     errors, no ppx. Matrix inversion returns an option or result, never
     raises. Enforced by review per phase.
-17. Box2D unit scale is meter-tuned while sprite-effect physics operates at
+18. Box2D unit scale is meter-tuned while sprite-effect physics operates at
     pixel scale; tunneling and weak gravity result from naive scales. One
     pixel-to-meter constant must be agreed and documented in the adapter
     before Phase 5. Retire with the adapter design note.

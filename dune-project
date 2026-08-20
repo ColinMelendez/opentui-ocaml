@@ -44,7 +44,9 @@
  (authors "Colin <cwrmcolin@gmail.com>")
  (maintainers "Colin <cwrmcolin@gmail.com>")
  (depends
-  (ocaml (>= 5.2))))
+  (ocaml (>= 5.2))
+  dune-configurator
+  (windtrap :with-test)))
 
 (package
  (name opentui-bench)

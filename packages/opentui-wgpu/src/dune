@@ -1,3 +1,20 @@
+(include_subdirs qualified)
+
 (library
  (name opentui_wgpu)
- (public_name opentui-wgpu))
+ (public_name opentui-wgpu)
+ (private_modules error native native_token)
+ (foreign_stubs
+  (language c)
+  (names wgpu_stubs)
+  (flags (:include c_flags.sexp)))
+ (c_library_flags (:include c_library_flags.sexp)))
+
+(rule
+ (targets c_flags.sexp c_library_flags.sexp)
+ (deps
+  %{exe:../config/discover.exe}
+  wgpu.ml
+  (env_var PKG_CONFIG_PATH))
+ (action
+  (run %{exe:../config/discover.exe})))
