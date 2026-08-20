@@ -942,6 +942,11 @@ let commit_scrollback_commits renderer ~force ~limit =
   match renderer.scrollback_commits with
   | [] -> repaint_without_commits ()
   | queued ->
+      (* Preflight geometry so bookkeeping cannot fail after native commit. *)
+      (match Render_context.render_geometry renderer.context with
+      | Error error -> Error error
+      | Ok geometry ->
+      let pinned_render_offset = split_pinned_render_offset renderer geometry in
       let commits, retained_commits = take_scrollback_batch limit queued in
       let last_index = List.length commits - 1 in
       let next_offset = ref renderer.split_render_offset in
@@ -962,8 +967,7 @@ let commit_scrollback_commits renderer ~force ~limit =
                    ~row_columns:(Int32.of_int commit.row_columns)
                    ~start_on_new_line:commit.start_on_new_line
                    ~trailing_newline:commit.trailing_newline
-                   ~pinned_render_offset:
-                     (current_split_pinned_render_offset renderer)
+                   ~pinned_render_offset
                    ~force:(force && finalize_frame) ~begin_frame ~finalize_frame
                with
                | Error error -> outcome := Error (map_raw_error error)
@@ -994,19 +998,16 @@ let commit_scrollback_commits renderer ~force ~limit =
           renderer.split_transition_pending <- false;
           renderer.split_transition_source_top_line <- None;
           renderer.split_transition_source_height <- None;
-          (match Render_context.render_geometry renderer.context with
-          | Error error -> Error error
-          | Ok geometry ->
-              update_split_tail_column renderer geometry commits;
-              List.iter (fun commit -> Owned_buffer.close commit.snapshot) commits;
-              renderer.scrollback_commits <- retained_commits;
-              (match retained_commits with
-              | [] -> ()
-              | _ :: _ ->
-                  (* Paced consumption: leave a request pending so the
-                     scheduler commits the retained suffix next frame. *)
-                  Render_context.Private.request_render renderer.context);
-              Ok Opentui_raw.Renderer.Rendered))
+          update_split_tail_column renderer geometry commits;
+          List.iter (fun commit -> Owned_buffer.close commit.snapshot) commits;
+          renderer.scrollback_commits <- retained_commits;
+          (match retained_commits with
+          | [] -> ()
+          | _ :: _ ->
+              (* Paced consumption: leave a request pending so the
+                 scheduler commits the retained suffix next frame. *)
+              Render_context.Private.request_render renderer.context);
+          Ok Opentui_raw.Renderer.Rendered))
 
 let flush_scrollback_for_transition renderer =
   if not (has_scrollback_commits renderer) then Ok ()

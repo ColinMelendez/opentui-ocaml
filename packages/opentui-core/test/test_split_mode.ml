@@ -214,4 +214,46 @@ let () =
           let output = String.concat "" !frames in
           equal bool true (contains_substring output "\027[12;1H\027[J");
           ignore (Renderer.close renderer));
+      test "split capture paces large snapshot bursts" (fun () ->
+          let frames = ref [] in
+          let sink =
+            Renderer.Output.sink ~write_frame:(fun chunks ->
+                frames :=
+                  !frames
+                  @ [ String.concat "" (List.map Bytes.to_string chunks) ];
+                Ok ())
+          in
+          let renderer =
+            expect_ok
+              (Renderer.create ~output:(Renderer.Output.Sink sink)
+                 ~remote_mode:Renderer.Output.Remote ~width:20l ~height:8l ())
+          in
+          ignore
+            (expect_ok
+               (Renderer.set_render_geometry renderer
+                  Core.Lib.Render_geometry.Split_footer ~footer_height:3));
+          ignore
+            (expect_ok
+               (Renderer.set_external_output_mode renderer
+                  Renderer.Capture_stdout));
+          List.iter
+            (fun text ->
+              ignore
+                (expect_ok
+                   (Renderer.write_to_scrollback renderer (fun context ->
+                        make_snapshot context text))))
+            [ "~A~"; "~B~"; "~C~"; "~D~"; "~E~"; "~F~"; "~G~"; "~H~"; "~I~" ];
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal int 1 (List.length !frames);
+          let first_frame = List.hd !frames in
+          List.iter
+            (fun text -> equal bool true (contains_substring first_frame text))
+            [ "~A~"; "~B~"; "~C~"; "~D~"; "~E~"; "~F~"; "~G~"; "~H~" ];
+          equal bool false (contains_substring first_frame "~I~");
+          frames := [];
+          ignore (expect_ok (Renderer.render renderer ~force:true));
+          equal int 1 (List.length !frames);
+          equal bool true
+            (contains_substring (List.hd !frames) "~I~");
+          ignore (Renderer.close renderer));
     ]
