@@ -131,6 +131,14 @@
             let arch = pkgs.stdenv.hostPlatform.linuxArch;
             in nixpkgs.lib.optionalString pkgs.stdenv.isLinux
               "${pkgs.mesa.drivers}/share/vulkan/icd.d/lvp_icd.${arch}.json";
+          # wgpu-native dlopens libvulkan.so.1 by soname; runpath inheritance
+          # from the test executable cannot be relied upon for that lookup.
+          linuxLdLibraryPath =
+            nixpkgs.lib.optionalString pkgs.stdenv.isLinux
+              (pkgs.lib.makeLibraryPath [
+                pkgs.vulkan-loader
+                pkgs.mesa.drivers
+              ]);
         in {
           # Keep CI and repeatable test runs free of editor-only tools while
           # retaining the same compiler, Dune, and native toolchain.
@@ -138,6 +146,7 @@
             LC_ALL = "C";
             PKG_CONFIG_PATH = "${wgpu-native}/lib/pkgconfig";
             VK_DRIVER_FILES = vkDriverFiles;
+            LD_LIBRARY_PATH = linuxLdLibraryPath;
             packages = with pkgs;
               [
                 cmake
@@ -161,6 +170,7 @@
             LC_ALL = "C";
             PKG_CONFIG_PATH = "${wgpu-native}/lib/pkgconfig";
             VK_DRIVER_FILES = vkDriverFiles;
+            LD_LIBRARY_PATH = linuxLdLibraryPath;
             packages = with pkgs;
               [
                 cmake
