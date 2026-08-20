@@ -23,14 +23,6 @@ module Input = O.Lib.Input_coordinator
 module Modes = O.Lib.Terminal_modes
 module Size = O.Lib.Terminal_size
 
-type resize_policy =
-  | Immediate
-  | Debounced_horizontal of {
-      settle_delay : float;
-      on_start : unit -> unit;
-      on_end : unit -> unit;
-    }
-
 module Tty_source = struct
   type t = Eio_unix.Fd.t
 
@@ -161,14 +153,15 @@ let pump_input_timeouts input ~clock ~queue ~wakeup =
   in
   loop ()
 
-let dispatch_handle renderer ~observe_resize = function
+let dispatch_handle renderer = function
   | Events.Resize size ->
-      observe_resize size
+      ignore
+        (O.Renderer.resize renderer ~width:(Int32.of_int (Size.columns size))
+           ~height:(Int32.of_int (Size.rows size)))
   | Events.Input event -> ignore (O.Renderer.handle_input renderer event)
 
 let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
     ?(kitty_events = true) ?(screen = Modes.Alternate) ?(reserve_screen = false)
-    ?(resize_policy = Immediate)
     env ~init =
   Eio.Switch.run @@ fun sw ->
   let mono_clock = Eio.Stdenv.mono_clock env in
@@ -253,111 +246,21 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
          ~max_frames_per_second ())
   in
   let exit () = ignore (Scheduler.close scheduler) in
-  (* Keep the observed size separate from the applied size. The applied width
-     determines whether the terminal is still in a deferred horizontal resize;
-     the latest observed dimensions are the only ones that may be committed. *)
-  let last_observed_size = ref tty_size in
-  let last_applied_size = ref tty_size in
-  let pending_resize : Size.t option ref = ref None in
-  let pending_resize_since = ref None in
-  let horizontal_resize_pending = ref false in
-  let resize_settle_delay, resize_on_start, resize_on_end, defer_horizontal =
-    match resize_policy with
-    | Immediate -> 0.0, (fun () -> ()), (fun () -> ()), false
-    | Debounced_horizontal { settle_delay; on_start; on_end } ->
-        let settle_delay =
-          if Float.is_finite settle_delay
-             && Float.compare settle_delay 0.0 > 0
-          then settle_delay
-          else 0.0
-        in
-        settle_delay, on_start, on_end, true
-  in
-  let apply_resize size =
-    if Size.equal size !last_applied_size then true
-    else
-      match
-        O.Renderer.resize renderer ~width:(Int32.of_int (Size.columns size))
-          ~height:(Int32.of_int (Size.rows size))
-      with
-      | Ok () ->
-          last_applied_size := size;
-          true
-      | Error error ->
-          ignore error;
-          false
-  in
-  let apply_pending_resize () =
-    match !pending_resize with
-    | None -> ()
-    | Some size ->
-        let settled =
-          match !pending_resize_since with
-          | None -> true
-          | Some started_at ->
-              Float.compare
-                (Eio_clock.now clock -. started_at)
-                resize_settle_delay >= 0
-        in
-        if settled then begin
-          pending_resize := None;
-          pending_resize_since := None;
-          let applied = apply_resize size in
-          if applied && !horizontal_resize_pending then begin
-            horizontal_resize_pending := false;
-            resize_on_end ()
-          end
-          else if not applied then begin
-            pending_resize := Some size;
-            pending_resize_since := Some (Eio_clock.now clock);
-            ignore (O.Renderer.request_render renderer)
-          end
-        end
-        else begin
-          (* Keep the scheduler checking the quiet period without resizing the
-             renderer. With live output paused by the policy caller, the
-             terminal clips the retained old surface to its narrower viewport
-             and these frames do not rewrite scrollback. *)
-          ignore (O.Renderer.request_render renderer)
-        end
-  in
-  let observe_resize size =
-    if not (Size.equal size !last_observed_size) then begin
-      let previous_observed_size = !last_observed_size in
-      last_observed_size := size;
-      if defer_horizontal then begin
-        pending_resize := Some size;
-        let width_changed_since_observation =
-          not
-            (Int.equal (Size.columns size)
-               (Size.columns previous_observed_size))
-        in
-        let width_matches_applied =
-          Int.equal (Size.columns size) (Size.columns !last_applied_size)
-        in
-        pending_resize_since :=
-          if not width_matches_applied then
-            (match !pending_resize_since with
-            | Some started_at when not width_changed_since_observation ->
-                Some started_at
-            | Some _ | None -> Some (Eio_clock.now clock))
-          else None;
-        if not width_matches_applied && not !horizontal_resize_pending then begin
-          horizontal_resize_pending := true;
-          resize_on_start ()
-        end;
-        ignore (O.Renderer.request_render renderer)
-      end
-      else ignore (apply_resize size)
-    end
-  in
+  (* Besides SIGWINCH, poll the terminal size on each frame that is already
+     being rendered. The resize signal path still requests a frame for
+     on-demand demos when no live loop is active. *)
+  let last_size = ref tty_size in
   ignore
     (expect_ok
        (O.Renderer.attach_pre_render renderer (fun _delta ->
             match Size_source.get input_fd with
-            | Ok size -> observe_resize size
-            | Error _ -> ();
-            apply_pending_resize ())));
+            | Ok size when not (Size.equal size !last_size) ->
+                last_size := size;
+                ignore
+                  (O.Renderer.resize renderer
+                     ~width:(Int32.of_int (Size.columns size))
+                     ~height:(Int32.of_int (Size.rows size)))
+            | Ok _ | Error _ -> ())));
   let cleanup () =
     (* Cleanup is deliberately best effort here: it also runs while unwinding
        an exception from demo initialization or a renderer callback, so a
@@ -437,5 +340,4 @@ let run ?(target_frames_per_second = 30) ?(max_frames_per_second = 60)
              in
              wait_resize ()));
       Eio.Fiber.fork ~sw:bg (fun () ->
-          Dispatch.run ~queue ~wakeup
-            ~handle:(dispatch_handle renderer ~observe_resize)))
+          Dispatch.run ~queue ~wakeup ~handle:(dispatch_handle renderer)))

@@ -337,7 +337,6 @@ type demo = {
   mutable commit_count : int;
   mutable status_message : string;
   mutable destroyed : bool;
-  mutable resize_settling : bool;
   mutable pre_render : O.Renderer.pre_render_driver option;
   mutable live_lease : O.Renderer.live_lease option;
 }
@@ -646,7 +645,7 @@ and set_footer_height demo height =
             demo)
 
 let update_timers demo delta =
-  if mode_is_split demo && not demo.resize_settling then begin
+  if mode_is_split demo then begin
     if demo.stream_enabled then begin
       demo.stream_elapsed <- demo.stream_elapsed +. delta;
       let interval = demo.stream_interval in
@@ -978,7 +977,6 @@ let create_demo renderer =
       commit_count = 0;
       status_message = "ready";
       destroyed = false;
-      resize_settling = false;
       pre_render = None;
       live_lease = None;
     }
@@ -1017,40 +1015,14 @@ let create_demo renderer =
 
 let run renderer ~exit ~copy_to_clipboard =
   ignore copy_to_clipboard;
-  let demo = create_demo renderer in
+  ignore (create_demo renderer);
   Opentui_examples_lib.Standalone_keys.setup_common_demo_keys renderer
-    ~on_ctrl_c:exit;
-  demo
+    ~on_ctrl_c:exit
 
 let () =
   Eio_main.run @@ fun env ->
-  let demo = ref None in
-  let resize_policy =
-    Opentui_examples_lib.App.Debounced_horizontal
-      {
-        settle_delay = 0.25;
-        on_start = (fun () ->
-          Option.iter
-            (fun value ->
-              if not value.destroyed then begin
-                value.resize_settling <- true;
-                release_live value
-              end)
-            !demo);
-        on_end = (fun () ->
-          Option.iter
-            (fun value ->
-              if not value.destroyed then begin
-                value.resize_settling <- false;
-                sync_live value;
-                request_render value
-              end)
-            !demo);
-      }
-  in
   Opentui_examples_lib.App.run env ~screen:O.Lib.Terminal_modes.Main
     ~reserve_screen:true
-    ~resize_policy
     ~target_frames_per_second:30
     ~init:(fun ~exit ~copy_to_clipboard renderer ->
-      demo := Some (run renderer ~exit ~copy_to_clipboard))
+      run renderer ~exit ~copy_to_clipboard)
