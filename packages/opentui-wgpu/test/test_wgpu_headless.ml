@@ -140,6 +140,20 @@ let () =
                 (Wgpu.create_readback device ~stride:100 ~rows:8);
               expect_error ~what:"zero rows"
                 (Wgpu.create_readback device ~stride ~rows:0);
+              let narrow =
+                expect_ok (Wgpu.create_readback device ~stride ~rows:8)
+              in
+              (* A 64-pixel row and any narrower row share the same
+                 256-byte minimum stride, so only a wider target can make an
+                 existing readback too small. *)
+              let wide_target =
+                expect_ok (Wgpu.create_render_target device ~width:128 ~height:8)
+              in
+              expect_error ~what:"readback too narrow for target"
+                (Wgpu.submit_clear_frame device ~target:wide_target
+                   ~readback:narrow ~color ());
+              Wgpu.destroy_readback narrow;
+              Wgpu.destroy_render_target wide_target;
               expect_error ~what:"short clear color"
                 (Wgpu.submit_clear_frame device ~target ~readback
                    ~color:(Float.Array.make 3 1.0) ());

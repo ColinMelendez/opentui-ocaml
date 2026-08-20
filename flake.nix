@@ -120,12 +120,24 @@
         let
           pkgs = import nixpkgs { inherit system; };
           wgpu-native = self.packages.${system}.wgpu-native;
+          # Headless CI needs a software Vulkan implementation so adapter
+          # requests succeed without a display or physical GPU.
+          linuxVulkan = nixpkgs.lib.optionals pkgs.stdenv.isLinux [
+            pkgs.vulkan-loader
+            pkgs.mesa.drivers
+            pkgs.binutils
+          ];
+          vkDriverFiles =
+            let arch = pkgs.stdenv.hostPlatform.linuxArch;
+            in nixpkgs.lib.optionalString pkgs.stdenv.isLinux
+              "${pkgs.mesa.drivers}/share/vulkan/icd.d/lvp_icd.${arch}.json";
         in {
           # Keep CI and repeatable test runs free of editor-only tools while
           # retaining the same compiler, Dune, and native toolchain.
           test = pkgs.mkShell {
             LC_ALL = "C";
             PKG_CONFIG_PATH = "${wgpu-native}/lib/pkgconfig";
+            VK_DRIVER_FILES = vkDriverFiles;
             packages = with pkgs;
               [
                 cmake
@@ -136,6 +148,7 @@
                 wgpu-native
                 zig_0_16
               ]
+              ++ linuxVulkan
               ++ (with ocamlPackages_latest; [
                 ocaml
                 dune_3
@@ -147,6 +160,7 @@
           default = pkgs.mkShell {
             LC_ALL = "C";
             PKG_CONFIG_PATH = "${wgpu-native}/lib/pkgconfig";
+            VK_DRIVER_FILES = vkDriverFiles;
             packages = with pkgs;
               [
                 cmake
@@ -157,6 +171,7 @@
                 wgpu-native
                 zig_0_16
               ]
+              ++ linuxVulkan
               ++ (with ocamlPackages_latest; [
                 ocaml
                 dune_3

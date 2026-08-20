@@ -11,7 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # ubuntu-24.04-arm covers the pinned aarch64-linux wgpu-native target.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -21,3 +22,15 @@ jobs:
       - uses: cachix/install-nix-action@v30
       - run: nix develop .#test -c dune build @check
       - run: nix develop .#test -c dune runtest
+      - name: Loader audit (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          otool -l _build/default/packages/opentui-wgpu/test/test_wgpu_headless.exe \
+            | grep -A2 LC_RPATH | grep "path.*wgpu-native"
+          otool -L _build/default/packages/opentui-wgpu/test/test_wgpu_headless.exe \
+            | grep "@rpath/libwgpu_native.dylib"
+      - name: Loader audit (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          readelf -d _build/default/packages/opentui-wgpu/test/test_wgpu_headless.exe \
+            | grep -E "RPATH|RUNPATH" | grep wgpu-native

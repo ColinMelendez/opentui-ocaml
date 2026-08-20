@@ -189,6 +189,15 @@ let submit_clear_frame device ~(target : render_target) ~(readback : readback)
     Error (Error.Closed { operation = "submit_clear_frame" })
   else if Float.Array.length color < rgba_bytes_per_pixel then
     Error (Error.Invalid_argument "clear color needs four channel values")
+  else if
+    Int.compare readback.stride (readback_stride ~width:target.width) < 0
+    || Int.compare readback.rows target.height < 0
+  then
+    Error
+      (Error.Invalid_argument
+         (Printf.sprintf
+            "readback stride %d rows %d cannot hold a %dx%d frame"
+            readback.stride readback.rows target.width target.height))
   else
     match
       creation_result ~what:"command encoder"
