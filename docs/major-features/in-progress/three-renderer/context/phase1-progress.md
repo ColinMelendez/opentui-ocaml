@@ -36,9 +36,11 @@ Landed on main (all CI green, three targets):
 
 Remaining Phase 1 slices:
 
-- B: opentui-wgpu pipeline stubs (see ABI facts below) plus diagnostics
-  capture (risk 16b: uncaptured-error callback in WGPUDeviceDescriptor,
-  wgpu.h log callback).
+- B: DONE (commits 1241150, f3f9ed5). Pipeline/draw/diagnostics stubs
+  shipped; OCaml-driven triangle renders exact pixels in CI; risk 16b
+  capture delivered; risk 16c retired (root causes: missing copy call
+  in submit_draw_frame orchestration + Double_field-on-boxed-tuple in
+  draw stub clear color).
 - C: scene graph (Object3D dirty-flag world matrices), BoxGeometry with
   per-face normals, MeshBasic/Lambert materials, directional+ambient
   lights, PerspectiveCamera (focal-length FOV; aspect =
