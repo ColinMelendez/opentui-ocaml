@@ -114,6 +114,11 @@ type palette_detection_status =
 
 type palette_waiter
 
+type capability_window_status =
+  | Capability_window_not_started
+  | Capability_window_open
+  | Capability_window_closed
+
 val request_palette :
   t ->
   ?size:int ->
@@ -136,6 +141,21 @@ val palette_detection_status :
   t -> (palette_detection_status, Error.t) result
 val clear_palette_cache : t -> (unit, Error.t) result
 
+val capability_window_status :
+  t -> (capability_window_status, Error.t) result
+val on_capability_window_status :
+  t ->
+  (capability_window_status -> unit) ->
+  (Event_subscription.t, Error.t) result
+val once_capability_window_status :
+  t ->
+  (capability_window_status -> unit) ->
+  (Event_subscription.t, Error.t) result
+val prepend_capability_window_status :
+  t ->
+  (capability_window_status -> unit) ->
+  (Event_subscription.t, Error.t) result
+
 val on_osc :
   t -> (string -> unit) -> (Event_subscription.t, Error.t) result
 
@@ -154,12 +174,13 @@ val prepend_palette_error :
   t -> (Error.t -> unit) -> (Event_subscription.t, Error.t) result
 ```
 
-The standard Eio renderer-construction path adds two required labeled
-arguments:
+The standard Eio renderer-construction path adds two required labeled terminal
+facts and one optional resolved setting:
 
 ```ocaml
 ~input_is_tty:bool ->
 ~output_is_tty:bool ->
+?palette_idle_timeout_ms:float ->
 ```
 
 The terminal-session owner computes these facts for the streams it hands to
@@ -171,7 +192,10 @@ parsing and synchronous rendering, but palette requests on such a renderer are
 unavailable through `Error.Missing_async_lifetime`. The standard application
 harness in `packages/opentui-core/examples/lib/app.ml` is the first construction
 owner to pass these facts; other terminal owners must do the same at their own
-stream boundary.
+stream boundary. The standard harness resolves the idle timeout at the
+application configuration boundary; direct constructors may omit it for the
+300 ms default. The renderer stores the resulting value immutably, and Core
+never reads the process environment directly.
 
 The proposal deliberately separates the existing normalized
 `Renderer.palette` value from the raw snapshot returned by discovery and
@@ -204,9 +228,9 @@ The request contract is:
 - the callback is always deferred. It never runs on the dynamic call stack of
   `request_palette`, including for cache hits, non-TTY results, and results that
   are already available from a shared detection;
-- accepted completions are delivered FIFO in a later renderer-owner dispatch
-  turn, after the cache, status, generation, and native state associated with
-  that completion have been committed;
+- accepted completions are submitted FIFO to the application-owner dispatcher
+  and delivered in a later dispatch turn, after the cache, status, generation,
+  and native state associated with that completion have been committed;
 - a closed renderer rejects new requests. Closing a renderer with accepted
   waiters completes each uncancelled waiter once with `Error.Closed` through the
   same deferred path, so `get_palette` cannot remain suspended;
@@ -260,8 +284,9 @@ the continuation-driver fiber. Code running in one of those callbacks uses
 distinction is necessary because Eio suspends the current fiber, whereas
 JavaScript `await` returns control to a process-wide event loop. The callback
 primitive preserves upstream progress without forking each event callback or
-weakening event ordering. The renderer tracks synchronous callback depth and
-`get_palette` returns `Error.Callback_context` in that context, rather than
+weakening event ordering. The application dispatcher tracks synchronous
+callback depth across all renderer leases, and `get_palette` returns
+`Error.Callback_context` in that context, rather than
 allowing a request to wait for work driven by the fiber it suspended.
 `Callback_context` is a new constructor in the shared structured `Error.t`;
 its diagnostic explains that the operation cannot suspend from a synchronous
@@ -300,6 +325,58 @@ It describes renderer work, not an individual waiter, so cancelling a waiter
 does not change the status. As upstream, requests still waiting for the
 XTVERSION capability window report `Idle`; the status changes to `Detecting`
 only when support probing begins.
+
+### Core-owned XTVERSION capability window
+
+Core, not the application harness, owns the five-second capability window that
+upstream represents with `capabilityTimeoutId`. The renderer keeps this
+owner-domain-local state machine:
+
+- `Capability_window_not_started`: capability detection has not opened a
+  window. As with upstream's null timeout id, palette work does not wait.
+- `Capability_window_open`: `start_capability_detection` has emitted the native
+  probe and installed one Core clock timer. Only this state can hold palette
+  work waiting for an unknown tmux XTVERSION result.
+- `Capability_window_closed`: the five-second timer expired or renderer
+  teardown closed the window. Palette work never waits on an already-closed
+  window, and the window is not reopened by another idempotent start call.
+
+`start_capability_detection` requires the renderer clock. It emits the native
+probe through the serialized output path, then, in the same non-suspending owner
+turn, transitions to `Capability_window_open` and installs the expiry timer
+before returning. An output failure leaves the state not started and installs
+no timer. A syntactically valid XTVERSION response updates the renderer's
+capability snapshot and releases every palette operation waiting for the
+version immediately; the broader capability window may remain open until its
+ordinary deadline, matching upstream. Expiry transitions to
+`Capability_window_closed`, removes Core's temporary capability-response gate,
+and releases the same pending operations. Each released operation re-enters the
+request pipeline at its post-XTVERSION cache check.
+
+`capability_window_status` exposes the committed state. The status event fires
+exactly once for the `not_started -> open` and `open -> closed` transitions,
+never for an idempotent start, and observes the new state before user code runs.
+It uses the ordinary synchronous renderer-event exception boundary, so a
+failing observer cannot prevent the probe write, expiry release, or teardown.
+
+The terminal-session owner still owns `Stdin_parser` protocol context. It
+enables private capability replies before calling
+`start_capability_detection`, subscribes to `on_capability_window_status`, and
+disables that parser context when Core publishes
+`Capability_window_closed`. The standard harness no longer owns or duplicates
+the five-second timer; if starting the window returns an error, it immediately
+rolls back the parser context because no Core transition occurred. Backpressure
+while it mirrors the closed parser context
+cannot extend Core's window: after the Core transition, late capability
+responses are ignored by the temporary capability handler. `Renderer.close`
+and `Renderer.destroy` cancel the timer, close the window, and dispose pending
+preflight continuations through the common renderer teardown path.
+
+An accepted palette operation held by `Capability_window_open` has not started
+a detector, so `palette_detection_status` remains `Idle` even though it retains
+waiters. If every caller cancels, the internal operation remains subscribed to
+the window and proceeds after XTVERSION or expiry, preserving the upstream
+abandoned-Promise behavior.
 
 ## Detection semantics
 
@@ -346,6 +423,18 @@ Each post-probe session has two completion rules:
 The support probe always uses its own fixed 300 ms deadline. It is not
 shortened by `timeout_ms`.
 
+`OTUI_PALETTE_IDLE_TIMEOUT_MS` has no process-global owner in OCaml.
+`Lib.Terminal_palette` provides its `Lib.Env.definition` and a typed resolver;
+the application runtime owns a `Lib.Env.t` whose getter is injected at startup.
+The standard Eio harness registers and resolves the definition before renderer
+construction, then passes the resulting finite millisecond value as
+`palette_idle_timeout_ms`. The renderer stores that value immutably and passes
+it to both post-probe sessions. A missing value resolves to 300 ms. Invalid
+configuration remains a structured `Lib.Env.error` at the application
+configuration boundary and no palette request is admitted with ambiguous
+timing. Tests inject an owner-local `Lib.Env.t`; neither Core nor the tests call
+`Unix.getenv` or retain a module-global environment cache.
+
 The reference's timeout asymmetry is intentional and must be preserved:
 
 - any complete OSC frame delivered by the shared raw-OSC source resets the
@@ -372,10 +461,30 @@ bytes, it is trimmed to the most recent 4096 bytes before further scanning.
 This prevents a noisy or malformed terminal response from growing renderer
 state without changing the normal framed-input path.
 
-The recognized color payloads remain the reference forms: `rgb:` components
-and six-digit `#rrggbb`. An `rgba:` response is preserved for raw diagnostics
-but is not treated as a parsed color; the demo may report that it saw an
-unparsed response.
+The recognized color payloads remain the reference forms: `rgb:` followed by
+exactly three non-empty hexadecimal components separated by `/`, or exactly
+six hexadecimal digits in `#rrggbb`. Both BEL and ST termination are accepted.
+An `rgba:` response is preserved for raw diagnostics but is not treated as a
+parsed color; the demo may report that it saw an unparsed response.
+
+Recognition and timer effects are deliberately separate, matching the two
+upstream regular expressions:
+
+- the support probe succeeds only on a complete OSC4 response with a valid
+  reference color payload; an invalid OSC4 color is not evidence of support;
+- a palette branch updates a slot only for a valid OSC4 response whose decimal
+  index is requested. Invalid OSC4 colors, out-of-range indices, and unrelated
+  numeric OSC responses do not update a slot or satisfy early completion;
+- the palette branch nevertheless resets its idle timer for every complete raw
+  OSC frame because that reset belongs to the upstream subscription callback,
+  not to successful color recognition; and
+- the special branch updates and resets its idle timer only for a valid color
+  at OSC 10 through 17 or 19. Other numeric OSC indices and invalid color
+  payloads do neither.
+
+The current parser's broad `saw_response` behavior must therefore be removed:
+an invalid or merely numeric OSC frame cannot become a successful parsed
+response simply because it has an OSC terminator.
 
 ### Multiplexers and remote terminals
 
@@ -403,6 +512,32 @@ the demo or from process environment strings. Cache lookup, the post-XTVERSION
 re-check, and session registration happen without suspension in the renderer
 owner context, so two callers cannot both start a detector after observing an
 empty cache.
+
+### Reference-ordered request pipeline
+
+After synchronous argument, owner, lifetime, and callback-context admission,
+each accepted operation follows the upstream order literally:
+
+1. reject explicit renderer suspension;
+2. return a cache or smallest-covering projection hit;
+3. wait for XTVERSION only when the exact tmux predicate holds and the
+   Core-owned capability window is open;
+4. after that wait releases, re-check cache and projection before inspecting
+   detector state;
+5. join the existing detector when one is active, either as a covered waiter or
+   as a larger request queued behind it;
+6. when the joined detector settles successfully, re-check cache and projection
+   for every pending request; and
+7. start a new detector only for the first FIFO request still uncovered after
+   that re-check.
+
+A cache hit at step 2 never enters the XTVERSION preflight. A cache populated by
+another request while this operation waits is observed at step 4. A cache or
+projection populated by the joined detector is observed at step 6 before a
+larger follow-up can start. The three cache checks are separate coordinator
+transitions, not one helper call moved after capability waiting. Failure of the
+joined detector completes all of its pending requests and skips steps 6 and 7,
+as specified below.
 
 ## Cache, concurrency, and invalidation
 
@@ -465,16 +600,24 @@ after the clear, however, so its continuation still requests a repaint when
 the joined operation settles. This somewhat surprising split behavior is part
 of the parity contract and needs an explicit race test.
 
-Renderer destruction applies the same generation guard, disposes detector
-timers and subscriptions, and prevents further output or publication. Before
-the renderer releases its Eio dispatcher lease, every accepted uncancelled
-waiter is moved to the deferred completion queue with `Error Error.Closed`.
-Cancelled waiters remain silent. The vendored reference cleanup only removes
-timers and subscriptions; when destruction catches an actively suspended
-query, it does not necessarily resolve its Promise. Deferred
-`Error Error.Closed` is therefore an intentional stronger OCaml liveness
-guarantee rather than result-value parity: every accepted OCaml request settles
-or is explicitly cancelled.
+`Renderer.close` is the single palette teardown implementation. It closes the
+Core-owned capability window, cancels its timer and detector timers and
+subscriptions, advances the publication generation, and prevents further
+output or publication. Before releasing the renderer's Eio dispatcher lease,
+it submits one deferred `Error Error.Closed` completion for every accepted
+uncancelled waiter. Cancelled waiters remain silent. `Renderer.destroy` remains
+the convenience operation `ignore (Renderer.close renderer)` and must not grow
+an alternate cleanup path; it gets identical waiter completion, capability
+window, detector, and lease semantics while intentionally discarding the
+returned teardown error. Neither operation closes the application dispatcher,
+which may still have other renderer leases; the application owner performs the
+dispatcher-wide flush and close.
+
+The vendored reference cleanup only removes timers and subscriptions; when
+destruction catches an actively suspended query, it does not necessarily
+resolve its Promise. Deferred `Error Error.Closed` is therefore an intentional
+stronger OCaml liveness guarantee rather than result-value parity: every
+accepted OCaml request settles or is explicitly cancelled.
 
 ### Palette event channel
 
@@ -540,8 +683,8 @@ the normalized event:
   wrappers while keeping the stored normalized `palette` getter visibly
   distinct;
 - `Renderer.ml` and `.mli`: update the public aliases and subscriptions,
-  publish raw detector completion, and replace the current normalized
-  `feed_palette_response` event publication;
+  publish raw detector completion, and remove the public
+  `feed_palette_response` API and its obsolete normalized event publication;
 - `Lib.Terminal_palette`: define the opaque snapshot, accessors, and explicit
   normalization into rendering state;
 - the theme refresh listener predicate, terminal demo, and black-box renderer
@@ -553,6 +696,11 @@ The repository currently has no payload-dependent application consumer of the
 normalized event; the Core foundation test subscribes but ignores the value.
 The source break is therefore intentionally contained, and obsolete normalized
 event shapes are removed rather than supported through a compatibility shim.
+`feed_palette_response` is likewise deleted rather than retained or aliased:
+the new renderer-private coordinator consumes framed OSC only from
+`Renderer.handle_input`, after raw observation fanout. Parser/session tests feed
+`Lib.Terminal_palette` directly; application code cannot bypass renderer input
+ownership or force publication with a second response path.
 
 ## Theme and native rendering integration
 
@@ -610,8 +758,10 @@ without owning transport details:
   to OSC4 index 0 and OSC10/11; and
 - cancel subscriptions and outstanding waiters before renderer teardown.
 
-The application harness must enable the capability-probe phase when running
-this demo. It must not add a direct stdin listener or write escape sequences
+The application harness must enable the parser's private capability-response
+context before asking Core to start the capability window, subscribe to Core's
+window-status event to disable that context on expiry, and leave the five-second
+timer in Core. It must not add a direct stdin listener or write escape sequences
 outside the renderer output owner.
 
 ## Deliberate OCaml API differences
@@ -643,6 +793,13 @@ hardening and liveness differences are called out explicitly:
 - OCaml rejects a negative `timeout_ms` with `Error.Invalid_argument`; the
   reference forwards it to its timer runtime. Zero remains valid. This is an
   intentional validation divergence rather than a timeout semantic to copy.
+- Upstream resolves `OTUI_PALETTE_IDLE_TIMEOUT_MS` through a module-global lazy
+  environment store. OCaml resolves the same registered numeric setting through
+  an application-owned `Lib.Env.t` before renderer construction and stores the
+  value per renderer. Clearing that environment store affects future renderer
+  construction, not an active detector owner. This is an ownership/lifetime
+  divergence; the default and the timer value used by both query branches remain
+  the same.
 - The reference detector class is split into a parser/session module and a
   renderer coordinator. The split is an ownership improvement, not a change
   to query or timeout behavior.
@@ -667,9 +824,11 @@ hardening and liveness differences are called out explicitly:
   output are no longer usable once Core crosses its owner-lifetime boundary.
   This is an intentional stronger liveness guarantee.
 - The reference rejects palette detection while explicitly suspended. The
-  current OCaml renderer has no equivalent suspend lifecycle; until one is
-  added, the feature must report this as a documented unsupported state rather
-  than claiming full suspend parity.
+  current OCaml renderer has no equivalent suspend lifecycle, and this feature
+  does not introduce one solely for palette detection. The first request-pipeline
+  check is therefore vacuous today. Any future public suspend operation must
+  wire its explicit state into that first check before release; until then this
+  remains a bounded documented parity gap.
 
 These differences are not intended to add compatibility shims for obsolete
 OCaml shapes. `Renderer.palette` remains the normalized rendering-state getter,
@@ -699,31 +858,41 @@ process-global fd or from the demo.
 The implementation is complete only when these observable contracts have
 evidence:
 
-- parser tests cover valid RGB and `#rrggbb` responses, nulls, partial frames,
-  buffer trimming, requested index limits, all special fields, and complete
-  versus incomplete results;
-- manual-clock session tests cover the 300 ms support probe, 5 s hard timeout,
-  300 ms idle timeout, independent palette/special buffers and timers, probe
+- parser tests cover valid RGB and `#rrggbb` responses, invalid and `rgba:`
+  colors, unrelated numeric OSC responses, out-of-range OSC4 indices, nulls,
+  partial frames, buffer trimming, requested index limits, all special fields,
+  and complete versus incomplete results. They prove invalid colors never set
+  values, establish support, or satisfy early completion;
+- manual-clock session tests cover the 300 ms support probe, 5 s default query
+  hard timeout, 300 ms idle timeout, independent palette/special buffers and
+  timers, probe
   versus query-timeout interaction, timeout asymmetry, early completion,
   unrelated-OSC versus non-OSC idle resets, unsolicited recognized tmux
   special-color resets, cancellation, and late input after disposal;
 - renderer input/output tests prove raw OSC fanout ordering, one serialized
   query owner, tmux query selection, the exact XTVERSION-wait predicate for
-  remote and local owners, theme/palette sharing, deferred callback delivery,
+  remote and local owners, the Core-owned not-started/open/closed capability
+  state machine, XTVERSION release and five-second expiry, `Idle` while waiting,
+  immediate progress through an already-closed window, harness parser-context
+  mirroring without a duplicate timer, theme/palette sharing, deferred callback delivery,
   FIFO completion ordering, `get_palette` registration-before-resumption,
   deferred direct-style validation, closed, missing-runtime, missing-clock, and
   wrong-domain errors,
   application-fiber cancellation detaching only its waiter, rejection of
   direct-style waiting from a synchronous renderer callback with the exact
-  `Error.Callback_context` constructor, dispatcher flush
-  during renderer teardown, owner-domain enforcement, supervised callback
+  `Error.Callback_context` constructor for same-renderer and cross-renderer
+  callback calls, dispatcher-wide FIFO order across two renderer leases,
+  closing one renderer without draining another, dispatcher
+  flush during renderer teardown, owner-domain enforcement, supervised callback
   failure with a reentrant later batch, theme-event/palette-event/request-callback order,
   and that a throwing raw OSC observer or palette consumer cannot prevent
   internal palette/theme handlers from running;
 - cache tests prove exact hits, larger-cache projection, concurrent same and
   different sizes and timeouts, detector-timeout inheritance, follow-up
   requests, status transitions, reference-shaped deduplicated raw events,
-  status precedence, zero query writes and no clock advancement on cache hits,
+  status precedence, zero query writes and no capability wait or clock
+  advancement on an initial cache hit, cache re-check after XTVERSION release,
+  cache re-check after a joined detector settles before follow-up detection,
   clear-generation races (including theme-clear during an in-flight detection),
   subscriber-count refresh policy, the stale-detector/joined-refresh repaint,
   sole/shared/all-waiter cancellation, all-waiter cancellation during the
@@ -732,10 +901,13 @@ evidence:
   caller-only failures without palette-error events, mixed caller/detached
   failures delivered to both surfaces, one event for multiple coalesced
   detached refresh demands, palette-error-before-deferred-waiter order,
-  deferred `Error.Closed` completion for destruction
-  during each active session phase, and destroy cleanup;
+  deferred `Error.Closed` completion for close and destroy during each active
+  preflight/session phase, identical close/destroy waiter and lease behavior,
+  and destroy cleanup;
 - environment tests prove `OTUI_PALETTE_IDLE_TIMEOUT_MS` is registered,
-  parsed once by the environment store, and applied to both query sessions;
+  resolved through an injected owner-local `Lib.Env.t`, passed at renderer
+  construction, and applied to both query sessions without a Core `getenv` or
+  module-global cache;
 - non-TTY tests prove that a first request reports `Detecting` until its
   deferred all-null commit, that later requests report `Cached`, and that
   every input/output TTY permutation is supplied through renderer construction
@@ -743,7 +915,8 @@ evidence:
   are true; and
 - event-surface tests prove that `Renderer_events`, `Render_context`, and
   `Renderer` expose the raw snapshot with null and special fields intact while
-  the `Renderer.palette` getter remains normalized rendering state; and
+  the `Renderer.palette` getter remains normalized rendering state, and that
+  application code has no public `feed_palette_response` bypass; and
 - native binding tests prove the ABI layout, palette length/channel conversion,
   normalized-256 publication threshold, epoch invalidation, closed-renderer
   behavior, and the ANSI256/RGB synchronization gate; and
@@ -762,22 +935,29 @@ introducing more scheduling machinery than the reference semantics require.
 
 ### Eio owner dispatcher and deferred continuations
 
-The renderer owns one FIFO of ready palette waiter completions and one
-`completion_drain_scheduled` bit. Enqueuing the first completion requests one
-later owner turn; subsequent completions append to the same queue without
-scheduling another wakeup. The drain detaches the current FIFO before invoking
-user code, so reentrant requests append to a later batch. Waiters are marked
-delivered before their callback runs. A cancelled waiter remains a cheap inert
-entry if it was already queued.
+The application dispatcher owns the only ready-continuation FIFO and one
+dispatcher-level wakeup bit. Renderers own their waiter and detector state but
+submit ready entries directly to that shared FIFO; there is no per-renderer
+completion queue or `completion_drain_scheduled` bit. Each entry retains the
+renderer/waiter identity and result needed to check cancellation at delivery.
+The first enqueue into an empty FIFO wakes one later owner turn; subsequent
+entries from any renderer lease append without another wakeup.
 
-The wakeup is supplied by an Eio-native owner dispatcher with the contract that
-a submitted callback cannot run inline and runs on the renderer's owner domain.
-It is separate from elapsed-time measurement: using a timer as an implicit
-microtask queue would make Promise-like ordering depend on clock implementation
-details. The standard runtime starts one persistent driver fiber on the
-application's outer switch. A same-domain FIFO and `Eio.Condition` wake that
-fiber only when work becomes available; it drains a detached batch before
-waiting again. It does not fork a fiber for each waiter or completion batch.
+The Eio-native dispatcher guarantees that a submitted callback cannot run
+inline and runs on the common owner domain. It detaches the current FIFO batch
+before invoking user code, so reentrant submissions from any renderer append to
+a later batch. Entries are delivered in global dispatcher submission order;
+within one renderer this preserves registration and completion order, while
+multiple renderer leases cannot each claim an independent FIFO ordering. A
+waiter is marked delivered before its callback runs, and a cancelled waiter
+remains a cheap inert entry if it was already submitted.
+
+This wakeup is separate from elapsed-time measurement: using a timer as an
+implicit microtask queue would make Promise-like ordering depend on clock
+implementation details. The standard runtime starts one persistent driver fiber
+on the application's outer switch. The dispatcher FIFO and `Eio.Condition`
+wake that fiber only when work becomes available. It does not fork a fiber for
+each waiter or completion batch.
 
 Dispatcher creation records `Domain.self ()`. Lease acquisition, submission,
 flush, and close compare the current domain explicitly and return a structured
@@ -787,20 +967,31 @@ the same check and return `Error.Wrong_domain`. Eio fibers on the owner domain
 may interleave at suspension points, but dispatcher and renderer mutations do
 not suspend and therefore remain atomic with respect to one another.
 
+The same dispatcher owns the synchronous-callback-depth counter used by every
+leased renderer's input, event, observation, and waiter callback boundary. A
+callback from renderer A therefore cannot suspend the shared continuation
+driver by calling `get_palette` on renderer B; it receives
+`Error.Callback_context` just as a same-renderer call would.
+
 The dispatcher is application-owned and must outlive every renderer lease. It
 must not belong to `Renderer_scheduler`: application shutdown stops that
 scheduler before closing the renderer, while accepted palette waiters still
 need deferred `Error Error.Closed` delivery. Attaching a renderer acquires a
-dispatcher lease. `Renderer.close` first makes the renderer unavailable,
-cancels detector resources, enqueues closed results for accepted waiters, and
-then releases the lease. The application flushes the continuation FIFO before
-closing the dispatcher and its outer switch. Dispatcher shutdown rejects new
-leases and submissions but cannot complete while a renderer lease or queued
-batch remains.
+dispatcher lease. `Renderer.close` first makes that renderer unavailable,
+cancels its detector resources, submits closed results for its accepted waiters
+in registration order, and then releases its lease. Entries already submitted
+by other renderers retain their FIFO position; closing one renderer neither
+drains nor cancels another renderer's work. The application flushes the
+dispatcher continuation FIFO before closing the dispatcher and its outer
+switch. Dispatcher shutdown rejects new leases and submissions but cannot
+complete while a renderer lease or queued batch remains.
 
 The standard Eio renderer-construction path takes the owner dispatcher plus
-required `input_is_tty` and `output_is_tty` facts explicitly, stores the facts
-immutably, and acquires the dispatcher lease before returning the renderer.
+required `input_is_tty` and `output_is_tty` facts and an optional resolved
+`palette_idle_timeout_ms` explicitly, stores them immutably, and acquires the
+dispatcher lease before returning the renderer. Omitting the setting uses
+300 ms; the standard application harness passes its owner-local environment
+value.
 Low-level renderer constructors may omit that application lifetime for
 headless parsing and synchronous rendering, but palette requests on such a
 renderer fail with `Error.Missing_async_lifetime`; they never install an
@@ -809,7 +1000,8 @@ implicit dispatcher or infer terminal capabilities from global descriptors.
 The standard shutdown order is therefore:
 
 1. stop `Renderer_scheduler` and other producers;
-2. close the renderer, enqueueing accepted waiter completions;
+2. close every renderer lease, submitting each renderer's accepted waiter
+   completions;
 3. await the dispatcher's Eio-promise-backed `flush` barrier;
 4. close the dispatcher after its final lease is released; and
 5. restore the terminal, then re-raise any supervised callback failure before
@@ -859,7 +1051,7 @@ type waiter_state =
 Cancellation changes `Waiting` or `Ready` to `Cancelled` in constant time. It
 does not remove list nodes from an active detector and therefore cannot make
 shared-session mutation quadratic. Cancelled entries are discarded when the
-detector partitions its waiter list or when the completion FIFO drains. Owner
+detector partitions its waiter list or when the dispatcher FIFO drains. Owner
 identity makes passing a waiter to a different renderer a structured invalid
 argument without structural or polymorphic comparison.
 
@@ -912,8 +1104,8 @@ An OSC owner turn has two phases. First, raw observers run under the dedicated
 exception boundary and the palette and theme state machines consume the frame.
 The renderer then commits cache, status, generation, normalized/native state,
 and repaint effects without invoking user code. Second, it delivers theme
-events and `on_palette`; request results are appended to the deferred
-continuation FIFO and therefore run only in a later owner turn. Channel-level
+events and `on_palette`; request results are appended to the deferred dispatcher
+FIFO and therefore run only in a later owner turn. Channel-level
 callback exceptions are recorded so later internal work and independent waiter
 continuations remain live, then the first exception is reported to the
 application callback-failure supervisor for orderly shutdown and later
@@ -931,17 +1123,23 @@ only to its waiters.
 Implementation should be split so each semantic boundary can be reviewed:
 
 1. **Parser/session kernel.** Extend `Lib.Terminal_palette` with support-probe,
-   concurrent-query, timeout, tmux, and completion state without connecting a
-   second stdin reader.
+   strict reference-shaped recognition, concurrent-query, timeout, tmux, and
+   completion state without connecting a second stdin reader. Add the
+   owner-local `Lib.Env` definition/resolver and remove broad `saw_response`
+   completion semantics.
 2. **Renderer coordinator and Eio dispatch.** Add the application-owned Eio
-   dispatcher, domain checks, leases, flush barrier and callback-failure
-   supervisor, `Error.Callback_context`, terminal-owner TTY construction facts,
-   raw OSC fanout, owner-deferred continuations, the direct-style operation,
-   renderer-owned sessions, cache/projection, request coalescing,
-   detached-refresh error interest, generation invalidation, status, lifecycle
-   completion, and serialized query writes. This phase changes the palette
-   event payload across `Renderer_events`, `Render_context`, and `Renderer`
-   while retaining the normalized `Renderer.palette` getter.
+   dispatcher-wide FIFO, domain checks, multi-renderer leases, flush barrier and
+   callback-failure supervisor, `Error.Callback_context`, terminal-owner TTY
+   and idle-timeout construction facts, raw OSC fanout, owner-deferred
+   continuations, the direct-style operation, the Core-owned XTVERSION window,
+   the reference-ordered request pipeline, renderer-owned sessions,
+   cache/projection, request coalescing, detached-refresh error interest,
+   generation invalidation, status, common close/destroy completion, and
+   serialized query writes. This phase changes the palette event payload across
+   `Renderer_events`, `Render_context`, and `Renderer`, deletes
+   `feed_palette_response`, adds the capability-window status/query and event
+   across the same three surfaces for terminal-session integration, and retains
+   the normalized `Renderer.palette` getter.
 3. **Theme integration.** Emit the existing theme query through the renderer
    output owner and ensure palette/theme handlers share each framed response.
 4. **Native synchronization.** Add and verify the checked palette-state ABI,
@@ -949,17 +1147,22 @@ Implementation should be split so each semantic boundary can be reviewed:
 5. **Demo port.** Rebuild `terminal.ts` against the high-level API only, with
    no demo-specific transport seam.
 
-The construction boundary is settled: the standard Eio path requires immutable
-`input_is_tty` and `output_is_tty` facts from the terminal-session owner, and
-`Error.Callback_context` is a distinct shared error constructor. Before phase
-1, review must still settle the opaque snapshot accessors and whether the
-renderer needs an explicit suspend state for parity. Phase 2 creates the Eio
-dispatcher at the start of the standard application's outer switch, before
-renderer construction, and closes it during cleanup after renderer close and
-dispatch flush. Renderer construction acquires the lease and TTY facts
-explicitly. The reference's lexicographic tmux comparison and separate
-terminal-name predicates must also be either preserved or recorded as
-intentional fixes. Before phase 4, review
+The preflight boundaries are settled. The standard Eio path requires immutable
+`input_is_tty` and `output_is_tty` facts and accepts a resolved
+`palette_idle_timeout_ms` value, defaulting to 300 ms;
+`Error.Callback_context` is a distinct shared error constructor; snapshots are
+opaque with indexed access and defensive bulk copies; the application
+dispatcher owns the only continuation FIFO; Core owns the XTVERSION window;
+`Renderer.handle_input` is the only renderer response path; and destroy delegates
+to close. The current lack of a public suspend lifecycle is the bounded
+divergence recorded above, not an unresolved phase-1 choice.
+
+Phase 2 creates the Eio dispatcher at the start of the standard application's
+outer switch, before renderer construction, and closes it during cleanup after
+all renderer closes and the dispatcher-wide flush. Renderer construction
+acquires its lease and immutable terminal/configuration facts explicitly. The
+reference's lexicographic tmux comparison and separate terminal-name predicates
+are preserved. Before phase 4, review
 must confirm that native synchronization is a release requirement rather than
 an optional optimization; reference parity argues that it is required for the
 full feature. The demo is not to be committed until its behavior has been
@@ -973,17 +1176,24 @@ only when:
 - the renderer owns all palette query input/output, timing, caching, and
   teardown;
 - the standard Eio construction path receives immutable input/output TTY facts
-  from the terminal owner, and any non-TTY side suppresses all detection output;
+  and either the resolved owner-local palette idle timeout or its 300 ms
+  default, and any non-TTY side suppresses all detection output;
 - the externally visible query, timeout, tmux, null-value, cache, and
   invalidation semantics match the reference tests;
 - palette request callbacks are never inline and remain FIFO under coalescing;
   every ordinary-context `get_palette` result crosses an Eio scheduling
   boundary, cancellation detaches only its waiter, and renderer teardown cannot
   introduce a lost wakeup or hang;
+- cached requests bypass XTVERSION, and every uncached request follows the
+  documented cache/preflight/join/cache/start order;
+- Core owns the capability-window timer and status, keeps palette status `Idle`
+  during that wait, and releases preflight work on XTVERSION, expiry, or common
+  close/destroy teardown;
 - the application-owned Eio dispatcher outlives its renderer leases, flushes
   accepted and reentrantly enqueued completions before shutdown, enforces its
   owner domain, survives callback failure until supervised cleanup completes,
-  and is independent of `Renderer_scheduler` lifetime;
+  defines one FIFO across all renderer leases, and is independent of
+  `Renderer_scheduler` lifetime;
 - non-TTY and suspended-renderer behavior is either implemented and tested or
   explicitly recorded as a bounded API divergence;
 - callback-context rejection uses a structured `Error.Callback_context`, and
@@ -992,6 +1202,9 @@ only when:
 - `on_palette` is raw and reference-shaped across `Renderer_events`,
   `Render_context`, and `Renderer`, while `Renderer.palette` and native
   synchronization remain normalized rendering state;
+- invalid colors and unrelated numeric OSC responses retain the reference's
+  recognition and idle-timer behavior, and `feed_palette_response` is absent
+  from the public renderer API;
 - theme mode and raw OSC observers receive shared responses in the documented
   order;
 - native ANSI256 palette state is synchronized with a checked, lifetime-safe

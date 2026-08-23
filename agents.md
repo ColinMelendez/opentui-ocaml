@@ -1,5 +1,15 @@
 # AGENTS.md
 
+## ocaml-opentui porting guidelines
+
+- remember that this is primarily a port of the reference implementation.
+- defer to preserving upstream semantics where possible.
+- preserve upstream timing wherever higher-level composition can observe it.
+- follow the principle of least surprise when considering users familiar with both
+  ocaml and the original OpenTUI.
+- breaking the above guidelines can be done in some cases, but must be treated carefully
+  with divergences planned and documented.
+
 ## important rules
 
 - never run `dune clean`.
@@ -75,6 +85,8 @@
 - use the `Dtoa` library for converting floats to strings. The native implementation can have
   platform-specific inconsistencies due to depending on the host machine's c libraries.
 - no not use `float array`, use `floatarray` instead for consistent boxing and performance.
+- this is an eio-native application. we can use eio primitives directly instead of designing
+  generic abstractions over them
 
 ## test guidelines
 
