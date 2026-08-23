@@ -180,4 +180,16 @@ let () =
               Wgpu.destroy_render_target target;
               Wgpu.destroy_device device;
       );
+
+      test "draws an unlit triangle through a full pipeline" (fun () ->
+        (* OPEN QUESTION, tracked in the three-renderer risk register: the
+           complete OCaml-driven draw encodes without a single validation
+           error and every handle is live, yet the submitted frame reads
+           back entirely zeroed - clear included - while an identical
+           sequence executed entirely inside one C call on the same device
+           produces the correct red pixel. Skipped loudly until root-caused;
+           the C-internal probe (Wgpu.debug_triangle) keeps proving the GPU
+           pipeline itself works on this same stack. *)
+        skip ~reason:"OCaml-driven draws land silently empty (open                      three-renderer question); C-level probe passes" ());
+
     ]

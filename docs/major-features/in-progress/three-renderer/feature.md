@@ -324,7 +324,25 @@ API and semantics:
     Phase 2 with the first saved screenshot test.
 16. `CELL_ASPECT_RATIO` override parity is small but observable. Retire with
     an aspect-construction test.
-16b. Uncaptured GPU errors have no structured path into OCaml yet: the device
+16b. UNCATURED GPU ERRORS - PARTIALLY RESOLVED, remaining half open. The
+     binding now captures wgpu-native log lines and uncaptured device errors
+     into a mutex-guarded C ring drained from OCaml
+     (`enable_diagnostics`/`drain_diagnostics`), and creation stubs push
+     handle-provenance probes. This capture immediately caught two real
+     validation failures during bring-up. Still open: surfacing per-frame
+     errors as structured `Error.t` results after submission, and the
+     outstanding silent-empty-frame investigation below.
+16c. OCaml-driven indexed draws land silently empty: the full draw path
+     (shader module, bind group layout, pipeline layout, render pipeline,
+     vertex/index/uniform buffers, bind group) creates without any captured
+     validation error, yet the submitted frame reads back all zeros -
+     including the clear color - while a byte-equivalent sequence executed
+     entirely inside one C function on the same device produces the correct
+     red pixel. The C-internal probe remains in the stubs as
+     `debug_triangle`. Next steps: diff the exact descriptor bytes between
+     the working C path and the OCaml path; consult outside review with the
+     stub source. Retire when the OCaml-driven triangle renders red in CI.
+ the device
      is created without an error callback, so void C-API calls
      (`begin_render_pass`, `copy_texture_to_buffer`, and from Phase 1 onward
      pipeline creation and buffer uploads) can fail silently while the frame

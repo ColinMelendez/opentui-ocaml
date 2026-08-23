@@ -7,6 +7,11 @@ module Texture_view = Native_token.Texture_view
 module Buffer = Native_token.Buffer
 module Command_encoder = Native_token.Command_encoder
 module Command_buffer = Native_token.Command_buffer
+module Shader_module = Native_token.Shader_module
+module Bind_group_layout = Native_token.Bind_group_layout
+module Pipeline_layout = Native_token.Pipeline_layout
+module Render_pipeline = Native_token.Render_pipeline
+module Bind_group = Native_token.Bind_group
 
 (* Raw native status codes; see webgpu.h enum definitions. *)
 let request_status_success = 1
@@ -122,3 +127,68 @@ external buffer_usage_map_read_c : unit -> int64
 
 external buffer_usage_copy_destination_c : unit -> int64
   = "opentui_wgpu_buffer_usage_copy_destination"
+
+external enable_diagnostics : unit -> unit
+  = "opentui_wgpu_enable_diagnostics"
+
+external drain_diagnostics : max:int -> string list
+  = "opentui_wgpu_drain_diagnostics"
+
+external device_create_shader_module :
+  Device.t -> wgsl:string -> creation
+  = "opentui_wgpu_device_create_shader_module"
+
+external shader_module_release : Shader_module.t -> unit
+  = "opentui_wgpu_shader_module_release"
+
+external device_create_uniform_bind_group_layout :
+  Device.t -> creation = "opentui_wgpu_device_create_uniform_bind_group_layout"
+
+external bind_group_layout_release : Bind_group_layout.t -> unit
+  = "opentui_wgpu_bind_group_layout_release"
+
+external device_create_pipeline_layout :
+  Device.t -> Bind_group_layout.t -> creation
+  = "opentui_wgpu_device_create_pipeline_layout"
+
+external pipeline_layout_release : Pipeline_layout.t -> unit
+  = "opentui_wgpu_pipeline_layout_release"
+
+(* layout, module, vs entry, fs entry, target format *)
+type pipeline_options =
+  Pipeline_layout.t * Shader_module.t * string * string * int
+
+external device_create_render_pipeline :
+  Device.t -> pipeline_options -> creation
+  = "opentui_wgpu_device_create_render_pipeline"
+
+external render_pipeline_release : Render_pipeline.t -> unit
+  = "opentui_wgpu_render_pipeline_release"
+
+external device_create_uniform_bind_group :
+  Device.t -> Bind_group_layout.t -> Buffer.t -> size:int64 -> creation
+  = "opentui_wgpu_device_create_uniform_bind_group"
+
+external bind_group_release : Bind_group.t -> unit
+  = "opentui_wgpu_bind_group_release"
+
+external queue_write_buffer_bytes :
+  Queue.t -> Buffer.t -> offset:int64 -> string -> unit
+  = "opentui_wgpu_queue_write_buffer_bytes"
+
+(* view, clear color, pipeline, bind group,
+   vertex buffer + byte size, index buffer + byte size, index count *)
+type draw_call =
+  Texture_view.t
+  * clear_color
+  * Render_pipeline.t
+  * Bind_group.t
+  * Buffer.t * int64
+  * Buffer.t * int64
+  * int
+
+external encoder_render_draw_indexed :
+  Command_encoder.t -> draw_call -> unit
+  = "opentui_wgpu_encoder_render_draw_indexed"
+
+external debug_triangle_raw : Device.t -> int = "opentui_wgpu_debug_triangle"

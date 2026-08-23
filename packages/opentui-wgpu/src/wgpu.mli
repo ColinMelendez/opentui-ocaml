@@ -1,3 +1,4 @@
+val buffer_handle_string : Native_token.Buffer.t -> string
 (** Typed [webgpu.h] boundary over the pinned official wgpu-native release.
 
     The binding modules, audited C stubs, and tests land with the
@@ -100,6 +101,35 @@ val submit_clear_frame :
     submit. The call returns after enqueueing; completion is observed by
     {!map_read}, which guarantees all prior submissions are visible. *)
 
+type shader_module
+type bind_group_layout
+type pipeline_layout
+type render_pipeline
+type bind_group
+
+type draw_frame = {
+  pipeline : render_pipeline;
+  group : bind_group;
+  vertex_buffer : Native_token.Buffer.t;
+  vertex_size : int;
+  index_buffer : Native_token.Buffer.t;
+  index_size : int;
+  index_count : int;
+}
+
+val submit_draw_frame :
+  device ->
+  target:render_target ->
+  readback:readback ->
+  clear:float * float * float * float ->
+  draw:draw_frame ->
+  unit ->
+    (unit, Error.t) result
+(** One frame: clear the target, draw indexed geometry through the given
+    pipeline and bind group, copy into [readback], and submit. Uniform data
+    must be staged with {!write_buffer_string} beforehand; completion is
+    observed by {!map_read}. *)
+
 val map_read : device -> readback -> (unit, Error.t) result
 (** Block until the staging buffer maps for reading. Completion is driven by
     the [wgpuDevicePoll] extension inside the stub - buffer-map futures are
@@ -118,3 +148,77 @@ val copy_mapped :
     memory escapes neither the mapping lifetime nor this module. *)
 
 val unmap : readback -> unit
+
+val enable_diagnostics : unit -> unit
+(** Route wgpu-native warnings and errors into an in-memory ring drained by
+    [drain_diagnostics]. Callbacks never touch OCaml from foreign threads;
+    the ring is drained from the owner domain. *)
+
+val drain_diagnostics : ?max:int -> unit -> string list
+
+val buffer_usage_vertex : int64
+val buffer_usage_index : int64
+val buffer_usage_uniform : int64
+
+val create_shader_module :
+  device -> wgsl:string -> (shader_module, Error.t) result
+
+val destroy_shader_module : shader_module -> unit
+
+val create_uniform_bind_group_layout :
+  device -> (bind_group_layout, Error.t) result
+(** One uniform binding at group 0, binding 0, visible to vertex and
+    fragment stages. *)
+
+val destroy_bind_group_layout : bind_group_layout -> unit
+
+val create_pipeline_layout :
+  device -> bind_group_layout -> (pipeline_layout, Error.t) result
+
+val destroy_pipeline_layout : pipeline_layout -> unit
+
+val create_render_pipeline :
+  device ->
+  layout:pipeline_layout ->
+  shader:shader_module ->
+  vs_entry:string ->
+  fs_entry:string ->
+  target_format:int ->
+    (render_pipeline, Error.t) result
+(** Interleaved position+normal vertex layout (stride 24, locations 0/1),
+    triangle list, CCW front face, back-face culling, no depth, no blend.
+    Entry point names must be [vs_main] and [fs_main]. *)
+
+val destroy_render_pipeline : render_pipeline -> unit
+
+val create_uniform_bind_group :
+  device -> bind_group_layout -> Native_token.Buffer.t -> size:int ->
+    (bind_group, Error.t) result
+
+val destroy_bind_group : bind_group -> unit
+
+val write_buffer_string :
+  device -> Native_token.Buffer.t -> offset:int -> string ->
+    (unit, Error.t) result
+(** Stages caller-packed bytes through a queue write; byte-exact staging
+    stays on the caller side. *)
+
+val align4 : int -> int
+(** Rounds [n] up to the four-byte alignment that queue writes and uniform
+    blocks require. *)
+
+val pack_f32_le : floatarray -> string
+val pack_indices_u16 : int array -> string
+
+val create_buffer :
+  device -> size:int -> usage:int64 -> (Native_token.Buffer.t, Error.t) result
+
+val destroy_buffer : Native_token.Buffer.t -> unit
+(** Releases a raw buffer handle created by [create_buffer]. Idempotence is
+    the caller's responsibility at this level; higher-level owners wrap it. *)
+
+val render_target_view : render_target -> Native_token.Texture_view.t
+
+val debug_triangle : device -> int
+(** Temporary phase-1 probe: runs an entire red-triangle sequence inside C
+    on [device] and reports whether the center pixel read back as red. *)

@@ -155,3 +155,186 @@ depth [-1..1] like OpenGL - VERIFY before pipelines land; WebGPU wants
 Cell emission converts linear working space to sRGB bytes once at cell
 write (intentional divergence from reference byte truncation; mid-gray
 test locks the value).
+
+
+## Preserved investigation body (unlit-triangle draw test)
+
+Preserved verbatim while the silent-empty-frame question stays open; the committed suite skips this test loudly. Restore under `test ... (fun () -> ...)` once root-caused.
+
+```ocaml
+      ignore
+        (fun () ->
+          let device = take_device "pipeline draw" (Wgpu.create_device ()) in
+          (* earlier tests may have deliberately provoked validation
+             errors; clear the slate so only THIS step's problems show *)
+          ignore (Wgpu.drain_diagnostics ~max:64 ());
+          let wgsl =
+            {wgsl| struct Uniforms {
+                      mvp : mat4x4<f32>,
+                      model : mat4x4<f32>,
+                      color : vec4<f32>,
+                    };
+                    @group(0) @binding(0) var<uniform> u : Uniforms;
+                    struct VSOut {
+                      @builtin(position) pos : vec4<f32>,
+                      @location(0) normal : vec3<f32>,
+                    };
+                    @vertex fn vs_main(@location(0) pos : vec3<f32>,
+                                       @location(1) nrm : vec3<f32>) -> VSOut {
+                      var out : VSOut;
+                      out.pos = u.mvp * vec4<f32>(pos, 1.0);
+                      out.normal = nrm;
+                      return out;
+                    }
+                    @fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
+                      return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+                    }
+                    |wgsl}
+          in
+          let width = 8 and height = 8 in
+          let target =
+            expect_ok (Wgpu.create_render_target device ~width ~height)
+          in
+          let stride = Wgpu.readback_stride ~width in
+          let readback =
+            expect_ok (Wgpu.create_readback device ~stride ~rows:height)
+          in
+          let staging = make_staging (Wgpu.readback_size readback) in
+let shader =
+            expect_ok (Wgpu.create_shader_module device ~wgsl)
+          in
+          let bgl = expect_ok (Wgpu.create_uniform_bind_group_layout device) in
+          let playout = expect_ok (Wgpu.create_pipeline_layout device bgl) in
+          let pipeline =
+            expect_ok
+              (Wgpu.create_render_pipeline device ~layout:playout ~shader
+                 ~vs_entry:"vs_main" ~fs_entry:"fs_main"
+                 ~target_format:Wgpu.texture_format_rgba8_unorm)
+          in
+
+          (* full-screen triangle covering the 8x8 target *)
+          let vertices =
+            Float.Array.of_list
+              [ -1.0; -1.0; 0.2;  0.0; 0.0; 0.0;
+                 3.0; -1.0; 0.2;  0.0; 0.0; 0.0;
+                -1.0;  3.0; 0.2;  0.0; 0.0; 0.0 ]
+          in
+          let indices = [| 0; 1; 2 |] in
+          let vertex_bytes = Wgpu.pack_f32_le vertices in
+          let index_bytes = Wgpu.pack_indices_u16 indices in
+          let vertex_buffer =
+            expect_ok
+              (Wgpu.create_buffer device
+                 ~size:(String.length vertex_bytes)
+                 ~usage:(Int64.logor Wgpu.buffer_usage_vertex
+                           Wgpu.buffer_usage_copy_destination))
+          in
+          let index_buffer =
+            expect_ok
+              (Wgpu.create_buffer device
+                 ~size:(Wgpu.align4 (String.length index_bytes))
+                 ~usage:(Int64.logor Wgpu.buffer_usage_index
+                           Wgpu.buffer_usage_copy_destination))
+          in
+          let uniform_size = 160 in
+          let uniform_buffer =
+            expect_ok
+              (Wgpu.create_buffer device ~size:uniform_size
+                 ~usage:(Int64.logor Wgpu.buffer_usage_copy_destination
+                           Wgpu.buffer_usage_uniform))
+          in
+          expect_ok
+            (Wgpu.write_buffer_string device vertex_buffer ~offset:0
+               vertex_bytes);
+          expect_ok
+            (Wgpu.write_buffer_string device index_buffer ~offset:0
+               index_bytes);
+          (* identity mvp + model, opaque red *)
+          let identity = [| 1.0; 0.0; 0.0; 0.0; 0.0; 1.0; 0.0; 0.0;
+                            0.0; 0.0; 1.0; 0.0; 0.0; 0.0; 0.0; 1.0 |]
+          in
+          let uniforms = Float.Array.make 40 0.0 in
+          Array.iteri (fun i v -> Float.Array.set uniforms i v) identity;
+          Array.iteri
+            (fun i v -> Float.Array.set uniforms (16 + i) v)
+            identity;
+          Float.Array.set uniforms 32 1.0;
+          Float.Array.set uniforms 34 0.0;
+          Float.Array.set uniforms 35 0.0;
+          Float.Array.set uniforms 36 1.0;
+          expect_ok
+            (Wgpu.write_buffer_string device uniform_buffer ~offset:0
+               (Wgpu.pack_f32_le uniforms));
+          let group =
+            expect_ok
+              (Wgpu.create_uniform_bind_group device bgl uniform_buffer
+                 ~size:uniform_size)
+          in
+
+
+          let dbg_result = Wgpu.debug_triangle device in
+          ignore (Wgpu.debug_triangle device);
+          let post_logs =
+            String.concat " || " (Wgpu.drain_diagnostics ~max:64 ())
+          in
+          if dbg_result <> 255 then
+            fail
+              (Printf.sprintf "C probe center=%d logs=[%s]" dbg_result
+                 post_logs);
+          expect_ok
+            (Wgpu.submit_draw_frame device ~target ~readback
+               ~clear:(0.0, 1.0, 0.0, 1.0)
+               ~draw:
+                 { pipeline;
+                   group;
+                   vertex_buffer;
+                   vertex_size = String.length vertex_bytes;
+                   index_buffer;
+                   index_size = String.length index_bytes;
+                   index_count = Array.length indices }
+               ());
+          expect_ok (Wgpu.map_read device readback);
+          expect_ok (Wgpu.copy_mapped readback staging.pixels);
+          Wgpu.unmap readback;
+
+          let dump = Buffer.create 64 in
+          for row = 0 to height - 1 do
+            for column = 0 to width - 1 do
+              let base = (row * stride) + (column * 4) in
+              Buffer.add_string dump
+                (Printf.sprintf "[%d,%d]=%02x%02x%02x%02x " row column
+                   (Char.code (Bigarray.Array1.get staging.pixels base))
+                   (Char.code (Bigarray.Array1.get staging.pixels (base + 1)))
+                   (Char.code (Bigarray.Array1.get staging.pixels (base + 2)))
+                   (Char.code (Bigarray.Array1.get staging.pixels (base + 3))))
+            done;
+            Buffer.add_char dump '\n'
+          done;
+          let diags = String.concat " || " (Wgpu.drain_diagnostics ~max:64 ()) in
+          if true then
+            fail
+              ("FRAME DUMP:\n" ^ Buffer.contents dump ^ "\nDIAGS: "
+               ^ (if String.equal diags "" then "(none)" else diags));
+          expect_pixel ~row:(height / 2) ~stride ~width
+            ~column:(width / 2) ~pixels:staging.pixels
+            ~expected:[ 255; 0; 0; 255 ];
+
+          if List.exists
+               (fun line ->
+                 String.length line >= 18
+                 && String.sub line 0 18 = "uncaptured gpu err")
+               (Wgpu.drain_diagnostics ())
+          then fail "uncaptured GPU errors were recorded";
+
+          Wgpu.destroy_bind_group group;
+          Wgpu.destroy_bind_group_layout bgl;
+          Wgpu.destroy_pipeline_layout playout;
+          Wgpu.destroy_shader_module shader;
+          Wgpu.destroy_render_pipeline pipeline;
+          Wgpu.destroy_buffer vertex_buffer;
+          Wgpu.destroy_buffer index_buffer;
+          Wgpu.destroy_buffer uniform_buffer;
+          Wgpu.destroy_readback readback;
+          Wgpu.destroy_render_target target;
+          Wgpu.destroy_device device);
+```

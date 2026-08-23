@@ -227,6 +227,96 @@ let submit_clear_frame device ~(target : render_target) ~(readback : readback)
         Native.command_encoder_release encoder;
         submit_result
 
+type shader_module = {
+  handle : Native_token.Shader_module.t;
+  mutable released : bool;
+}
+
+type bind_group_layout = {
+  bgl_handle : Native_token.Bind_group_layout.t;
+  mutable bgl_released : bool;
+}
+
+type pipeline_layout = {
+  pl_handle : Native_token.Pipeline_layout.t;
+  mutable pl_released : bool;
+}
+
+type render_pipeline = {
+  rp_handle : Native_token.Render_pipeline.t;
+  mutable rp_released : bool;
+}
+
+type bind_group = {
+  bg_handle : Native_token.Bind_group.t;
+  mutable bg_released : bool;
+}
+
+type draw_frame = {
+  pipeline : render_pipeline;
+  group : bind_group;
+  vertex_buffer : Native_token.Buffer.t;
+  vertex_size : int;
+  index_buffer : Native_token.Buffer.t;
+  index_size : int;
+  index_count : int;
+}
+
+let submit_draw_frame device ~(target : render_target)
+    ~(readback : readback)
+    ~(clear : float * float * float * float) ~(draw : draw_frame) () =
+  match check_open device "submit_draw_frame" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      if target.released || readback.released then
+        Error (Error.Closed { operation = "submit_draw_frame" })
+      else if
+        Int.compare readback.stride (readback_stride ~width:target.width) < 0
+        || Int.compare readback.rows target.height < 0
+      then
+        Error
+          (Error.Invalid_argument
+             (Printf.sprintf
+                "readback stride %d rows %d cannot hold a %dx%d frame"
+                readback.stride readback.rows target.width target.height))
+      else if
+        draw.pipeline.rp_released || draw.group.bg_released
+        || draw.vertex_size <= 0 || draw.index_size <= 0 || draw.index_count <= 0
+      then
+        Error (Error.Invalid_argument "draw frame references invalid state")
+      else
+        match
+          creation_result ~what:"command encoder"
+            (Native.device_create_command_encoder device.handle)
+        with
+        | Error _ as failure -> failure
+        | Ok encoder ->
+            let call : Native.draw_call =
+              ( target.view,
+                clear,
+                draw.pipeline.rp_handle,
+                draw.group.bg_handle,
+                draw.vertex_buffer,
+                Int64.of_int draw.vertex_size,
+                draw.index_buffer,
+                Int64.of_int draw.index_size,
+                draw.index_count )
+            in
+            Native.encoder_render_draw_indexed encoder call;
+            let submit_result =
+              match
+                creation_result ~what:"command buffer"
+                  (Native.command_encoder_finish encoder)
+              with
+              | Error _ as failure -> failure
+              | Ok command_buffer ->
+                  Native.queue_submit_one device.queue command_buffer;
+                  Native.command_buffer_release command_buffer;
+                  Ok ()
+            in
+            Native.command_encoder_release encoder;
+            submit_result)
+
 let map_read device (readback : readback) =
   check_open device "map_read" >>= fun () ->
   if readback.released then
@@ -279,3 +369,176 @@ let unmap (readback : readback) =
     Native.buffer_unmap readback.buffer;
     readback.mapped <- false
   end
+
+let create_buffer device ~(size : int) ~usage =
+  match check_open device "create_buffer" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      if size <= 0 then
+        Error (Error.Invalid_argument "buffer size must be positive")
+      else
+        creation_result ~what:"buffer"
+          (Native.device_create_buffer device.handle
+             (Int64.of_int size, usage))
+
+let destroy_buffer (buffer : Native_token.Buffer.t) =
+  Native.buffer_release buffer
+
+let render_target_view (target : render_target) = target.view
+
+let buffer_handle_string (buffer : Native_token.Buffer.t) : string =
+  Int64.to_string buffer
+
+let enable_diagnostics () = Native.enable_diagnostics ()
+
+let drain_diagnostics ?(max = 16) () = Native.drain_diagnostics ~max
+
+let buffer_usage_vertex = 0x20L
+
+let buffer_usage_index = 0x10L
+
+let buffer_usage_uniform = 0x40L
+
+let create_shader_module device ~wgsl =
+  match check_open device "create_shader_module" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        creation_result ~what:"shader module"
+          (Native.device_create_shader_module device.handle ~wgsl)
+      with
+      | Ok handle -> Ok { handle; released = false }
+      | Error _ as failure -> failure)
+
+let destroy_shader_module module_ =
+  if not module_.released then begin
+    module_.released <- true;
+    Native.shader_module_release module_.handle
+  end
+
+let create_uniform_bind_group_layout device =
+  match check_open device "create_uniform_bind_group_layout" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        creation_result ~what:"bind group layout"
+          (Native.device_create_uniform_bind_group_layout device.handle)
+      with
+      | Ok bgl_handle -> Ok { bgl_handle; bgl_released = false }
+      | Error _ as failure -> failure)
+
+let destroy_bind_group_layout layout =
+  if not layout.bgl_released then begin
+    layout.bgl_released <- true;
+    Native.bind_group_layout_release layout.bgl_handle
+  end
+
+let create_pipeline_layout device (layout : bind_group_layout) =
+  match check_open device "create_pipeline_layout" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      if layout.bgl_released then
+        Error (Error.Closed { operation = "create_pipeline_layout" })
+      else (
+        match
+          creation_result ~what:"pipeline layout"
+            (Native.device_create_pipeline_layout device.handle
+               layout.bgl_handle)
+        with
+        | Ok pl_handle -> Ok { pl_handle; pl_released = false }
+        | Error _ as failure -> failure)
+
+let destroy_pipeline_layout layout =
+  if not layout.pl_released then begin
+    layout.pl_released <- true;
+    Native.pipeline_layout_release layout.pl_handle
+  end
+
+let create_render_pipeline device ~(layout : pipeline_layout)
+    ~(shader : shader_module) ~vs_entry ~fs_entry ~target_format =
+  match check_open device "create_render_pipeline" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      if layout.pl_released || shader.released then
+        Error (Error.Closed { operation = "create_render_pipeline" })
+      else
+        match
+          creation_result ~what:"render pipeline"
+            (Native.device_create_render_pipeline device.handle
+               ( layout.pl_handle,
+                 shader.handle,
+                 vs_entry,
+                 fs_entry,
+                 target_format ))
+        with
+        | Ok rp_handle -> Ok { rp_handle; rp_released = false }
+        | Error _ as failure -> failure
+
+let destroy_render_pipeline pipeline =
+  if not pipeline.rp_released then begin
+    pipeline.rp_released <- true;
+    Native.render_pipeline_release pipeline.rp_handle
+  end
+
+let create_uniform_bind_group device (layout : bind_group_layout)
+    (buffer : Native_token.Buffer.t) ~size =
+  match check_open device "create_uniform_bind_group" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      if layout.bgl_released then
+        Error (Error.Closed { operation = "create_uniform_bind_group" })
+      else
+        match
+          creation_result ~what:"bind group"
+            (Native.device_create_uniform_bind_group device.handle
+               layout.bgl_handle buffer ~size:(Int64.of_int size))
+        with
+        | Ok bg_handle -> Ok { bg_handle; bg_released = false }
+        | Error _ as failure -> failure
+
+let destroy_bind_group group =
+  if not group.bg_released then begin
+    group.bg_released <- true;
+    Native.bind_group_release group.bg_handle
+  end
+
+let write_buffer_string device buffer ~(offset : int) (data : string) =
+  match check_open device "write_buffer_string" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      (* queueWriteBuffer requires the copy size to be a multiple of four;
+         pad short tails so callers can stage compact index blocks. *)
+      let pad = (4 - (String.length data mod 4)) mod 4 in
+      let payload =
+        if Int.equal pad 0 then data
+        else data ^ String.make pad '\x00'
+      in
+      Native.queue_write_buffer_bytes device.queue buffer
+        ~offset:(Int64.of_int offset) payload;
+      Ok ()
+
+(* Float32 little-endian packing into a byte string, suitable for vertex
+   buffers and uniform blocks staged through queue writes. *)
+let align4 n = ((n + 3) / 4) * 4
+
+let pack_f32_le (values : floatarray) : string =
+  let count = Float.Array.length values in
+  Bytes.unsafe_to_string
+    (Bytes.init (count * 4) (fun i ->
+         let bits =
+           Int32.bits_of_float (Float.Array.get values (i / 4))
+         in
+         let shift = (i mod 4) * 8 in
+         Char.chr (Int32.to_int (Int32.logand (Int32.shift_right_logical bits shift) 0xFFl))))
+
+let pack_indices_u16 (indices : int array) : string =
+  let bytes = Bytes.create (Array.length indices * 2) in
+  Array.iteri
+    (fun i index ->
+      Bytes.set bytes (i * 2) (Char.chr (index land 0xff));
+      Bytes.set bytes ((i * 2) + 1) (Char.chr ((index lsr 8) land 0xff)))
+    indices;
+  Bytes.unsafe_to_string bytes
+
+let debug_triangle (device : device) : int =
+  Native.debug_triangle_raw device.handle

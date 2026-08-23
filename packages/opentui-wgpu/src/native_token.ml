@@ -33,3 +33,23 @@ end
 module Command_buffer = struct
   type t = int64
 end
+
+module Shader_module = struct
+  type t = int64
+end
+
+module Bind_group_layout = struct
+  type t = int64
+end
+
+module Pipeline_layout = struct
+  type t = int64
+end
+
+module Render_pipeline = struct
+  type t = int64
+end
+
+module Bind_group = struct
+  type t = int64
+end
