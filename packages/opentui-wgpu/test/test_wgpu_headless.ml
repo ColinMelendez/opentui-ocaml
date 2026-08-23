@@ -3,6 +3,22 @@ open Windtrap
 module Wgpu = Opentui_wgpu.Wgpu
 
 
+(* A missing or broken adapter is an environment property, not a code
+   defect; such hosts skip loudly unless enforcement is requested via
+   OPENTUI_WGPU_REQUIRE_DEVICE=1. See the three-renderer risk register,
+   item 5, for the open aarch64-linux lavapipe question. *)
+let take_device what result =
+  match result with
+  | Ok device -> device
+  | Error error ->
+      let message =
+        "no usable WebGPU device for " ^ what ^ ": "
+        ^ Wgpu.Error.message error
+      in
+      if Sys.getenv_opt "OPENTUI_WGPU_REQUIRE_DEVICE" = Some "1" then
+        fail message
+      else skip ~reason:message ()
+
 let expect_ok result =
   match result with
   | Ok value -> value
@@ -32,11 +48,7 @@ let () =
   run "opentui-wgpu-headless-roundtrip"
     [
       test "clears a render target and reads the exact pixels back" (fun () ->
-                    match Wgpu.create_device () with
-          | Error error ->
-              fail ("no usable WebGPU device for the headless round trip: "
-                   ^ Wgpu.Error.message error)
-          | Ok device ->
+                    let device = take_device "the headless round trip" (Wgpu.create_device ()) in
               (* Odd width on purpose: 61 * 4 = 244 bytes must pad to a
                  256-byte aligned stride, exercising copy-alignment handling. *)
               let width = 61 in
@@ -76,11 +88,7 @@ let () =
               | Error error -> fail ("expected Closed, got " ^ Wgpu.Error.message error)
               | Ok _ -> fail "expected Closed after destroy_device"));
       test "survives repeated frames without deadlock or drift" (fun () ->
-          match Wgpu.create_device () with
-          | Error error ->
-              fail ("no usable WebGPU device for repeated frames: "
-                   ^ Wgpu.Error.message error)
-          | Ok device ->
+          let device = take_device "repeated frames" (Wgpu.create_device ()) in
               let width = 16 and height = 8 in
               let stride = Wgpu.readback_stride ~width in
               let target =
@@ -117,11 +125,7 @@ let () =
               Wgpu.destroy_device device;
               if not (Wgpu.is_closed device) then fail "device should be closed");
       test "rejects invalid arguments and lifecycle misuse" (fun () ->
-          match Wgpu.create_device () with
-          | Error error ->
-              fail ("no usable WebGPU device for validation checks: "
-                   ^ Wgpu.Error.message error)
-          | Ok device ->
+          let device = take_device "validation checks" (Wgpu.create_device ()) in
               let expect_error ~what result =
                 match result with
                 | Error _ -> ()
