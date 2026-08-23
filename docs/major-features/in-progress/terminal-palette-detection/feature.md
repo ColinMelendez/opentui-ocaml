@@ -73,6 +73,11 @@ Renderer-owned output queue
   not attach a second fd reader or parse arbitrary chunks from the terminal.
 - `Renderer` owns the session registry, timers, cache, waiter completion,
   output ordering, and teardown. A session is not process-global.
+- The terminal-session owner supplies immutable `input_is_tty` and
+  `output_is_tty` facts when it constructs the standard Eio renderer. Palette
+  detection writes queries only when both are true; Core does not rediscover
+  this ownership fact from process-global file descriptors or environment
+  state.
 - `Lib.Terminal_palette` owns response parsing and query construction. It is
   transport-neutral and testable with strings and an injected clock.
 - The renderer-facing subsystem is Eio-native. `opentui-core` already depends
@@ -149,6 +154,25 @@ val prepend_palette_error :
   t -> (Error.t -> unit) -> (Event_subscription.t, Error.t) result
 ```
 
+The standard Eio renderer-construction path adds two required labeled
+arguments:
+
+```ocaml
+~input_is_tty:bool ->
+~output_is_tty:bool ->
+```
+
+The terminal-session owner computes these facts for the streams it hands to
+the renderer. The renderer stores them immutably; they are capabilities of
+that owned terminal connection, not mutable detection state. This does not
+introduce a terminal-capability wrapper or service object. Low-level renderer
+construction may still omit the Eio lifetime and TTY facts for headless
+parsing and synchronous rendering, but palette requests on such a renderer are
+unavailable through `Error.Missing_async_lifetime`. The standard application
+harness in `packages/opentui-core/examples/lib/app.ml` is the first construction
+owner to pass these facts; other terminal owners must do the same at their own
+stream boundary.
+
 The proposal deliberately separates the existing normalized
 `Renderer.palette` value from the raw snapshot returned by discovery and
 carried by `on_palette`. The normalized value is the renderer's current
@@ -191,10 +215,12 @@ The request contract is:
   it returns—including capability-wait, query-output, timer/session, and
   required follow-up failures—complete that request with `Error.t`. Unsupported
   and non-TTY terminals, timeouts with partial data, and malformed responses
-  remain successful snapshots with null fields. Request-owned failures are not
-  also emitted as palette-error events. Detached native refresh work uses
-  `on_palette_error` instead of leaving an internal request unresolved or
-  converting its failure into an all-null snapshot.
+  remain successful snapshots with null fields. An operation joined only by
+  caller waiters reports a failure only to those waiters. If detached native
+  refresh work has joined the shared operation, the failure is also emitted
+  exactly once through `on_palette_error`, while every caller waiter receives
+  the same structured error. Multiple coalesced detached refresh demands still
+  produce one error event for that operation.
 
 Every accepted request requires the renderer's Eio owner dispatcher. A
 renderer constructed without that application-owned lifetime returns
@@ -235,9 +261,14 @@ distinction is necessary because Eio suspends the current fiber, whereas
 JavaScript `await` returns control to a process-wide event loop. The callback
 primitive preserves upstream progress without forking each event callback or
 weakening event ordering. The renderer tracks synchronous callback depth and
-`get_palette` returns a dedicated structured callback-context error in that
-context, rather than allowing a request to wait for work driven by the fiber it
-suspended. This forbidden-context error is necessarily immediate because
+`get_palette` returns `Error.Callback_context` in that context, rather than
+allowing a request to wait for work driven by the fiber it suspended.
+`Callback_context` is a new constructor in the shared structured `Error.t`;
+its diagnostic explains that the operation cannot suspend from a synchronous
+renderer callback. It is not folded into `Invalid_argument`, `Wrong_domain`,
+or `Unsupported`, because callers need to distinguish a valid operation used
+at a forbidden dynamic boundary. `Error.ml` and `Error.mli` are therefore part
+of the implementation scope. This error is necessarily immediate because
 yielding from that callback is the invalid operation being prevented.
 
 `on_osc` is an observation API, not an input-ownership API. Subscription
@@ -470,9 +501,58 @@ prevent the same palette from being delivered after a listener is later added
 and a new detection completes.
 
 `on_palette_error` reports failures from detached native-refresh work that has
-no caller waiter. Request-owned failures are delivered only through that
-waiter's result callback. The error channel does not turn unsupported
-terminals, timeouts with partial data, or malformed responses into errors.
+registered interest in the shared detector operation. A detector joined only
+by caller waiters reports errors only through those waiters. Once any detached
+refresh joins, a failed shared operation emits exactly one error event even if
+caller waiters are also attached; those waiters independently receive the same
+`Error.t`. Multiple detached refresh demands coalesced onto the operation do
+not multiply the event. State and failure bookkeeping are committed before the
+event, and waiter completions remain deferred until after it. The error channel
+does not turn unsupported terminals, timeouts with partial data, or malformed
+responses into errors.
+
+### Raw palette event migration
+
+The raw payload is a deliberate replacement of the current normalized palette
+event, not a second similarly named channel. The normalized event was
+introduced on 2026-08-16 by `62d18dc7` (`feat(core): Add terminal protocol and
+renderer services`) when Core exposed only low-level response feeding and
+normalized rendering state. This feature review chose the reference-shaped raw
+event on 2026-08-22, recorded by `cfe0ab3`, once full discovery, caching, and
+special-color semantics were designed.
+
+The reason is information ownership. Upstream `PALETTE` carries the raw
+`TerminalColors` discovery result. Normalizing eagerly expands missing entries
+to a 256-color fallback and discards the distinction between an absent terminal
+response and a fallback rendering color, along with the requested size and
+cursor, mouse, Tek, and highlight fields. `Renderer.palette` therefore remains
+the normalized state used by rendering and native synchronization, while
+`on_palette` carries the lossless discovery snapshot expected by upstream
+consumers. A future normalized change event must use an explicit name such as
+`on_render_palette_change`.
+
+The implementation scope includes every public surface that currently carries
+the normalized event:
+
+- `Renderer_events.ml` and `.mli`: change the palette-event payload and emitter,
+  and add the palette-error channel;
+- `Render_context.ml` and `.mli`: change the event aliases and subscription
+  wrappers while keeping the stored normalized `palette` getter visibly
+  distinct;
+- `Renderer.ml` and `.mli`: update the public aliases and subscriptions,
+  publish raw detector completion, and replace the current normalized
+  `feed_palette_response` event publication;
+- `Lib.Terminal_palette`: define the opaque snapshot, accessors, and explicit
+  normalization into rendering state;
+- the theme refresh listener predicate, terminal demo, and black-box renderer
+  tests; and
+- the normalized native signature and epoch path, which remains internal and
+  does not consume the raw event channel.
+
+The repository currently has no payload-dependent application consumer of the
+normalized event; the Core foundation test subscribes but ignores the value.
+The source break is therefore intentionally contained, and obsolete normalized
+event shapes are removed rather than supported through a compatibility shim.
 
 ## Theme and native rendering integration
 
@@ -553,6 +633,10 @@ hardening and liveness differences are called out explicitly:
 - JavaScript exceptions at the API boundary become structured `Error.t`
   results. Callback exceptions are isolated long enough to finish the active
   batch, then retain fatal visibility through supervised application shutdown.
+- Direct-style waiting from a synchronous renderer callback returns the new
+  structured `Error.Callback_context` immediately. Upstream JavaScript can
+  `await` without blocking its event loop; an Eio callback would suspend the
+  owner fiber that must make the request progress.
 - OCaml validates `size` in the public API as `1 <= size <= 256`; the
   reference forwards arbitrary sizes to its detector. The bound prevents
   unrepresentable native state and is an intentional hardening divergence.
@@ -566,6 +650,12 @@ hardening and liveness differences are called out explicitly:
   an additive callback-lifetime operation: it detaches only that waiter and does
   not cancel renderer detection, cache publication, events, or native state.
   It is idempotent and returns success after delivery or repeated cancellation.
+- The reference deliberately ignores failures from detached native palette
+  refreshes. OCaml exposes one `on_palette_error` event for a failed shared
+  operation that has any detached-refresh interest, including when caller
+  waiters joined that operation and also receive the error. This keeps detached
+  failures observable without changing coalescing or double-reporting one
+  operation.
 - Reference OSC subscriber iteration can be interrupted by a throwing
   subscriber before later observers or specialized protocol handlers run.
   OCaml deliberately isolates each raw observer, finishes protocol handling,
@@ -600,8 +690,9 @@ snapshot. No normalized event is retained under the same name.
 
 Non-TTY input or output is not an error. When the terminal-session owner marks
 either side as non-TTY, the detector returns a cached all-null snapshot without
-writing probe or query bytes. The TTY fact must be supplied by the terminal
-owner; Core must not guess it from a process-global fd or from the demo.
+writing probe or query bytes. The required `input_is_tty` and `output_is_tty`
+construction arguments carry this fact; Core must not guess it from a
+process-global fd or from the demo.
 
 ## Verification plan
 
@@ -623,7 +714,8 @@ evidence:
   deferred direct-style validation, closed, missing-runtime, missing-clock, and
   wrong-domain errors,
   application-fiber cancellation detaching only its waiter, rejection of
-  direct-style waiting from a synchronous renderer callback, dispatcher flush
+  direct-style waiting from a synchronous renderer callback with the exact
+  `Error.Callback_context` constructor, dispatcher flush
   during renderer teardown, owner-domain enforcement, supervised callback
   failure with a reentrant later batch, theme-event/palette-event/request-callback order,
   and that a throwing raw OSC observer or palette consumer cannot prevent
@@ -637,13 +729,21 @@ evidence:
   sole/shared/all-waiter cancellation, all-waiter cancellation during the
   XTVERSION preflight,
   continued publication after every waiter cancels, deferred request errors,
-  detached-refresh errors, deferred `Error.Closed` completion for destruction
+  caller-only failures without palette-error events, mixed caller/detached
+  failures delivered to both surfaces, one event for multiple coalesced
+  detached refresh demands, palette-error-before-deferred-waiter order,
+  deferred `Error.Closed` completion for destruction
   during each active session phase, and destroy cleanup;
 - environment tests prove `OTUI_PALETTE_IDLE_TIMEOUT_MS` is registered,
   parsed once by the environment store, and applied to both query sessions;
 - non-TTY tests prove that a first request reports `Detecting` until its
   deferred all-null commit, that later requests report `Cached`, and that
-  support, palette, and special queries produce no output; and
+  every input/output TTY permutation is supplied through renderer construction
+  and produces no support, palette, or special query output unless both facts
+  are true; and
+- event-surface tests prove that `Renderer_events`, `Render_context`, and
+  `Renderer` expose the raw snapshot with null and special fields intact while
+  the `Renderer.palette` getter remains normalized rendering state; and
 - native binding tests prove the ABI layout, palette length/channel conversion,
   normalized-256 publication threshold, epoch invalidation, closed-renderer
   behavior, and the ANSI256/RGB synchronization gate; and
@@ -698,11 +798,13 @@ closing the dispatcher and its outer switch. Dispatcher shutdown rejects new
 leases and submissions but cannot complete while a renderer lease or queued
 batch remains.
 
-The standard Eio renderer-construction path takes the owner dispatcher
-explicitly and acquires its lease before returning the renderer. Low-level
-renderer constructors may omit that application lifetime for headless parsing
-and synchronous rendering, but palette requests on such a renderer fail with
-`Error.Missing_async_lifetime`; they never install an implicit dispatcher.
+The standard Eio renderer-construction path takes the owner dispatcher plus
+required `input_is_tty` and `output_is_tty` facts explicitly, stores the facts
+immutably, and acquires the dispatcher lease before returning the renderer.
+Low-level renderer constructors may omit that application lifetime for
+headless parsing and synchronous rendering, but palette requests on such a
+renderer fail with `Error.Missing_async_lifetime`; they never install an
+implicit dispatcher or infer terminal capabilities from global descriptors.
 
 The standard shutdown order is therefore:
 
@@ -763,12 +865,14 @@ argument without structural or polymorphic comparison.
 
 The renderer has at most one active detector, matching the reference. Its
 record contains the requested size, starter timeout, cache generation, support
-probe state, palette and special-color branches, and registered waiters. After
-completion, one forward pass partitions waiters into covered completions and
-larger pending requests. The first remaining waiter in registration order may
-start the next detector; later waiters join or remain pending by size. This
-implements Promise coalescing without one continuation chain or intermediate
-closure per size relationship.
+probe state, palette and special-color branches, registered waiters, and one
+`detached_refresh_interest` bit. Joining detached work sets that bit; it does
+not allocate a synthetic waiter or counter. After completion, one forward pass
+partitions waiters into covered completions and larger pending requests. The
+first remaining waiter in registration order may start the next detector;
+later waiters join or remain pending by size. This implements Promise
+coalescing without one continuation chain or intermediate closure per size
+relationship.
 
 ### Cache and snapshots
 
@@ -816,9 +920,11 @@ application callback-failure supervisor for orderly shutdown and later
 re-raising.
 
 Detached native refresh uses the same detector and cache machinery but has no
-waiter callback. Its failure is emitted once through `on_palette_error`. A
-request-owned failure is queued only to that request's waiters, avoiding double
-reporting and extra event allocation.
+waiter callback. It sets the detector's detached-refresh-interest bit. A failed
+operation emits `on_palette_error` exactly once when that bit is set, after
+state commit and before deferred waiter completions; caller waiters still
+receive the same error. Without that bit, a request-owned failure is queued
+only to its waiters.
 
 ## Implementation phases and review gates
 
@@ -829,10 +935,13 @@ Implementation should be split so each semantic boundary can be reviewed:
    second stdin reader.
 2. **Renderer coordinator and Eio dispatch.** Add the application-owned Eio
    dispatcher, domain checks, leases, flush barrier and callback-failure
-   supervisor, raw OSC fanout, owner-deferred continuations, the direct-style
-   operation, renderer-owned sessions, cache/projection, request coalescing,
-   generation invalidation, status, lifecycle completion, and serialized query
-   writes.
+   supervisor, `Error.Callback_context`, terminal-owner TTY construction facts,
+   raw OSC fanout, owner-deferred continuations, the direct-style operation,
+   renderer-owned sessions, cache/projection, request coalescing,
+   detached-refresh error interest, generation invalidation, status, lifecycle
+   completion, and serialized query writes. This phase changes the palette
+   event payload across `Renderer_events`, `Render_context`, and `Renderer`
+   while retaining the normalized `Renderer.palette` getter.
 3. **Theme integration.** Emit the existing theme query through the renderer
    output owner and ensure palette/theme handlers share each framed response.
 4. **Native synchronization.** Add and verify the checked palette-state ABI,
@@ -840,14 +949,17 @@ Implementation should be split so each semantic boundary can be reviewed:
 5. **Demo port.** Rebuild `terminal.ts` against the high-level API only, with
    no demo-specific transport seam.
 
-Before phase 1, review must settle the opaque snapshot accessors, the TTY fact
-supplied by the terminal owner, and whether the renderer needs an explicit
-suspend state for parity. Phase 2 creates the Eio dispatcher at the start of
-the standard application's outer switch, before renderer construction, and
-closes it during cleanup after renderer close and dispatch flush. Renderer
-construction acquires the lease explicitly. The reference's lexicographic tmux
-comparison and separate terminal-name predicates must also be either preserved
-or recorded as intentional fixes. Before phase 4, review
+The construction boundary is settled: the standard Eio path requires immutable
+`input_is_tty` and `output_is_tty` facts from the terminal-session owner, and
+`Error.Callback_context` is a distinct shared error constructor. Before phase
+1, review must still settle the opaque snapshot accessors and whether the
+renderer needs an explicit suspend state for parity. Phase 2 creates the Eio
+dispatcher at the start of the standard application's outer switch, before
+renderer construction, and closes it during cleanup after renderer close and
+dispatch flush. Renderer construction acquires the lease and TTY facts
+explicitly. The reference's lexicographic tmux comparison and separate
+terminal-name predicates must also be either preserved or recorded as
+intentional fixes. Before phase 4, review
 must confirm that native synchronization is a release requirement rather than
 an optional optimization; reference parity argues that it is required for the
 full feature. The demo is not to be committed until its behavior has been
@@ -860,6 +972,8 @@ only when:
 
 - the renderer owns all palette query input/output, timing, caching, and
   teardown;
+- the standard Eio construction path receives immutable input/output TTY facts
+  from the terminal owner, and any non-TTY side suppresses all detection output;
 - the externally visible query, timeout, tmux, null-value, cache, and
   invalidation semantics match the reference tests;
 - palette request callbacks are never inline and remain FIFO under coalescing;
@@ -872,6 +986,12 @@ only when:
   and is independent of `Renderer_scheduler` lifetime;
 - non-TTY and suspended-renderer behavior is either implemented and tested or
   explicitly recorded as a bounded API divergence;
+- callback-context rejection uses a structured `Error.Callback_context`, and
+  detached-refresh failures follow the documented joined-operation event
+  ownership and ordering;
+- `on_palette` is raw and reference-shaped across `Renderer_events`,
+  `Render_context`, and `Renderer`, while `Renderer.palette` and native
+  synchronization remain normalized rendering state;
 - theme mode and raw OSC observers receive shared responses in the documented
   order;
 - native ANSI256 palette state is synchronized with a checked, lifetime-safe
