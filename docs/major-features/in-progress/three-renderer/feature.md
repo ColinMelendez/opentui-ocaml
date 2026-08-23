@@ -259,16 +259,16 @@ Build and artifacts:
 Runtime and GPU environment:
 
 5. No-GPU environments: adapter creation must return a structured error, not
-   crash, and test gating must be deliberate. Proven so far: x86_64-linux
-   through mesa lavapipe and macOS through Metal run the full headless suite
-   in CI; aarch64-linux lavapipe rejects adapter creation outright with a
-   native "Validation Error" whose cause is invisible until the binding gains
-   wgpu log/error capture (see 16b). Interim contract: hosts without a usable
-   device skip loudly with the structured diagnostic, while setting
-   `OPENTUI_WGPU_REQUIRE_DEVICE=1` turns those skips into hard failures for
-   local enforcement. Retire when aarch64-linux either runs the suite or is
-   formally dropped from the supported target list, and when adapter failures
-   surface their underlying native diagnostics.
+   crash, and test gating must be deliberate. All three pinned targets now
+   run the full headless suite in CI - macOS Metal, x86_64-linux lavapipe,
+   and aarch64-linux lavapipe. The aarch64 case initially failed as status
+   Unavailable because the shell hardcoded `lvp_icd.aarch64.json`, a manifest
+   name Mesa packaging does not guarantee; shells now resolve the lavapipe
+   manifest by glob at startup and mirror it to `VK_ICD_FILENAMES`. Hosts
+   that genuinely lack an adapter skip loudly with the structured diagnostic,
+   and `OPENTUI_WGPU_REQUIRE_DEVICE=1` turns those skips into hard failures.
+   Retire the remainder when adapter failures surface their underlying native
+   diagnostics via wgpu log capture (see 16b).
 6. mapAsync threading: completion callbacks fire on wgpu-owned threads; stubs
    must register those threads with the OCaml runtime before signaling, and
    polling must not deadlock the owner domain. Retired by design before the
