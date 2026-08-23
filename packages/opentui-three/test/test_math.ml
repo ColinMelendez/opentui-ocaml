@@ -43,13 +43,19 @@ let () =
           let p = M4.create () in
           ignore
             (M4.perspective ~fov_degrees:90.0 ~aspect:1.0 ~near:1.0 ~far:3.0 p);
-          (* focal length tan(45deg)=1; depth maps near=1 far=3 onto
-             [-1..1]: m[10]=(3+1)/(1-3)=-2, m[14]=2*3*1/(1-3)=-3 *)
+          (* focal length tan(45deg)=1; WebGPU depth maps near=1 far=3
+             onto [0..1]: m[10]=3/(1-3)=-1.5, m[14]=3*1/(1-3)=-1.5 *)
           expect_close_matrix ~tolerance:1e-9
             ~expected:
-              [| 1.0; 0.0; 0.0; 0.0; 0.0; 1.0; 0.0; 0.0; 0.0; 0.0; -2.0; -1.0;
-                 0.0; 0.0; -3.0; 0.0 |]
+              [| 1.0; 0.0; 0.0; 0.0; 0.0; 1.0; 0.0; 0.0; 0.0; 0.0; -1.5; -1.0;
+                 0.0; 0.0; -1.5; 0.0 |]
             ~actual:p ();
+          (* a point on the near plane lands on ndc z = 0 *)
+          let near_probe = V3.create ~x:0.0 ~y:0.0 ~z:(-1.0) () in
+          ignore (M4.transform_point p near_probe);
+          if not (close ~tolerance:1e-9 near_probe.z 0.0) then
+            fail
+              (Printf.sprintf "near plane ndc z %.6f expected 0" near_probe.z);
 
           (* aspect halves the horizontal scale *)
           ignore

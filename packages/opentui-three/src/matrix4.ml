@@ -77,17 +77,18 @@ let compose out (position : Vector3.t) (quaternion : Quaternion.t)
 
 let perspective ~fov_degrees ~aspect ?(near = 0.1) ?(far = 1000.0) out =
   (* Right-handed view volume looking down -Z, matching three.js
-     PerspectiveCamera.updateProjectionMatrix, with depth mapped onto
-     [-1..1] as WebGPU expects. *)
+     PerspectiveCamera.updateProjectionMatrix except the depth range:
+     WebGPU maps [near..far] onto NDC [0..1], so the z row is
+     far/(near-far) and the translation far*near/(near-far). *)
   let near = Float.abs near and far = Float.abs far in
   let focal_length = 1.0 /. Float.tan (fov_degrees *. Float.pi /. 360.0) in
   let range = 1.0 /. (near -. far) in
   Float.Array.fill out 0 size 0.0;
   Float.Array.set out 0 (focal_length /. aspect);
   Float.Array.set out 5 focal_length;
-  Float.Array.set out 10 ((far +. near) *. range);
+  Float.Array.set out 10 (far *. range);
   Float.Array.set out 11 (-1.0);
-  Float.Array.set out 14 (2.0 *. far *. near *. range)
+  Float.Array.set out 14 (far *. near *. range)
 
 let look_at ~(up : Vector3.t) ~(eye : Vector3.t) ~(target : Vector3.t) out =
   (* Builds the view matrix directly: camera at eye looking toward target
