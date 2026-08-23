@@ -14,6 +14,7 @@ jobs:
         # ubuntu-24.04-arm covers the pinned aarch64-linux wgpu-native target.
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4

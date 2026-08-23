@@ -4,6 +4,8 @@
 #include <caml/mlvalues.h>
 
 #include <stdio.h>
+#include <time.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -17,6 +19,9 @@
    callback ever enters OCaml from a foreign thread. */
 
 #define OPENTUI_WGPU_WAIT_FAILURE -1
+
+/* Bounded enough to fail loud, generous enough for slow software adapters. */
+#define OPENTUI_WGPU_MAP_TIMEOUT_SECONDS 10.0
 
 typedef struct {
   int done;
@@ -447,8 +452,34 @@ CAMLprim value opentui_wgpu_buffer_map_read_blocking(
   info.userdata2 = NULL;
 
   wgpuBufferMapAsync(buffer, WGPUMapMode_Read, 0, (size_t)Int64_val(size), info);
+
+  /* Pump completion without blocking so a backend that never finishes (a
+     broken software adapter, a lost device that suppresses callbacks) turns
+     into a structured timeout instead of an unkillable wait. Blocking poll
+     calls cannot implement that bound because they only return when some
+     work completes. */
+  struct timespec start;
+  clock_gettime(CLOCK_MONOTONIC, &start);
   while (wait.done == 0) {
-    wgpuDevicePoll(device, WGPU_TRUE, NULL);
+    wgpuDevicePoll(device, WGPU_FALSE, NULL);
+    if (wait.done != 0) {
+      break;
+    }
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double elapsed =
+        (double)(now.tv_sec - start.tv_sec)
+        + (double)(now.tv_nsec - start.tv_nsec) / 1e9;
+    if (elapsed >= OPENTUI_WGPU_MAP_TIMEOUT_SECONDS) {
+      wait.status = OPENTUI_WGPU_WAIT_FAILURE;
+      snprintf(
+          wait.message,
+          sizeof wait.message,
+          "buffer map timed out after %.1f seconds",
+          elapsed);
+      break;
+    }
+    usleep(1000);
   }
   CAMLreturn(opentui_wgpu_make_result(wait.status, 0, wait.message));
 }
