@@ -1,0 +1,41 @@
+--- lib.zig
++++ lib.zig
+@@ -1732,6 +1732,11 @@ export fn setupTerminal(renderer_handle: NativeHandle, useAlternateScreen: bool)
+     object_ptr.setupTerminal(useAlternateScreen);
+ }
+ 
++export fn queryTerminalCapabilities(renderer_handle: NativeHandle) void {
++    const object_ptr = acquireRenderer(renderer_handle) orelse return;
++    object_ptr.queryTerminalCapabilities();
++}
++
+ export fn suspendRenderer(renderer_handle: NativeHandle) void {
+     const object_ptr = acquireRenderer(renderer_handle) orelse return;
+     object_ptr.suspendRenderer();
+--- renderer.zig
++++ renderer.zig
+@@ -2840,6 +2840,21 @@ pub const CliRenderer = struct {
+         @memset(self.currentHitGrid, 0);
+     }
+ 
++    // The OCaml Eio harness owns terminal modes and cleanup, so it needs the
++    // reference capability-probe phase without setupTerminal's alternate
++    // screen and feature-enable side effects. Keep the probe construction in
++    // native code so multiplexer wrapping, XTVERSION ordering, and pending
++    // retries remain the reference implementation's responsibility.
++    pub fn queryTerminalCapabilities(self: *CliRenderer) void {
++        var queryBuf: [4096]u8 = undefined;
++        var writer: std.Io.Writer = .fixed(&queryBuf);
++        self.terminal.queryTerminalSend(&writer) catch {
++            logger.warn("Failed to query terminal capabilities", .{});
++        };
++        self.backend.writeOut(writer.buffered());
++        self.queryPixelResolution();
++    }
++
+     /// Return whether the hit grid changed during the last render.
+     /// This is set by comparing the previous and current hit grids after render.
+     /// TypeScript can use this to decide if hover state needs rechecking.
+-- 
+2.39.5 (Apple Git-154)
+

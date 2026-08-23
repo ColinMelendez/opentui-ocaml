@@ -97,6 +97,7 @@ chmod u+w \
   "$patched_source_dir/lib.zig"
 (CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/span_feed_exports.patch")
 (CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/hit_grid_exports.patch")
+(CDPATH= cd -- "$patched_source_dir" && patch -N -p0 < "$native_dir/capability_probe_exports.patch")
 (CDPATH= cd -- "$patched_source_dir" && zig build -Doptimize=ReleaseSafe --prefix "$zig_prefix")
 
 artifact="$output_dir/lib/$target_name/$library_name"
