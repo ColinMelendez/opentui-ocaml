@@ -49,6 +49,20 @@
   (windtrap :with-test)))
 
 (package
+ (name opentui-three)
+ (synopsis "Three.js-shaped 3D scenes rendered into terminal cells")
+ (description
+  "The OCaml replacement for the reference @opentui/three package: an imperative scene graph, WebGPU render pipelines over opentui-wgpu, and cell-conversion output composed with the opentui-core renderer.")
+ (license ISC)
+ (authors "Colin <cwrmcolin@gmail.com>")
+ (maintainers "Colin <cwrmcolin@gmail.com>")
+ (depends
+  (ocaml (>= 5.2))
+  opentui-core
+  opentui-wgpu
+  (windtrap :with-test)))
+
+(package
  (name opentui-bench)
  (synopsis "Benchmark and tracing harnesses for OpenTUI")
  (description

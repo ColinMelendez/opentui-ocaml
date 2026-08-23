@@ -1,0 +1,4 @@
+(test
+ (name test_math)
+ (modules test_math)
+ (libraries opentui-three windtrap))

@@ -1,0 +1,5 @@
+(library
+ (name opentui_three)
+ (public_name opentui-three)
+ (private_modules color euler matrix4 quaternion vector3)
+ (libraries opentui-wgpu opentui-core))
