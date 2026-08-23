@@ -125,12 +125,17 @@
           linuxVulkan = nixpkgs.lib.optionals pkgs.stdenv.isLinux [
             pkgs.vulkan-loader
             pkgs.mesa.drivers
+            pkgs.vulkan-tools
             pkgs.binutils
           ];
-          vkDriverFiles =
-            let arch = pkgs.stdenv.hostPlatform.linuxArch;
-            in nixpkgs.lib.optionalString pkgs.stdenv.isLinux
-              "${pkgs.mesa.drivers}/share/vulkan/icd.d/lvp_icd.${arch}.json";
+          # ICD manifest names are not stable across Mesa packaging (some
+          # carry an architecture suffix, some do not), so resolve the
+          # lavapipe manifest at shell startup instead of hardcoding one.
+          vkShellHook =
+            nixpkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              export VK_DRIVER_FILES="$(echo ${pkgs.mesa.drivers}/share/vulkan/icd.d/lvp_icd.*.json 2>/dev/null | head -n1)"
+              export VK_ICD_FILENAMES="$VK_DRIVER_FILES"
+            '';
           # wgpu-native dlopens libvulkan.so.1 by soname; runpath inheritance
           # from the test executable cannot be relied upon for that lookup.
           linuxLdLibraryPath =
@@ -145,8 +150,8 @@
           test = pkgs.mkShell {
             LC_ALL = "C";
             PKG_CONFIG_PATH = "${wgpu-native}/lib/pkgconfig";
-            VK_DRIVER_FILES = vkDriverFiles;
             LD_LIBRARY_PATH = linuxLdLibraryPath;
+            shellHook = vkShellHook;
             packages = with pkgs;
               [
                 cmake
@@ -169,8 +174,8 @@
           default = pkgs.mkShell {
             LC_ALL = "C";
             PKG_CONFIG_PATH = "${wgpu-native}/lib/pkgconfig";
-            VK_DRIVER_FILES = vkDriverFiles;
             LD_LIBRARY_PATH = linuxLdLibraryPath;
+            shellHook = vkShellHook;
             packages = with pkgs;
               [
                 cmake

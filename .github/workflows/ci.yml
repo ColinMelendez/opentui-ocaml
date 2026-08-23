@@ -22,6 +22,14 @@ jobs:
           submodules: recursive
       - uses: cachix/install-nix-action@v30
       - run: nix develop .#test -c dune build @check
+      - name: Vulkan environment diagnostics (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "VK_DRIVER_FILES=$VK_DRIVER_FILES"
+          ls -la "$(dirname "$VK_DRIVER_FILES")" || true
+          cat "$VK_DRIVER_FILES" || true
+          vulkaninfo --summary 2>&1 | grep -A4 "GPU0" || true
+          VK_LOADER_DEBUG=driver,error dune exec packages/opentui-wgpu/test/test_wgpu_headless.exe 2>&1 | grep -iE "lvp|lavapipe|icd|loader|validation|adapter|skip" | head -40 || true
       - run: nix develop .#test -c dune runtest
       - name: Loader audit (macOS)
         if: runner.os == 'macOS'
