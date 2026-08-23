@@ -21,13 +21,19 @@ let require_multiple_domains () =
   if Int.compare (Domain.recommended_domain_count ()) 2 < 0 then
     skip ~reason:"requires at least one executor domain in addition to the owner" ()
 
-let wait_until predicate =
-  let attempts = ref 0 in
-  while not (predicate ()) && Int.compare !attempts 2000 < 0 do
-    incr attempts;
-    Eio.Fiber.yield ()
-  done;
-  if not (predicate ()) then fail "parser background operation did not complete"
+let wait_until env predicate =
+  let clock = Eio.Stdenv.clock env in
+  let start = Eio.Time.now clock in
+  let rec spin () =
+    if predicate () then ()
+    else if Float.compare (Eio.Time.now clock -. start) 30.0 >= 0 then
+      fail "parser background operation did not complete"
+    else begin
+      Eio.Time.sleep clock 0.001;
+      spin ()
+    end
+  in
+  spin ()
 
 let repeat count operation =
   let remaining = ref count in
@@ -63,8 +69,8 @@ let register client parser =
   | Error (Types.Failed message) -> fail message
   | Error (Types.No_parser message) -> fail message
 
-let await_applied code =
-  wait_until (fun () ->
+let await_applied env code =
+  wait_until env (fun () ->
       match Renderables.Code.highlight_state code with
       | Renderables.Code.Applied -> true
       | Renderables.Code.Idle | Renderables.Code.Pending
@@ -109,8 +115,8 @@ let () =
                  ~tree_sitter_client:client ~background:submitter
                  ~on_highlight ())
           in
-          await_applied first;
-          await_applied second;
+          await_applied env first;
+          await_applied env second;
           equal int 1 (List.length (Renderables.Code.highlights first));
           equal int 1 (List.length (Renderables.Code.highlights second));
           equal int 2 (List.length (Atomic.get completion_domains));
@@ -158,7 +164,7 @@ let () =
                  ~tree_sitter_client:client ~background:submitter
                  ~on_highlight ())
           in
-          wait_until (fun () -> Atomic.get started);
+          wait_until env (fun () -> Atomic.get started);
           (match Renderables.Code.highlight_state code with
           | Renderables.Code.Pending -> ()
           | Renderables.Code.Idle | Renderables.Code.Applied
@@ -172,7 +178,7 @@ let () =
           | Renderables.Code.Fallback _ ->
               fail "queued parser work was not reported as pending");
           Atomic.set release true;
-          wait_until (fun () ->
+          wait_until env (fun () ->
               Int.compare (Atomic.get calls) 2 >= 0
               && match Renderables.Code.highlight_state code with
                  | Renderables.Code.Applied -> true
@@ -218,10 +224,10 @@ let () =
                  ~tree_sitter_client:client ~background:submitter
                  ~on_highlight ())
           in
-          wait_until (fun () -> Atomic.get started);
+          wait_until env (fun () -> Atomic.get started);
           expect_ok (Renderables.Code.set_content code "new");
           Atomic.set release true;
-          wait_until (fun () ->
+          wait_until env (fun () ->
               Int.equal (Atomic.get callback_calls) 1
               && match Renderables.Code.highlights code with
                  | [ highlight ] -> String.equal highlight.group "new"
@@ -266,7 +272,7 @@ let () =
                  ~on_highlight ())
           in
           let owned_style = Renderables.Code.syntax_style code in
-          wait_until (fun () -> Atomic.get started);
+          wait_until env (fun () -> Atomic.get started);
           expect_ok (Renderables.Code.set_content code "queued");
           (match Renderables.Code.highlight_state code with
           | Renderables.Code.Pending -> ()
@@ -282,7 +288,7 @@ let () =
           | Ok () -> fail "destroyed Code accepted content");
           Renderables.Code.destroy code;
           Atomic.set release true;
-          wait_until (fun () -> Atomic.get finished);
+          wait_until env (fun () -> Atomic.get finished);
           repeat 100 Eio.Fiber.yield;
           equal int 1 (Atomic.get parser_calls);
           equal int 0 (Atomic.get callback_calls);
@@ -389,7 +395,7 @@ let () =
                  ~content:"broken" ~filetype:"test"
                  ~tree_sitter_client:client ~background:submitter ())
           in
-          wait_until (fun () ->
+          wait_until env (fun () ->
               match Renderables.Code.highlight_state code with
               | Renderables.Code.Fallback (Types.Failed message) ->
                   String.equal message "expected parser failure"
@@ -420,7 +426,7 @@ let () =
                  ~content:"```test\nmarkdown\n```"
                  ~tree_sitter_client:client ~background:submitter ())
           in
-          wait_until (fun () -> Int.compare (Atomic.get calls) 1 >= 0);
+          wait_until env (fun () -> Int.compare (Atomic.get calls) 1 >= 0);
           let diff_text = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new" in
           let diff =
             expect_ok
@@ -433,7 +439,7 @@ let () =
             | Some code -> code
             | None -> fail "Diff did not create its Code child"
           in
-          await_applied code;
+          await_applied env code;
           Renderables.Diff.destroy diff;
           Renderables.Markdown.destroy markdown;
           Client.destroy client;

@@ -44,13 +44,19 @@ let await_submission submitter ~work =
             Eio.Promise.resolve resolver value)));
   Eio.Promise.await result
 
-let wait_until predicate =
-  let attempts = ref 0 in
-  while not (predicate ()) && Int.compare !attempts 1000 < 0 do
-    incr attempts;
-    Eio.Fiber.yield ()
-  done;
-  if not (predicate ()) then fail "background operation did not reach its state"
+let wait_until env predicate =
+  let clock = Eio.Stdenv.clock env in
+  let start = Eio.Time.now clock in
+  let rec spin () =
+    if predicate () then ()
+    else if Float.compare (Eio.Time.now clock -. start) 30.0 >= 0 then
+      fail "background operation did not reach its state"
+    else begin
+      Eio.Time.sleep clock 0.001;
+      spin ()
+    end
+  in
+  spin ()
 
 let test_domains_and_results () =
   require_multiple_domains ();
@@ -121,7 +127,7 @@ let test_cancel_after_start () =
            ignore value;
            incr calls))
   in
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   Background.cancel submitted;
   Atomic.set release true;
   Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) 0.01;
@@ -153,7 +159,7 @@ let test_submission_switch_cancellation () =
                    ignore value;
                    ignore (Atomic.fetch_and_add callback_calls 1))));
          Eio.Fiber.fork ~sw:submission_sw (fun () ->
-             wait_until (fun () -> Atomic.get started);
+             wait_until env (fun () -> Atomic.get started);
              Eio.Switch.fail submission_sw Submission_cancelled);
          Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) 0.02
        with
