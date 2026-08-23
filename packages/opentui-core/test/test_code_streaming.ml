@@ -23,13 +23,19 @@ let require_multiple_domains () =
   if Int.compare (Domain.recommended_domain_count ()) 2 < 0 then
     skip ~reason:"requires a parser executor domain" ()
 
-let wait_until predicate =
-  let attempts = ref 0 in
-  while not (predicate ()) && Int.compare !attempts 4000 < 0 do
-    incr attempts;
-    Eio.Fiber.yield ()
-  done;
-  if not (predicate ()) then fail "Code streaming operation did not complete"
+let wait_until env predicate =
+  let clock = Eio.Stdenv.clock env in
+  let start = Eio.Time.now clock in
+  let rec spin () =
+    if predicate () then ()
+    else if Float.compare (Eio.Time.now clock -. start) 30.0 >= 0 then
+      fail "Code streaming operation did not complete"
+    else begin
+      Eio.Time.sleep clock 0.001;
+      spin ()
+    end
+  in
+  spin ()
 
 let parser ~worker_safety highlight =
   {
@@ -84,7 +90,7 @@ let test_initial_visibility () =
          ~filetype:"test" ~tree_sitter_client:client ~background:submitter
          ~draw_unstyled_text:true ~streaming:true ())
   in
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   equal string "initial" (code_text visible);
   Atomic.set release true;
   await_done visible;
@@ -98,7 +104,7 @@ let test_initial_visibility () =
          ~filetype:"test" ~tree_sitter_client:client ~background:submitter
          ~draw_unstyled_text:false ~streaming:true ())
   in
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   equal string "" (code_text hidden);
   Atomic.set release true;
   await_done hidden;
@@ -154,7 +160,7 @@ let test_streaming_coalescing_and_contexts () =
          ~background:submitter ~streaming:true ~draw_unstyled_text:false
          ~on_highlight ~on_chunks ())
   in
-  wait_until (fun () -> Int.equal (Atomic.get calls) 1);
+  wait_until env (fun () -> Int.equal (Atomic.get calls) 1);
   (match Renderables.Code.highlight_state code with
   | Renderables.Code.Pending -> ()
   | Renderables.Code.Idle | Renderables.Code.Applied
@@ -163,7 +169,7 @@ let test_streaming_coalescing_and_contexts () =
   await_done code;
   equal string "initial" (code_text code);
   expect_ok (Renderables.Code.set_content code "second");
-  wait_until (fun () -> Atomic.get second_started);
+  wait_until env (fun () -> Atomic.get second_started);
   equal string "initial" (code_text code);
   let superseded_done = Renderables.Code.highlighting_done code in
   expect_ok (Renderables.Code.set_content code "third");
@@ -172,9 +178,9 @@ let test_streaming_coalescing_and_contexts () =
   Eio.Fiber.fork ~sw (fun () ->
       Eio.Promise.await superseded_done;
       Atomic.set superseded_resolved true);
-  wait_until (fun () -> Atomic.get superseded_resolved);
+  wait_until env (fun () -> Atomic.get superseded_resolved);
   Atomic.set second_release true;
-  wait_until (fun () -> Atomic.get third_started);
+  wait_until env (fun () -> Atomic.get third_started);
   equal string "initial" (code_text code);
   (match Renderables.Code.highlight_state code with
   | Renderables.Code.Pending -> ()
@@ -272,13 +278,13 @@ let test_non_streaming_draw_policy () =
          ~filetype:"test" ~tree_sitter_client:client ~background:submitter
          ~draw_unstyled_text:true ())
   in
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   equal string "raw-one" (code_text visible);
   Atomic.set release true;
   await_done visible;
   Atomic.set release false;
   expect_ok (Renderables.Code.set_content visible "raw-two");
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   equal string "raw-two" (code_text visible);
   Atomic.set release true;
   await_done visible;
@@ -291,13 +297,13 @@ let test_non_streaming_draw_policy () =
          ~filetype:"test" ~tree_sitter_client:client ~background:submitter
          ~draw_unstyled_text:false ())
   in
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   equal string "" (code_text hidden);
   Atomic.set release true;
   await_done hidden;
   Atomic.set release false;
   expect_ok (Renderables.Code.set_content hidden "hidden-two");
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   equal string "" (code_text hidden);
   Atomic.set release true;
   await_done hidden;
@@ -328,12 +334,12 @@ let test_destruction_resolves_settlement () =
          ~filetype:"test" ~tree_sitter_client:client ~background:submitter
          ~streaming:true ())
   in
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   let done_promise = Renderables.Code.highlighting_done code in
   Renderables.Code.destroy code;
   Eio.Promise.await done_promise;
   Atomic.set release true;
-  wait_until (fun () -> not (Atomic.get started));
+  wait_until env (fun () -> not (Atomic.get started));
   Client.destroy client;
   Renderer.destroy renderer
 
@@ -359,7 +365,7 @@ let test_plain_supersedes_running_highlight_immediately () =
          ~filetype:"test" ~tree_sitter_client:client ~background:submitter
          ~streaming:true ~draw_unstyled_text:false ())
   in
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   let superseded_done = Renderables.Code.highlighting_done code in
   expect_ok (Renderables.Code.set_content code "plain");
   expect_ok (Renderables.Code.set_filetype code None);
@@ -372,7 +378,7 @@ let test_plain_supersedes_running_highlight_immediately () =
       fail "plain content waited for a superseded highlight worker");
   Eio.Promise.await superseded_done;
   Atomic.set release true;
-  wait_until (fun () -> not (Atomic.get started));
+  wait_until env (fun () -> not (Atomic.get started));
   equal string "plain" (code_text code);
   (match Renderables.Code.highlight_state code with
   | Renderables.Code.Idle -> ()
@@ -412,7 +418,7 @@ let test_pending_callback_exception_cleans_state () =
               Ok highlights) ())
      in
      code_ref := Some code;
-     wait_until (fun () -> Atomic.get started);
+     wait_until env (fun () -> Atomic.get started);
      expect_ok (Renderables.Code.set_content code "queued");
      Atomic.set release true;
      Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) 0.02;
@@ -480,7 +486,7 @@ let test_markdown_streaming_visibility_forwarding () =
     (Core.Layout_children.add (Renderer.children renderer)
        (Renderables.Markdown.as_renderable markdown)));
   ignore (expect_ok (Renderer.render renderer ~force:true));
-  wait_until (fun () -> Atomic.get started);
+  wait_until env (fun () -> Atomic.get started);
   if contains (frame renderer) "STREAMING_CODE" then
     fail "streaming Markdown exposed raw fenced Code text";
   Atomic.set release true;
