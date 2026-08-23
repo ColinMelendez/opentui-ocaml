@@ -340,3 +340,41 @@ let shader =
           Wgpu.destroy_render_target target;
           Wgpu.destroy_device device);
 ```
+
+## Slice C/D specifics (everything needed to resume without re-research)
+
+WGSL lambert plan: single uniform block per mesh (256 B): mvp(64),
+model(64), color(16), light_dir(16), light_color(16), ambient(16).
+Vertex layout already fixed by create_render_pipeline (stride 24,
+pos@0/nrm@12). Lambert fragment:
+albedo.rgb * (ambient.rgb*ambient.a + light_color.rgb*light_intensity
+* max(dot(N, L), 0)) where L = normalize(light.position - target).
+Emission converts linear -> sRGB once at cell write
+(pow(c, 1/2.4)*1.055-0.055 branch); mid-gray test value: albedo 0.5
+head-on lit => linear 0.5 => sRGB ~188.
+
+Three_cli_renderer facade must expose (reference names):
+create/init/draw_scene/set_active_camera/set_background_color/
+set_size/toggle_super_sampling/render_stats/destroy.
+Options: width, height, ?focal_length (FOV = 2*atan(H/(2*focal))
+degrees when given), ?background_color, ?super_sample (None|Cpu|Gpu;
+Gpu aliases Cpu until phase 2 compute pass - documented divergence),
+?alpha. Camera default position (0,0,3) lookAt origin, near 0.1 far
+1000. Aspect = terminal_width / (terminal_height * 2) unless
+CELL_ASPECT_RATIO env set (risk item 16 wants a construction test).
+
+Snapshot tests: Renderer.create ~output:Memory + Frame_buffer renderable
++ pre_render driver calling draw_scene; assert Owned_buffer.snapshot
+cell structure (glyph/color classes, not exact RGB everywhere);
+determinism check = two identical renders bit-equal.
+
+Demo: packages/opentui-three/examples/spinning_cube_demo.ml using the
+examples/lib App.run pattern (see grayscale_buffer_demo.ml):
+Frame_buffer renderable + pre_render tick rotating cube.rotation.y/x,
+live lease, standalone keys for exit.
+
+Cell conversion (Cpu mode) port of supersampling.wgsl quadrant
+algorithm: per 2x2 block pick two most RGB-distant samples, order by
+luminance (0.2126R+0.7152G+0.0722B), quadrant bits TL=8 TR=4 BL=2 BR=1
+-> glyph space/U2596-U25FF family; all-dark/all-light use averaged
+colors with alpha blending. None mode: full-block per pixel.
