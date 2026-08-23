@@ -332,16 +332,15 @@ API and semantics:
      validation failures during bring-up. Still open: surfacing per-frame
      errors as structured `Error.t` results after submission, and the
      outstanding silent-empty-frame investigation below.
-16c. OCaml-driven indexed draws land silently empty: the full draw path
-     (shader module, bind group layout, pipeline layout, render pipeline,
-     vertex/index/uniform buffers, bind group) creates without any captured
-     validation error, yet the submitted frame reads back all zeros -
-     including the clear color - while a byte-equivalent sequence executed
-     entirely inside one C function on the same device produces the correct
-     red pixel. The C-internal probe remains in the stubs as
-     `debug_triangle`. Next steps: diff the exact descriptor bytes between
-     the working C path and the OCaml path; consult outside review with the
-     stub source. Retire when the OCaml-driven triangle renders red in CI.
+16c. RETIRED: the OCaml-driven triangle draws correct pixels in CI. Two
+     defects had combined into a silently empty frame: the draw-frame
+     orchestrator never encoded the copy-to-staging call at all, and the
+     draw stub misread the boxed clear-color tuple through Double_field
+     (pointer reinterpreted as double -> subnormal black), the same
+     tuple-vs-element mistake class fixed earlier elsewhere. Outside review
+     caught both in one pass after manual bisection stalled; the working
+     C reference stays in the stubs as debug_triangle for regression
+     comparison.
  the device
      is created without an error callback, so void C-API calls
      (`begin_render_pass`, `copy_texture_to_buffer`, and from Phase 1 onward

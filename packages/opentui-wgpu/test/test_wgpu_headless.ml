@@ -182,14 +182,153 @@ let () =
       );
 
       test "draws an unlit triangle through a full pipeline" (fun () ->
-        (* OPEN QUESTION, tracked in the three-renderer risk register: the
-           complete OCaml-driven draw encodes without a single validation
-           error and every handle is live, yet the submitted frame reads
-           back entirely zeroed - clear included - while an identical
-           sequence executed entirely inside one C call on the same device
-           produces the correct red pixel. Skipped loudly until root-caused;
-           the C-internal probe (Wgpu.debug_triangle) keeps proving the GPU
-           pipeline itself works on this same stack. *)
-        skip ~reason:"OCaml-driven draws land silently empty (open                      three-renderer question); C-level probe passes" ());
+          let device = take_device "pipeline draw" (Wgpu.create_device ()) in
+          ignore (Wgpu.drain_diagnostics ~max:64 ());
+          let width = 8 and height = 8 in
+          let target =
+            expect_ok (Wgpu.create_render_target device ~width ~height)
+          in
+          let stride = Wgpu.readback_stride ~width in
+          let readback =
+            expect_ok (Wgpu.create_readback device ~stride ~rows:height)
+          in
+          let staging = make_staging (Wgpu.readback_size readback) in
 
+          let wgsl =
+            {wgsl| struct Uniforms {
+                      mvp : mat4x4<f32>,
+                      model : mat4x4<f32>,
+                      color : vec4<f32>,
+                    };
+                    @group(0) @binding(0) var<uniform> u : Uniforms;
+                    struct VSOut {
+                      @builtin(position) pos : vec4<f32>,
+                      @location(0) normal : vec3<f32>,
+                    };
+                    @vertex fn vs_main(@location(0) pos : vec3<f32>,
+                                       @location(1) nrm : vec3<f32>) -> VSOut {
+                      var out : VSOut;
+                      out.pos = u.mvp * vec4<f32>(pos, 1.0);
+                      out.normal = nrm;
+                      return out;
+                    }
+                    @fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
+                      return u.color;
+                    }
+                    |wgsl}
+          in
+          let shader =
+            expect_ok (Wgpu.create_shader_module device ~wgsl)
+          in
+          let bgl = expect_ok (Wgpu.create_uniform_bind_group_layout device) in
+          let playout = expect_ok (Wgpu.create_pipeline_layout device bgl) in
+          let pipeline =
+            expect_ok
+              (Wgpu.create_render_pipeline device ~layout:playout ~shader
+                 ~vs_entry:"vs_main" ~fs_entry:"fs_main"
+                 ~target_format:Wgpu.texture_format_rgba8_unorm)
+          in
+
+          let vertices =
+            Float.Array.of_list
+              [ -1.0; -1.0; 0.2;  0.0; 1.0; 0.0;
+                 3.0; -1.0; 0.2;  0.0; 1.0; 0.0;
+                -1.0;  3.0; 0.2;  0.0; 1.0; 0.0 ]
+          in
+          let indices = [| 0; 1; 2 |] in
+          let vertex_bytes = Wgpu.pack_f32_le vertices in
+          let index_bytes = Wgpu.pack_indices_u16 indices in
+          let vertex_buffer =
+            expect_ok
+              (Wgpu.create_buffer device
+                 ~size:(String.length vertex_bytes)
+                 ~usage:(Int64.logor Wgpu.buffer_usage_vertex
+                           Wgpu.buffer_usage_copy_destination))
+          in
+          let index_buffer =
+            expect_ok
+              (Wgpu.create_buffer device
+                 ~size:(Wgpu.align4 (String.length index_bytes))
+                 ~usage:(Int64.logor Wgpu.buffer_usage_index
+                           Wgpu.buffer_usage_copy_destination))
+          in
+          let uniform_size = 160 in
+          let uniform_buffer =
+            expect_ok
+              (Wgpu.create_buffer device ~size:uniform_size
+                 ~usage:(Int64.logor Wgpu.buffer_usage_uniform
+                           Wgpu.buffer_usage_copy_destination))
+          in
+          expect_ok
+            (Wgpu.write_buffer_string device vertex_buffer ~offset:0
+               vertex_bytes);
+          expect_ok
+            (Wgpu.write_buffer_string device index_buffer ~offset:0
+               index_bytes);
+
+          let identity =
+            [| 1.0; 0.0; 0.0; 0.0; 0.0; 1.0; 0.0; 0.0;
+               0.0; 0.0; 1.0; 0.0; 0.0; 0.0; 0.0; 1.0 |]
+          in
+          let uniforms = Float.Array.make 40 0.0 in
+          Array.iteri (fun i v -> Float.Array.set uniforms i v) identity;
+          Array.iteri
+            (fun i v -> Float.Array.set uniforms (16 + i) v)
+            identity;
+          (* color vec4 at byte offset 128 = float slot 32 *)
+          Float.Array.set uniforms 32 1.0;
+          Float.Array.set uniforms 33 0.25;
+          Float.Array.set uniforms 34 0.5;
+          Float.Array.set uniforms 35 1.0;
+          expect_ok
+            (Wgpu.write_buffer_string device uniform_buffer ~offset:0
+               (Wgpu.pack_f32_le uniforms));
+          let group =
+            expect_ok
+              (Wgpu.create_uniform_bind_group device bgl uniform_buffer
+                 ~size:uniform_size)
+          in
+
+          expect_ok
+            (Wgpu.submit_draw_frame device ~target ~readback
+               ~clear:(0.0, 0.0, 0.0, 1.0)
+               ~draw:
+                 { pipeline;
+                   group;
+                   vertex_buffer;
+                   vertex_size = String.length vertex_bytes;
+                   index_buffer;
+                   index_size = String.length index_bytes;
+                   index_count = Array.length indices }
+               ());
+          expect_ok (Wgpu.map_read device readback);
+          expect_ok (Wgpu.copy_mapped readback staging.pixels);
+          Wgpu.unmap readback;
+
+          (* unlit red through identity transforms *)
+          expect_pixel ~row:(height / 2) ~stride ~width
+            ~column:(width / 2) ~pixels:staging.pixels
+            ~expected:[ 255; 64; 128; 255 ];
+          (* full-screen triangle covers every cell of the target *)
+          expect_pixel ~row:0 ~stride ~width ~column:(width - 1)
+            ~pixels:staging.pixels ~expected:[ 255; 64; 128; 255 ];
+
+          if List.exists
+               (fun line ->
+                 String.length line >= 18
+                 && String.sub line 0 18 = "uncaptured gpu err")
+               (Wgpu.drain_diagnostics ())
+          then fail "uncaptured GPU errors were recorded";
+
+          Wgpu.destroy_bind_group group;
+          Wgpu.destroy_bind_group_layout bgl;
+          Wgpu.destroy_pipeline_layout playout;
+          Wgpu.destroy_shader_module shader;
+          Wgpu.destroy_render_pipeline pipeline;
+          Wgpu.destroy_buffer vertex_buffer;
+          Wgpu.destroy_buffer index_buffer;
+          Wgpu.destroy_buffer uniform_buffer;
+          Wgpu.destroy_readback readback;
+          Wgpu.destroy_render_target target;
+          Wgpu.destroy_device device);
     ]

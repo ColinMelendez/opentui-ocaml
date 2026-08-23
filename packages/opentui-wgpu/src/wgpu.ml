@@ -303,6 +303,9 @@ let submit_draw_frame device ~(target : render_target)
                 draw.index_count )
             in
             Native.encoder_render_draw_indexed encoder call;
+            Native.encoder_copy_texture_to_buffer encoder target.texture
+              readback.buffer
+              (target.width, target.height, readback.stride);
             let submit_result =
               match
                 creation_result ~what:"command buffer"

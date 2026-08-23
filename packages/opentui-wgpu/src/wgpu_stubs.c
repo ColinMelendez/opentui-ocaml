@@ -901,10 +901,10 @@ CAMLprim value opentui_wgpu_encoder_render_draw_indexed(
   attachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
   attachment.loadOp = WGPULoadOp_Clear;
   attachment.storeOp = WGPUStoreOp_Store;
-  attachment.clearValue.r = Double_field(clear_color, 0);
-  attachment.clearValue.g = Double_field(clear_color, 1);
-  attachment.clearValue.b = Double_field(clear_color, 2);
-  attachment.clearValue.a = Double_field(clear_color, 3);
+  attachment.clearValue.r = Double_val(Field(clear_color, 0));
+  attachment.clearValue.g = Double_val(Field(clear_color, 1));
+  attachment.clearValue.b = Double_val(Field(clear_color, 2));
+  attachment.clearValue.a = Double_val(Field(clear_color, 3));
 
   WGPURenderPassDescriptor descriptor;
   memset(&descriptor, 0, sizeof descriptor);
