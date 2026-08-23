@@ -23,12 +23,45 @@ jobs:
         with:
           submodules: recursive
       - name: Restore Dune compiler cache
-        uses: actions/cache@v4
+        id: dune-compiler-cache
+        uses: actions/cache/restore@v4
         with:
           path: .dune-cache/toolchains
-          key: dune-toolchains-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dune-workspace', 'dune.lock/**', 'flake.nix', 'flake.lock') }}
+          key: dune-toolchains-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dune-project', 'dune-workspace', 'dune.lock/**', 'flake.nix', 'flake.lock') }}
+      - name: Restore Dune dependency cache
+        id: dune-dependency-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .dune-cache/db
+            _build/.db
+            _build/.digest-db
+            _build/_fetch
+            _build/_private/default/.pkg
+          key: dune-dependencies-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dune-project', 'dune-workspace', 'dune.lock/**', 'flake.nix', 'flake.lock') }}
       - uses: cachix/install-nix-action@v30
-      - run: nix develop .#test -c dune build @check
+      - name: Build Dune package dependencies
+        id: dune-package-install
+        run: nix develop .#test -c sh -c 'time dune build @pkg-install'
+      - name: Save Dune compiler cache
+        if: steps.dune-package-install.outcome == 'success' && steps.dune-compiler-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .dune-cache/toolchains
+          key: dune-toolchains-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dune-project', 'dune-workspace', 'dune.lock/**', 'flake.nix', 'flake.lock') }}
+      - name: Save Dune dependency cache
+        if: steps.dune-package-install.outcome == 'success' && steps.dune-dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .dune-cache/db
+            _build/.db
+            _build/.digest-db
+            _build/_fetch
+            _build/_private/default/.pkg
+          key: dune-dependencies-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dune-project', 'dune-workspace', 'dune.lock/**', 'flake.nix', 'flake.lock') }}
+      - name: Build project checks
+        run: nix develop .#test -c sh -c 'time dune build @check'
       - name: Vulkan environment diagnostics (Linux)
         if: runner.os == 'Linux'
         run: |
