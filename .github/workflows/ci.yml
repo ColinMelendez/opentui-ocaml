@@ -15,11 +15,18 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      DUNE_CACHE_ROOT: ${{ github.workspace }}/.dune-cache
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Restore Dune compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .dune-cache/toolchains
+          key: dune-toolchains-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dune-workspace', 'dune.lock/**', 'flake.nix', 'flake.lock') }}
       - uses: cachix/install-nix-action@v30
       - run: nix develop .#test -c dune build @check
       - name: Vulkan environment diagnostics (Linux)
