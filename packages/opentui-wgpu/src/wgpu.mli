@@ -242,6 +242,69 @@ val create_uniform_bind_group :
 
 val destroy_bind_group : bind_group -> unit
 
+type data_texture
+(** A CPU-filled rgba8unorm texture with a full view, for material maps. *)
+
+val create_data_texture :
+  device -> width:int -> height:int -> (data_texture, Error.t) result
+
+val write_data_texture :
+  device -> texture:data_texture -> data:string -> (unit, Error.t) result
+(** Replaces the texture contents with [width * height * 4] tightly packed
+    RGBA bytes through a queue write. *)
+
+val destroy_data_texture : data_texture -> unit
+
+val data_texture_view : data_texture -> Native_token.Texture_view.t
+
+val address_mode_repeat : int
+
+val address_mode_clamp_to_edge : int
+
+val filter_mode_nearest : int
+
+val filter_mode_linear : int
+
+type sampler
+
+val create_sampler :
+  device ->
+  address_u:int ->
+  address_v:int ->
+  mag_filter:int ->
+  min_filter:int ->
+    (sampler, Error.t) result
+(** Wrap and filtering controls for textured materials. Address/filter
+    values come from the exposed constants; the native enums are pinned in
+    webgpu.h. *)
+
+val destroy_sampler : sampler -> unit
+
+val create_material_bind_group_layout :
+  device -> (bind_group_layout, Error.t) result
+(** Uniform block at binding 0, float texture at binding 1, filtering
+    sampler at binding 2 - the textured-material layout. *)
+
+val create_material_bind_group :
+  device ->
+  layout:bind_group_layout ->
+  uniform_buffer:Native_token.Buffer.t ->
+  uniform_size:int ->
+  view:Native_token.Texture_view.t ->
+  sampler:sampler ->
+    (bind_group, Error.t) result
+
+val create_textured_render_pipeline :
+  device ->
+  layout:pipeline_layout ->
+  shader:shader_module ->
+  vs_entry:string ->
+  fs_entry:string ->
+  target_format:int ->
+    (render_pipeline, Error.t) result
+(** Like {!create_render_pipeline} but over interleaved position + normal +
+    uv vertices: stride 32 bytes, uv at location 2 (Float32x2 @24). *)
+
 val write_texture_bytes :
   device ->
   texture:Native_token.Texture.t ->

@@ -1378,3 +1378,201 @@ CAMLprim value opentui_wgpu_encoder_dispatch_compute_to_buffer(
                                        size);
   CAMLreturn(Val_unit);
 }
+
+CAMLprim value opentui_wgpu_device_create_sampler(value device_value,
+                                                  value options) {
+  CAMLparam2(device_value, options);
+  WGPUDevice device = (WGPUDevice)(uintptr_t)Int64_val(device_value);
+  uint32_t address_u = (uint32_t)Long_val(Field(options, 0));
+  uint32_t address_v = (uint32_t)Long_val(Field(options, 1));
+  uint32_t mag_filter = (uint32_t)Long_val(Field(options, 2));
+  uint32_t min_filter = (uint32_t)Long_val(Field(options, 3));
+
+  WGPUSamplerDescriptor descriptor;
+  memset(&descriptor, 0, sizeof descriptor);
+  descriptor.label = opentui_wgpu_label("opentui-wgpu-sampler");
+  descriptor.addressModeU = (WGPUAddressMode)address_u;
+  descriptor.addressModeV = (WGPUAddressMode)address_v;
+  descriptor.addressModeW = (WGPUAddressMode)address_u;
+  descriptor.magFilter = (WGPUFilterMode)mag_filter;
+  descriptor.minFilter = (WGPUFilterMode)min_filter;
+  descriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+  descriptor.lodMinClamp = 0.0f;
+  descriptor.lodMaxClamp = 32.0f;
+  descriptor.maxAnisotropy = 1;
+
+  WGPUSampler sampler = wgpuDeviceCreateSampler(device, &descriptor);
+  { char d[96]; snprintf(d,96,"CREATE sampler -> %llu", (unsigned long long)(uintptr_t)sampler); opentui_wgpu_diag_push(d); }
+  CAMLreturn(opentui_wgpu_make_handle_pair(
+      sampler != NULL,
+      (uint64_t)(uintptr_t)sampler));
+}
+
+CAMLprim value opentui_wgpu_sampler_release(value sampler_value) {
+  CAMLparam1(sampler_value);
+  wgpuSamplerRelease((WGPUSampler)(uintptr_t)Int64_val(sampler_value));
+  CAMLreturn(Val_unit);
+}
+
+/* Textured material layout: uniform block at binding 0, a non-filtering
+   texture view at binding 1, and its sampler at binding 2 - all visible
+   to the fragment stage except the uniform, which stays vertex+fragment
+   like the untextured path. */
+CAMLprim value opentui_wgpu_device_create_material_bind_group_layout(
+    value device_value) {
+  CAMLparam1(device_value);
+  WGPUDevice device = (WGPUDevice)(uintptr_t)Int64_val(device_value);
+
+  WGPUBindGroupLayoutEntry entries[3];
+  memset(entries, 0, sizeof entries);
+
+  entries[0].binding = 0;
+  entries[0].visibility =
+      WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+  entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+  entries[1].binding = 1;
+  entries[1].visibility = WGPUShaderStage_Fragment;
+  entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+  entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+  entries[1].texture.multisampled = 0;
+
+  entries[2].binding = 2;
+  entries[2].visibility = WGPUShaderStage_Fragment;
+  entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+  WGPUBindGroupLayoutDescriptor descriptor;
+  memset(&descriptor, 0, sizeof descriptor);
+  descriptor.label =
+      opentui_wgpu_label("opentui-wgpu-material-bgl");
+  descriptor.entryCount = 3;
+  descriptor.entries = entries;
+
+  WGPUBindGroupLayout layout =
+      wgpuDeviceCreateBindGroupLayout(device, &descriptor);
+  { char d[96]; snprintf(d,96,"CREATE matbgl -> %llu", (unsigned long long)(uintptr_t)layout); opentui_wgpu_diag_push(d); }
+  CAMLreturn(opentui_wgpu_make_handle_pair(
+      layout != NULL,
+      (uint64_t)(uintptr_t)layout));
+}
+
+CAMLprim value opentui_wgpu_device_create_material_bind_group(
+    value device_value,
+    value options) {
+  CAMLparam2(device_value, options);
+  WGPUDevice device = (WGPUDevice)(uintptr_t)Int64_val(device_value);
+  WGPUBindGroupLayout layout =
+      (WGPUBindGroupLayout)(uintptr_t)Int64_val(Field(options, 0));
+  WGPUBuffer uniform_buffer =
+      (WGPUBuffer)(uintptr_t)Int64_val(Field(options, 1));
+  uint64_t uniform_size = (uint64_t)Int64_val(Field(options, 2));
+  WGPUTextureView view =
+      (WGPUTextureView)(uintptr_t)Int64_val(Field(options, 3));
+  WGPUSampler sampler = (WGPUSampler)(uintptr_t)Int64_val(Field(options, 4));
+
+  WGPUBindGroupEntry entries[3];
+  memset(entries, 0, sizeof entries);
+  entries[0].binding = 0;
+  entries[0].buffer = uniform_buffer;
+  entries[0].offset = 0;
+  entries[0].size = uniform_size;
+  entries[1].binding = 1;
+  entries[1].textureView = view;
+  entries[2].binding = 2;
+  entries[2].sampler = sampler;
+
+  WGPUBindGroupDescriptor descriptor;
+  memset(&descriptor, 0, sizeof descriptor);
+  descriptor.label = opentui_wgpu_label("opentui-wgpu-material-group");
+  descriptor.layout = layout;
+  descriptor.entryCount = 3;
+  descriptor.entries = entries;
+
+  WGPUBindGroup group = wgpuDeviceCreateBindGroup(device, &descriptor);
+  { char d[96]; snprintf(d,96,"CREATE mgroup -> %llu", (unsigned long long)(uintptr_t)group); opentui_wgpu_diag_push(d); }
+  CAMLreturn(opentui_wgpu_make_handle_pair(
+      group != NULL,
+      (uint64_t)(uintptr_t)group));
+}
+
+/* Textured geometry extends the fixed layout with uv at location 2:
+   stride 32 bytes = position xyz @0, normal xyz @12, uv @24. */
+CAMLprim value opentui_wgpu_device_create_textured_render_pipeline(
+    value device_value,
+    value options) {
+  CAMLparam2(device_value, options);
+  WGPUDevice device = (WGPUDevice)(uintptr_t)Int64_val(device_value);
+  WGPUPipelineLayout layout =
+      (WGPUPipelineLayout)(uintptr_t)Int64_val(Field(options, 0));
+  WGPUShaderModule shader_module =
+      (WGPUShaderModule)(uintptr_t)Int64_val(Field(options, 1));
+  const char *vs_name = String_val(Field(options, 2));
+  const char *fs_name = String_val(Field(options, 3));
+  WGPUTextureFormat target_format =
+      (WGPUTextureFormat)Long_val(Field(options, 4));
+
+  WGPUVertexAttribute attributes[3];
+  memset(attributes, 0, sizeof attributes);
+  attributes[0].format = WGPUVertexFormat_Float32x3;
+  attributes[0].offset = 0;
+  attributes[0].shaderLocation = 0;
+  attributes[1].format = WGPUVertexFormat_Float32x3;
+  attributes[1].offset = 12;
+  attributes[1].shaderLocation = 1;
+  attributes[2].format = WGPUVertexFormat_Float32x2;
+  attributes[2].offset = 24;
+  attributes[2].shaderLocation = 2;
+
+  WGPUVertexBufferLayout buffer_layout;
+  memset(&buffer_layout, 0, sizeof buffer_layout);
+  buffer_layout.stepMode = WGPUVertexStepMode_Vertex;
+  buffer_layout.arrayStride = 32;
+  buffer_layout.attributeCount = 3;
+  buffer_layout.attributes = attributes;
+
+  WGPUVertexState vertex;
+  memset(&vertex, 0, sizeof vertex);
+  vertex.module = shader_module;
+  vertex.entryPoint.data = vs_name;
+  vertex.entryPoint.length = strlen(vs_name);
+  vertex.bufferCount = 1;
+  vertex.buffers = &buffer_layout;
+
+  WGPUPrimitiveState primitive;
+  memset(&primitive, 0, sizeof primitive);
+  primitive.topology = WGPUPrimitiveTopology_TriangleList;
+  primitive.frontFace = WGPUFrontFace_CCW;
+  primitive.cullMode = WGPUCullMode_Back;
+
+  WGPUColorTargetState color_target;
+  memset(&color_target, 0, sizeof color_target);
+  color_target.format = target_format;
+  color_target.blend = NULL;
+  color_target.writeMask = WGPUColorWriteMask_All;
+
+  WGPUFragmentState fragment;
+  memset(&fragment, 0, sizeof fragment);
+  fragment.module = shader_module;
+  fragment.entryPoint.data = fs_name;
+  fragment.entryPoint.length = strlen(fs_name);
+  fragment.targetCount = 1;
+  fragment.targets = &color_target;
+
+  WGPURenderPipelineDescriptor descriptor;
+  memset(&descriptor, 0, sizeof descriptor);
+  descriptor.label = opentui_wgpu_label("opentui-wgpu-tex-pipeline");
+  descriptor.layout = layout;
+  descriptor.vertex = vertex;
+  descriptor.primitive = primitive;
+  descriptor.depthStencil = NULL;
+  descriptor.multisample.count = 1;
+  descriptor.multisample.mask = 0xFFFFFFFF;
+  descriptor.fragment = &fragment;
+
+  WGPURenderPipeline pipeline =
+      wgpuDeviceCreateRenderPipeline(device, &descriptor);
+  { char d[96]; snprintf(d,96,"CREATE texpipeline -> %llu", (unsigned long long)(uintptr_t)pipeline); opentui_wgpu_diag_push(d); }
+  CAMLreturn(opentui_wgpu_make_handle_pair(
+      pipeline != NULL,
+      (uint64_t)(uintptr_t)pipeline));
+}

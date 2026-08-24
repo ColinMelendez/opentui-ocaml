@@ -55,6 +55,19 @@ let zlib_stored raw =
   let block_max = 65535 in
   let block_count = max 1 ((total + block_max - 1) / block_max) in
   let out = Buffer.create (total + (block_count * 5) + 6) in
+  if Int.equal total 0 then begin
+    (* An empty payload still needs one empty final stored block. *)
+    Buffer.add_char out '\x78';
+    Buffer.add_char out '\x01';
+    Buffer.add_char out '\x01';
+    Buffer.add_char out '\x00';
+    Buffer.add_char out '\x00';
+    Buffer.add_char out '\xff';
+    Buffer.add_char out '\xff';
+    Buffer.add_string out (adler32 raw 0 total);
+    Buffer.contents out
+  end
+  else begin
   Buffer.add_char out '\x78';
   Buffer.add_char out '\x01';
   let rec emit offset =
@@ -74,6 +87,7 @@ let zlib_stored raw =
   emit 0;
   Buffer.add_string out (adler32 raw 0 total);
   Buffer.contents out
+  end
 
 (* Raw RGBA rows must be prefixed with one filter byte each (type 0). *)
 let filter_rows data ~width ~height =

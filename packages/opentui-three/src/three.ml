@@ -43,4 +43,8 @@ module Quaternion = Quaternion
 
 module Scene = Scene
 
+module Texture = Texture
+
+module Texture_utils = Texture_utils
+
 module Vector3 = Vector3

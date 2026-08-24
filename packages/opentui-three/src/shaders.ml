@@ -5,7 +5,7 @@
    (4x vec4) camera_position@88. Lambert ignores the phong-only fields;
    unlit ignores lighting entirely - one layout, three entry sets. *)
 
-let uniform_floats = 92
+let uniform_floats = 96
 
 let slot_mvp = 0
 
@@ -29,6 +29,8 @@ let slot_point_colors = 72
 
 let slot_camera_position = 88
 
+let slot_flags = 92
+
 let max_point_lights = 4
 
 let wgsl_uniforms =
@@ -44,8 +46,11 @@ let wgsl_uniforms =
            point_pos : array<vec4<f32>, 4>,
            point_color : array<vec4<f32>, 4>,
            camera_position : vec4<f32>,
+           flags : vec4<f32>,
          };
          @group(0) @binding(0) var<uniform> u : Uniforms;
+         @group(0) @binding(1) var t_albedo : texture_2d<f32>;
+         @group(0) @binding(2) var t_sampler : sampler;
   |wgsl}
 
 let header =
@@ -54,33 +59,42 @@ let header =
            @builtin(position) pos : vec4<f32>,
            @location(0) world_normal : vec3<f32>,
            @location(1) world_pos : vec3<f32>,
+           @location(2) uv : vec2<f32>,
          };
          @vertex fn vs_main(@location(0) pos : vec3<f32>,
-                            @location(1) nrm : vec3<f32>) -> VSOut {
+                            @location(1) nrm : vec3<f32>,
+                            @location(2) uv : vec2<f32>) -> VSOut {
            var out : VSOut;
            let world = u.model * vec4<f32>(pos, 1.0);
            out.pos = u.mvp * vec4<f32>(pos, 1.0);
            out.world_normal = (u.model * vec4<f32>(nrm, 0.0)).xyz;
            out.world_pos = world.xyz;
+           out.uv = uv;
            return out;
-         }
-  |wgsl}
-
-let wgsl_unlit =
-  header ^ {wgsl|
-         @fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
-           return u.color;
          }
   |wgsl}
 
 let shared_body =
   {wgsl|
+         fn surface_albedo(uv : vec2<f32>) -> vec3<f32> {
+           // flags.x gates the map; unmapped materials keep flat albedo
+           // while still binding the shared white fallback texture.
+           let mapped = textureSample(t_albedo, t_sampler, uv).rgb;
+           return mix(u.color.rgb, u.color.rgb * mapped, u.flags.x);
+         }
          fn point_attenuation(distance: f32, cutoff: f32) -> f32 {
            if (cutoff <= 0.0) {
              return 1.0;
            }
            let window = max(1.0 - distance / cutoff, 0.0);
            return window * window;
+         }
+  |wgsl}
+
+let wgsl_unlit =
+  header ^ shared_body ^ {wgsl|
+         @fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
+           return vec4<f32>(surface_albedo(in.uv), u.color.a);
          }
   |wgsl}
 
@@ -99,7 +113,7 @@ let wgsl_lambert =
                lit += u.point_color[i].rgb * (atten * max(dot(n, l), 0.0));
              }
            }
-           return vec4<f32>(u.color.rgb * lit, u.color.a);
+           return vec4<f32>(surface_albedo(in.uv) * lit, u.color.a);
          }
   |wgsl}
 

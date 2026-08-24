@@ -46,10 +46,29 @@ tree at time of writing):
   algorithm sync, point-specular attenuation, catch-all narrowing,
   unused setters removal.
 
-REMAINING for phase 2: TEXTURED materials with wrap/filter controls
-(needs sampler stubs, UV vertex attributes -> BoxGeometry stride change,
-WGSL sampler bindings, TextureUtils procedural generators), plus the
-phong-x-point-light specular-under-attenuation test gap noted below.
+MILESTONE 3 LANDED (textured materials; working tree at time of
+writing) - PHASE 2 SCOPE COMPLETE:
+
+- wgpu: create_sampler (wrap/filter controls), material bind-group
+  layout (uniform+texture+filtering sampler), textured render pipeline
+  (stride 32: pos@0 nrm@12 uv@24 loc2), data_texture upload path.
+- Three.Texture (CPU RGBA + wrap_s/wrap_t/filter) and Texture_utils
+  generators (checkerboard, horizontal/vertical/radial gradient,
+  deterministic integer-hash octave noise).
+- Material.map: engine keys GPU texture+sampler on texture INSTANCE;
+  unmapped meshes share a 1x1 white fallback gated by flags.x in WGSL
+  surface_albedo; first-frame bind bug (fresh entries skipped map sync)
+  caught by test and fixed.
+- Vertex layout is now stride 32 everywhere via the textured pipeline
+  stub; BoxGeometry emits per-face UVs.
+
+Second cursor review found 5 defects, all fixed: unlit missing
+shared_body (undefined fn risk across backends), phong diffuse ignoring
+the map, cached-sampler double-free via entry teardown, geometry-swap
+path skipping map sync, empty-payload zlib block.
+
+Test gap still open: phong point-light specular under attenuation; wrap/
+repeat modes are config-tested only (Box UVs stay within 0..1).
 
 ## Where things stood before milestone 2
 

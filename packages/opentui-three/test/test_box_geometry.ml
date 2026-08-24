@@ -17,8 +17,8 @@ let () =
             not
               (Int.equal
                  (Float.Array.length (Three.Geometry.interleaved g))
-                 144)
-          then fail "expected 24 interleaved vertices";
+                 192)
+          then fail "expected 24 vertices at 8 floats each";
           if not (Int.equal (Array.length (Three.Geometry.indices g)) 36) then
             fail "expected 36 indices");
 
@@ -33,7 +33,7 @@ let () =
       test "triangles wind CCW against their outward normals" (fun () ->
           let g = Three.Box_geometry.create () in
           let v = Three.Geometry.interleaved g in
-          let get slot component = Float.Array.get v ((slot * 6) + component) in
+          let get slot component = Float.Array.get v ((slot * 8) + component) in
           for triangle = 0 to 11 do
             let base = triangle * 3 in
             let indices = Three.Geometry.indices g in
@@ -64,12 +64,12 @@ let () =
           let g = Three.Box_geometry.create () in
           let v = Three.Geometry.interleaved g in
           for vertex = 0 to 23 do
-            let px = Float.Array.get v ((vertex * 6) + 0) in
-            let py = Float.Array.get v ((vertex * 6) + 1) in
-            let pz = Float.Array.get v ((vertex * 6) + 2) in
-            let nx = Float.Array.get v ((vertex * 6) + 3) in
-            let ny = Float.Array.get v ((vertex * 6) + 4) in
-            let nz = Float.Array.get v ((vertex * 6) + 5) in
+            let px = Float.Array.get v ((vertex * 8) + 0) in
+            let py = Float.Array.get v ((vertex * 8) + 1) in
+            let pz = Float.Array.get v ((vertex * 8) + 2) in
+            let nx = Float.Array.get v ((vertex * 8) + 3) in
+            let ny = Float.Array.get v ((vertex * 8) + 4) in
+            let nz = Float.Array.get v ((vertex * 8) + 5) in
             (* Unit normals along one axis; each face plane satisfies
                p . n = half extent. *)
             let axis_sum =

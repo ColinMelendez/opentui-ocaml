@@ -13,6 +13,7 @@ module Pipeline_layout = Native_token.Pipeline_layout
 module Render_pipeline = Native_token.Render_pipeline
 module Bind_group = Native_token.Bind_group
 module Compute_pipeline = Native_token.Compute_pipeline
+module Sampler = Native_token.Sampler
 
 (* Raw native status codes; see webgpu.h enum definitions. *)
 let request_status_success = 1
@@ -234,5 +235,33 @@ type compute_dispatch_options =
 external encoder_dispatch_compute_to_buffer :
   Command_encoder.t -> compute_dispatch_options -> unit
   = "opentui_wgpu_encoder_dispatch_compute_to_buffer"
+
+(* address u, address v, mag filter, min filter *)
+type sampler_options = int * int * int * int
+
+external device_create_sampler : Device.t -> sampler_options -> creation
+  = "opentui_wgpu_device_create_sampler"
+
+external sampler_release : Sampler.t -> unit
+  = "opentui_wgpu_sampler_release"
+
+external device_create_material_bind_group_layout : Device.t -> creation
+  = "opentui_wgpu_device_create_material_bind_group_layout"
+
+(* layout, uniform buffer + size, texture view, sampler *)
+type material_bind_group_options =
+  Bind_group_layout.t * Buffer.t * int64 * Texture_view.t * Sampler.t
+
+external device_create_material_bind_group :
+  Device.t -> material_bind_group_options -> creation
+  = "opentui_wgpu_device_create_material_bind_group"
+
+(* layout, shader, vs entry, fs entry, target format *)
+type textured_pipeline_options =
+  Pipeline_layout.t * Shader_module.t * string * string * int
+
+external device_create_textured_render_pipeline :
+  Device.t -> textured_pipeline_options -> creation
+  = "opentui_wgpu_device_create_textured_render_pipeline"
 
 external debug_triangle_raw : Device.t -> int = "opentui_wgpu_debug_triangle"

@@ -596,6 +596,147 @@ let dispatch_compute_pass device ~(pipeline : compute_pipeline)
             Native.command_encoder_release encoder;
             submit_result)
 
+type data_texture = {
+  dt_texture : Native_token.Texture.t;
+  dt_view : Native_token.Texture_view.t;
+  dt_width : int;
+  dt_height : int;
+  mutable dt_released : bool;
+}
+
+let create_data_texture device ~(width : int) ~(height : int) =
+  match check_open device "create_data_texture" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        Native.device_create_texture device.handle
+          ( width,
+            height,
+            texture_format_rgba8_unorm,
+            Int64.logor texture_usage_texture_binding
+              texture_usage_copy_destination )
+        |> creation_result ~what:"data texture"
+      with
+      | Error _ as failure -> failure
+      | Ok texture -> (
+          match
+            Native.texture_create_view texture
+            |> creation_result ~what:"data texture view"
+          with
+          | Error _ as failure ->
+              Native.texture_release texture;
+              failure
+          | Ok view ->
+              Ok
+                { dt_texture = texture;
+                  dt_view = view;
+                  dt_width = width;
+                  dt_height = height;
+                  dt_released = false }))
+
+let write_data_texture device ~(texture : data_texture) ~(data : string) =
+  match check_open device "write_data_texture" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      let expected = texture.dt_width * texture.dt_height * 4 in
+      if String.length data < expected then
+        Error
+          (Error.Invalid_argument
+             "data texture needs width * height * 4 tightly packed bytes")
+      else begin
+        Native.queue_write_texture_bytes device.queue
+          ( texture.dt_texture,
+            data,
+            Int64.of_int (texture.dt_width * 4),
+            texture.dt_width,
+            texture.dt_height );
+        Ok ()
+      end
+
+let destroy_data_texture (texture : data_texture) =
+  if not texture.dt_released then begin
+    texture.dt_released <- true;
+    Native.texture_release texture.dt_texture
+  end
+
+let data_texture_view (texture : data_texture) = texture.dt_view
+
+let address_mode_repeat = 2
+
+let address_mode_clamp_to_edge = 1
+
+let filter_mode_nearest = 0
+
+let filter_mode_linear = 1
+
+type sampler = {
+  handle : Native_token.Sampler.t;
+  mutable released : bool;
+}
+
+let create_sampler device ~(address_u : int) ~(address_v : int)
+    ~(mag_filter : int) ~(min_filter : int) =
+  match check_open device "create_sampler" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        Native.device_create_sampler device.handle
+          (address_u, address_v, mag_filter, min_filter)
+        |> creation_result ~what:"sampler"
+      with
+      | Ok handle -> Ok { handle; released = false }
+      | Error _ as failure -> failure)
+
+let destroy_sampler (sampler : sampler) =
+  if not sampler.released then begin
+    sampler.released <- true;
+    Native.sampler_release sampler.handle
+  end
+
+let create_material_bind_group_layout device =
+  match check_open device "create_material_bind_group_layout" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        Native.device_create_material_bind_group_layout device.handle
+        |> creation_result ~what:"material bind group layout"
+      with
+      | Ok bgl_handle -> Ok { bgl_handle; bgl_released = false }
+      | Error _ as failure -> failure)
+
+let create_material_bind_group device ~(layout : bind_group_layout)
+    ~uniform_buffer ~uniform_size
+    ~(view : Native_token.Texture_view.t)
+    ~(sampler : sampler) =
+  match check_open device "create_material_bind_group" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        Native.device_create_material_bind_group device.handle
+          (layout.bgl_handle, uniform_buffer, Int64.of_int uniform_size,
+           view, sampler.handle)
+        |> creation_result ~what:"material bind group"
+      with
+      | Ok bg_handle -> Ok { bg_handle; bg_released = false }
+      | Error _ as failure -> failure)
+
+let create_textured_render_pipeline device ~(layout : pipeline_layout)
+    ~(shader : shader_module) ~vs_entry ~fs_entry ~target_format =
+  match check_open device "create_textured_render_pipeline" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        Native.device_create_textured_render_pipeline device.handle
+          ( layout.pl_handle,
+            shader.handle,
+            vs_entry,
+            fs_entry,
+            target_format )
+        |> creation_result ~what:"textured render pipeline"
+      with
+      | Ok rp_handle -> Ok { rp_handle; rp_released = false }
+      | Error _ as failure -> failure)
+
 let write_texture_bytes device ~(texture : Native_token.Texture.t)
     ~(data : string) ~(bytes_per_row : int) ~width ~height =
   match check_open device "write_texture_bytes" with

@@ -37,3 +37,8 @@
  (name test_phong)
  (modules test_phong)
  (libraries opentui-three opentui-wgpu windtrap))
+
+(test
+ (name test_textures)
+ (modules test_textures)
+ (libraries opentui-three opentui-wgpu windtrap))

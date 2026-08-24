@@ -23,5 +23,7 @@
   quaternion
   scene
   shaders
+  texture
+  texture_utils
   vector3)
  (libraries opentui-wgpu opentui-core))

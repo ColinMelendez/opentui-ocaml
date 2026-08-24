@@ -6,4 +6,5 @@ let create ?(color = Color.create ()) ?(specular = Color.from_hex_int 0x111111)
     specular;
     shininess;
     emissive;
-    emissive_intensity }
+    emissive_intensity;
+    map = None }

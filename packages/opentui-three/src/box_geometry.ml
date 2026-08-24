@@ -31,7 +31,7 @@ let create ?(width = 1.0) ?(height = 1.0) ?(depth = 1.0) () =
         ( 0.0, 0.0, depth ),
         ( 0.0, -1.0, 0.0 ) ) ]
   in
-  let interleaved = Float.Array.make (6 * 4 * 6) 0.0 in
+  let interleaved = Float.Array.make (8 * 4 * 6) 0.0 in
   let indices = Array.make (6 * 6) 0 in
   List.iteri
     (fun face_index ((ox, oy, oz), (ux, uy, uz), (vx, vy, vz), normal) ->
@@ -42,16 +42,20 @@ let create ?(width = 1.0) ?(height = 1.0) ?(depth = 1.0) () =
            (ox +. ux +. vx, oy +. uy +. vy, oz +. uz +. vz);
            (ox +. vx, oy +. vy, oz +. vz) |]
       in
+      let uvs = [| (0.0, 0.0); (1.0, 0.0); (1.0, 1.0); (0.0, 1.0) |] in
       Array.iteri
         (fun corner_index (cx, cy, cz) ->
-          let slot = ((base_vertex + corner_index) * 6) in
+          let slot = (base_vertex + corner_index) * 8 in
           Float.Array.set interleaved slot cx;
           Float.Array.set interleaved (slot + 1) cy;
           Float.Array.set interleaved (slot + 2) cz;
           let nx, ny, nz = normal in
           Float.Array.set interleaved (slot + 3) nx;
           Float.Array.set interleaved (slot + 4) ny;
-          Float.Array.set interleaved (slot + 5) nz)
+          Float.Array.set interleaved (slot + 5) nz;
+          let uv_x, uv_y = uvs.(corner_index) in
+          Float.Array.set interleaved (slot + 6) uv_x;
+          Float.Array.set interleaved (slot + 7) uv_y)
         corners;
       let base_index = face_index * 6 in
       indices.(base_index) <- base_vertex;
