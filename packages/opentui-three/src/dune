@@ -1,5 +1,24 @@
 (library
  (name opentui_three)
  (public_name opentui-three)
- (private_modules color euler matrix4 quaternion vector3)
+ (private_modules
+  ambient_light
+  box_geometry
+  color
+  directional_light
+  engine
+  euler
+  geometry
+  group
+  material
+  matrix4
+  mesh
+  mesh_basic_material
+  mesh_lambert_material
+  object3d
+  perspective_camera
+  quaternion
+  scene
+  shaders
+  vector3)
  (libraries opentui-wgpu opentui-core))

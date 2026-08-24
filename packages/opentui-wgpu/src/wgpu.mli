@@ -8,6 +8,10 @@ val buffer_handle_string : Native_token.Buffer.t -> string
     discovered through pkg-config; this library never downloads artifacts or
     searches unpinned system locations. *)
 
+module Native_token = Native_token
+(** Tokenized handle types flowing through buffer and draw-frame fields;
+    named here so downstream owners can annotate their storage. *)
+
 val pinned_release_tag : string
 (** The upstream wgpu-native tag whose headers this binding compiles against.
     The configurator program under [config/] fails the build unless pkg-config
@@ -16,8 +20,7 @@ val pinned_release_tag : string
 val pinned_release_version : string
 (** The same pin without the leading v. *)
 
-module Error : sig
-  type t =
+module Error : sig  type t =
     | Closed of { operation : string }
     | Invalid_argument of string
     | Creation_failed of {
@@ -89,18 +92,6 @@ val buffer_usage_map_read : int64
 
 val buffer_usage_copy_destination : int64
 
-val submit_clear_frame :
-  device ->
-  target:render_target ->
-  readback:readback ->
-  color:floatarray ->
-  unit ->
-    (unit, Error.t) result
-(** Encode one frame that clears the target with [color] (four channel values
-    in red, green, blue, alpha order), copy the target into [readback], and
-    submit. The call returns after enqueueing; completion is observed by
-    {!map_read}, which guarantees all prior submissions are visible. *)
-
 type shader_module
 type bind_group_layout
 type pipeline_layout
@@ -122,12 +113,14 @@ val submit_draw_frame :
   target:render_target ->
   readback:readback ->
   clear:float * float * float * float ->
-  draw:draw_frame ->
+  draws:draw_frame list ->
   unit ->
     (unit, Error.t) result
-(** One frame: clear the target, draw indexed geometry through the given
-    pipeline and bind group, copy into [readback], and submit. Uniform data
-    must be staged with {!write_buffer_string} beforehand; completion is
+(** One frame: clear the target with [clear] (four channel values in red,
+    green, blue, alpha order), encode every draw in [draws] in list order as
+    one indexed draw each within a single render pass - an empty list encodes
+    a clear-only frame - copy the target into [readback], and submit. Uniform
+    data must be staged with {!write_buffer_string} beforehand; completion is
     observed by {!map_read}. *)
 
 val map_read : device -> readback -> (unit, Error.t) result

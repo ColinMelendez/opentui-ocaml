@@ -62,14 +62,10 @@ let () =
                 expect_ok (Wgpu.create_readback device ~stride ~rows)
               in
               let staging = make_staging (Wgpu.readback_size readback) in
-                            let red = 0.25 and green = 0.5 and blue = 0.75 in
-              let color = Float.Array.make 4 0.0 in
-              Float.Array.set color 0 red;
-              Float.Array.set color 1 green;
-              Float.Array.set color 2 blue;
-              Float.Array.set color 3 1.0;
-                            expect_ok
-                (Wgpu.submit_clear_frame device ~target ~readback ~color ());
+              let red = 0.25 and green = 0.5 and blue = 0.75 in
+              expect_ok
+                (Wgpu.submit_draw_frame device ~target ~readback
+                   ~clear:(red, green, blue, 1.0) ~draws:[] ());
                                           expect_ok (Wgpu.map_read device readback);
                             expect_ok (Wgpu.copy_mapped readback staging.pixels);
                             Wgpu.unmap readback;
@@ -101,11 +97,9 @@ let () =
               let frames = 30 in
               for frame = 0 to frames - 1 do
                 let level = Float.of_int frame /. Float.of_int (frames - 1) in
-                let color = Float.Array.make 4 0.0 in
-                Float.Array.set color 0 level;
-                Float.Array.set color 3 1.0;
                 expect_ok
-                  (Wgpu.submit_clear_frame device ~target ~readback ~color ());
+                  (Wgpu.submit_draw_frame device ~target ~readback
+                     ~clear:(level, 0.0, 0.0, 1.0) ~draws:[] ());
                 expect_ok (Wgpu.map_read device readback);
                 expect_ok (Wgpu.copy_mapped readback staging.pixels);
                 Wgpu.unmap readback;
@@ -135,7 +129,6 @@ let () =
               let target = expect_ok (Wgpu.create_render_target device ~width:16 ~height:8) in
               let readback = expect_ok (Wgpu.create_readback device ~stride ~rows:8) in
               let staging = make_staging (Wgpu.readback_size readback) in
-              let color = Float.Array.make 4 1.0 in
               expect_error ~what:"zero-width target"
                 (Wgpu.create_render_target device ~width:0 ~height:8);
               expect_error ~what:"negative-height target"
@@ -154,13 +147,10 @@ let () =
                 expect_ok (Wgpu.create_render_target device ~width:128 ~height:8)
               in
               expect_error ~what:"readback too narrow for target"
-                (Wgpu.submit_clear_frame device ~target:wide_target
-                   ~readback:narrow ~color ());
+                (Wgpu.submit_draw_frame device ~target:wide_target
+                   ~readback:narrow ~clear:(1.0, 1.0, 1.0, 1.0) ~draws:[] ());
               Wgpu.destroy_readback narrow;
               Wgpu.destroy_render_target wide_target;
-              expect_error ~what:"short clear color"
-                (Wgpu.submit_clear_frame device ~target ~readback
-                   ~color:(Float.Array.make 3 1.0) ());
               expect_error ~what:"copy before map"
                 (Wgpu.copy_mapped readback staging.pixels);
               expect_ok (Wgpu.map_read device readback);
@@ -175,7 +165,8 @@ let () =
               expect_error ~what:"map after destroy"
                 (Wgpu.map_read device readback);
               expect_error ~what:"submit after destroy"
-                (Wgpu.submit_clear_frame device ~target ~readback ~color ());
+                (Wgpu.submit_draw_frame device ~target ~readback
+                   ~clear:(1.0, 1.0, 1.0, 1.0) ~draws:[] ());
               Wgpu.destroy_render_target target;
               Wgpu.destroy_render_target target;
               Wgpu.destroy_device device;
@@ -292,14 +283,18 @@ let () =
           expect_ok
             (Wgpu.submit_draw_frame device ~target ~readback
                ~clear:(0.0, 0.0, 0.0, 1.0)
-               ~draw:
-                 { pipeline;
-                   group;
-                   vertex_buffer;
-                   vertex_size = String.length vertex_bytes;
-                   index_buffer;
-                   index_size = String.length index_bytes;
-                   index_count = Array.length indices }
+               ~draws:
+                 [
+                   {
+                     pipeline;
+                     group;
+                     vertex_buffer;
+                     vertex_size = String.length vertex_bytes;
+                     index_buffer;
+                     index_size = String.length index_bytes;
+                     index_count = Array.length indices;
+                   };
+                 ]
                ());
           expect_ok (Wgpu.map_read device readback);
           expect_ok (Wgpu.copy_mapped readback staging.pixels);

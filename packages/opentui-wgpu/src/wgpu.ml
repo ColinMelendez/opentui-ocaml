@@ -182,51 +182,6 @@ let destroy_readback (buffer_view : readback) =
     Native.buffer_release buffer_view.buffer
   end
 
-let submit_clear_frame device ~(target : render_target) ~(readback : readback)
-    ~(color : floatarray) () =
-  check_open device "submit_clear_frame" >>= fun () ->
-  if target.released || readback.released then
-    Error (Error.Closed { operation = "submit_clear_frame" })
-  else if Float.Array.length color < rgba_bytes_per_pixel then
-    Error (Error.Invalid_argument "clear color needs four channel values")
-  else if
-    Int.compare readback.stride (readback_stride ~width:target.width) < 0
-    || Int.compare readback.rows target.height < 0
-  then
-    Error
-      (Error.Invalid_argument
-         (Printf.sprintf
-            "readback stride %d rows %d cannot hold a %dx%d frame"
-            readback.stride readback.rows target.width target.height))
-  else
-    match
-      creation_result ~what:"command encoder"
-        (Native.device_create_command_encoder device.handle)
-    with
-    | Error _ as failure -> failure
-    | Ok encoder ->
-        Native.encoder_begin_render_pass_clear encoder target.view
-          ( Float.Array.get color 0,
-            Float.Array.get color 1,
-            Float.Array.get color 2,
-            Float.Array.get color 3 );
-        Native.encoder_copy_texture_to_buffer encoder target.texture
-          readback.buffer
-          (target.width, target.height, readback.stride);
-        let submit_result =
-          match
-            creation_result ~what:"command buffer"
-              (Native.command_encoder_finish encoder)
-          with
-          | Error _ as failure -> failure
-          | Ok command_buffer ->
-              Native.queue_submit_one device.queue command_buffer;
-              Native.command_buffer_release command_buffer;
-              Ok ()
-        in
-        Native.command_encoder_release encoder;
-        submit_result
-
 type shader_module = {
   handle : Native_token.Shader_module.t;
   mutable released : bool;
@@ -264,12 +219,14 @@ type draw_frame = {
 
 let submit_draw_frame device ~(target : render_target)
     ~(readback : readback)
-    ~(clear : float * float * float * float) ~(draw : draw_frame) () =
-  match check_open device "submit_draw_frame" with
+    ~(clear : float * float * float * float)
+    ~(draws : draw_frame list) () =
+  let operation = "submit_draw_frame" in
+  match check_open device operation with
   | Error _ as failure -> failure
-  | Ok () -> (
+  | Ok () ->
       if target.released || readback.released then
-        Error (Error.Closed { operation = "submit_draw_frame" })
+        Error (Error.Closed { operation })
       else if
         Int.compare readback.stride (readback_stride ~width:target.width) < 0
         || Int.compare readback.rows target.height < 0
@@ -280,29 +237,34 @@ let submit_draw_frame device ~(target : render_target)
                 "readback stride %d rows %d cannot hold a %dx%d frame"
                 readback.stride readback.rows target.width target.height))
       else if
-        draw.pipeline.rp_released || draw.group.bg_released
-        || draw.vertex_size <= 0 || draw.index_size <= 0 || draw.index_count <= 0
-      then
-        Error (Error.Invalid_argument "draw frame references invalid state")
+        List.exists
+          (fun draw ->
+            draw.pipeline.rp_released || draw.group.bg_released
+            || draw.vertex_size <= 0 || draw.index_size <= 0
+            || draw.index_count <= 0)
+          draws
+      then Error (Error.Invalid_argument "draw frame references invalid state")
       else
+        let calls =
+          List.map
+            (fun draw ->
+              ( draw.pipeline.rp_handle,
+                draw.group.bg_handle,
+                draw.vertex_buffer,
+                Int64.of_int draw.vertex_size,
+                draw.index_buffer,
+                Int64.of_int draw.index_size,
+                draw.index_count ))
+            draws
+        in
         match
           creation_result ~what:"command encoder"
             (Native.device_create_command_encoder device.handle)
         with
         | Error _ as failure -> failure
         | Ok encoder ->
-            let call : Native.draw_call =
-              ( target.view,
-                clear,
-                draw.pipeline.rp_handle,
-                draw.group.bg_handle,
-                draw.vertex_buffer,
-                Int64.of_int draw.vertex_size,
-                draw.index_buffer,
-                Int64.of_int draw.index_size,
-                draw.index_count )
-            in
-            Native.encoder_render_draw_indexed encoder call;
+            Native.encoder_render_draws_indexed encoder target.view clear
+              calls;
             Native.encoder_copy_texture_to_buffer encoder target.texture
               readback.buffer
               (target.width, target.height, readback.stride);
@@ -318,7 +280,7 @@ let submit_draw_frame device ~(target : render_target)
                   Ok ()
             in
             Native.command_encoder_release encoder;
-            submit_result)
+            submit_result
 
 let map_read device (readback : readback) =
   check_open device "map_read" >>= fun () ->

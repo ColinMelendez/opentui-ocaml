@@ -2,3 +2,18 @@
  (name test_math)
  (modules test_math)
  (libraries opentui-three windtrap))
+
+(test
+ (name test_scene_graph)
+ (modules test_scene_graph)
+ (libraries opentui-three windtrap))
+
+(test
+ (name test_box_geometry)
+ (modules test_box_geometry)
+ (libraries opentui-three windtrap))
+
+(test
+ (name test_render)
+ (modules test_render)
+ (libraries opentui-three windtrap))

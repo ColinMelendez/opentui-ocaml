@@ -33,6 +33,10 @@ val look_at : up:Vector3.t -> eye:Vector3.t -> target:Vector3.t -> t -> unit
 (** Writes a view matrix for a camera at [eye] looking toward [target].
     Degenerate directions leave [out] untouched. *)
 
+val extract_rotation : t -> t -> unit
+(** [extract_rotation out src] writes the rotation of [src] into [out] with
+    column normalization undoing non-uniform scale, matching three.js. *)
+
 val invert : t -> t -> bool
 (** [invert input output] runs Gauss-Jordan elimination with partial
     pivoting; returns false when singular and leaves [output] untouched. *)

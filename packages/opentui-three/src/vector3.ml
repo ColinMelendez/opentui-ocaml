@@ -62,3 +62,7 @@ let transform_direction t (m : floatarray) =
     ((Float.Array.get m 2 *. x) +. (Float.Array.get m 6 *. y))
     +. (Float.Array.get m 10 *. z);
   normalize t
+
+let distance_to_squared a b =
+  let dx = a.x -. b.x and dy = a.y -. b.y and dz = a.z -. b.z in
+  (dx *. dx) +. (dy *. dy) +. (dz *. dz)

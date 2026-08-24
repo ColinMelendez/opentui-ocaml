@@ -131,6 +131,26 @@ let look_at ~(up : Vector3.t) ~(eye : Vector3.t) ~(target : Vector3.t) out =
     end
   end
 
+let extract_rotation out (src : t) =
+  (* three.js Matrix4.extractRotation: keep the upper 3x3 with each column
+     normalized to undo non-uniform scale; zero-length columns scale by one. *)
+  let column_scale base =
+    let x = Float.Array.get src base in
+    let y = Float.Array.get src (base + 1) in
+    let z = Float.Array.get src (base + 2) in
+    let l = Float.sqrt (((x *. x) +. (y *. y)) +. (z *. z)) in
+    if Float.compare l 0.0 > 0 then 1.0 /. l else 1.0
+  in
+  let sx = column_scale 0 and sy = column_scale 4 and sz = column_scale 8 in
+  Float.Array.fill out 0 size 0.0;
+  for c = 0 to 2 do
+    let scale = match c with 0 -> sx | 1 -> sy | _ -> sz in
+    for r = 0 to 2 do
+      Float.Array.set out ((c * 4) + r) (Float.Array.get src ((c * 4) + r) *. scale)
+    done
+  done;
+  Float.Array.set out 15 1.0
+
 let invert input output =
   (* Gauss-Jordan elimination with partial pivoting. Returns false when the
      matrix is singular, leaving [output] untouched. *)

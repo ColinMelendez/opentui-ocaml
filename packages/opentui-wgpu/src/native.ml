@@ -79,10 +79,6 @@ external device_create_command_encoder :
 external command_encoder_release : Command_encoder.t -> unit =
   "opentui_wgpu_command_encoder_release"
 
-external encoder_begin_render_pass_clear :
-  Command_encoder.t -> Texture_view.t -> clear_color -> unit
-  = "opentui_wgpu_encoder_begin_render_pass_clear"
-
 external encoder_copy_texture_to_buffer :
   Command_encoder.t -> Texture.t -> Buffer.t -> copy_region -> unit
   = "opentui_wgpu_encoder_copy_texture_to_buffer"
@@ -176,19 +172,18 @@ external queue_write_buffer_bytes :
   Queue.t -> Buffer.t -> offset:int64 -> string -> unit
   = "opentui_wgpu_queue_write_buffer_bytes"
 
-(* view, clear color, pipeline, bind group,
+(* pipeline, bind group,
    vertex buffer + byte size, index buffer + byte size, index count *)
 type draw_call =
-  Texture_view.t
-  * clear_color
-  * Render_pipeline.t
+  Render_pipeline.t
   * Bind_group.t
   * Buffer.t * int64
   * Buffer.t * int64
   * int
 
-external encoder_render_draw_indexed :
-  Command_encoder.t -> draw_call -> unit
-  = "opentui_wgpu_encoder_render_draw_indexed"
+external encoder_render_draws_indexed :
+  Command_encoder.t ->
+  Texture_view.t -> clear_color -> draw_call list -> unit
+  = "opentui_wgpu_encoder_render_draws_indexed"
 
 external debug_triangle_raw : Device.t -> int = "opentui_wgpu_debug_triangle"

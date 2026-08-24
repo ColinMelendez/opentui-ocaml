@@ -163,4 +163,61 @@ let () =
           in
           expect_close_matrix ~tolerance:1e-9 ~expected:identity
             ~actual:product ());
+
+      test "extract_rotation keeps the basis of a scaled rotation" (fun () ->
+          let q = Q.from_axis_angle ~axis:(V3.create ~y:1.0 ())
+              ~angle:(Float.pi /. 3.0)
+          in
+          let r = M4.create () in
+          Q.to_matrix4 q r;
+          (* Scale the columns unevenly, as compose would for a stretched
+             object, then extract the pure rotation back out. *)
+          for c = 0 to 2 do
+            let scale = match c with 0 -> 3.0 | 1 -> 0.5 | _ -> 2.0 in
+              for row = 0 to 2 do
+                let i = (c * 4) + row in
+                Float.Array.set r i (Float.Array.get r i *. scale)
+            done
+          done;
+          let extracted = M4.create () in
+          M4.extract_rotation extracted r;
+          let plain = M4.create () in
+          Q.to_matrix4 q plain;
+          Array.iteri
+            (fun i _ ->
+              if not (close ~tolerance:1e-9
+                        (Float.Array.get extracted i)
+                        (Float.Array.get plain i))
+              then
+                fail (Printf.sprintf "extract_rotation[%d] diverged" i))
+            (Array.init 16 (fun i -> i)));
+
+      test "quaternion extraction round trips 150 degrees about Y and Z"
+        (fun () ->
+          (* 150 degrees makes the trace non-positive, driving the m11 and
+             m22 Shepperd arms that identity-ish rotations never reach. *)
+          List.iter
+            (fun axis ->
+              let angle = Float.of_int 150 *. Float.pi /. 180.0 in
+              let original =
+                Q.from_axis_angle ~axis ~angle
+              in
+              let m = M4.create () in
+              Q.to_matrix4 original m;
+              let recovered = Q.from_euler_matrix m in
+              let back = M4.create () in
+              Q.to_matrix4 recovered back;
+              Array.iteri
+                (fun i _ ->
+                  if not (close ~tolerance:1e-9
+                            (Float.Array.get m i)
+                            (Float.Array.get back i))
+                  then
+                    fail
+                      (Printf.sprintf
+                         "matrix round trip diverged at [%d] for the given axis"
+                         i))
+                (Array.init 16 (fun i -> i)))
+            [ V3.create ~x:0.0 ~y:1.0 ~z:0.0 ();
+              V3.create ~x:0.0 ~y:0.0 ~z:1.0 () ]);
     ]

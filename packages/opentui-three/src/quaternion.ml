@@ -49,6 +49,34 @@ let multiply out a b =
   out.z <- (aw *. bz) +. (ax *. by) -. (ay *. bx) +. (az *. bw);
   out.w <- (aw *. bw) -. (ax *. bx) -. (ay *. by) -. (az *. bz)
 
+let premultiply t ~a =
+  (* t = a * t with [a] read before any write, so [a] may alias [t]. *)
+  let ax = a.x and ay = a.y and az = a.z and aw = a.w in
+  let tx = t.x and ty = t.y and tz = t.z and tw = t.w in
+  t.x <- (aw *. tx) +. (ax *. tw) +. (ay *. tz) -. (az *. ty);
+  t.y <- (aw *. ty) -. (ax *. tz) +. (ay *. tw) +. (az *. tx);
+  t.z <- (aw *. tz) +. (ax *. ty) -. (ay *. tx) +. (az *. tw);
+  t.w <- (aw *. tw) -. (ax *. tx) -. (ay *. ty) -. (az *. tz)
+
+let postmultiply t b =
+  (* t = t * b with [b] read before any write, so [b] may alias [t]. *)
+  let bx = b.x and by = b.y and bz = b.z and bw = b.w in
+  let tx = t.x and ty = t.y and tz = t.z and tw = t.w in
+  t.x <- (tw *. bx) +. (tx *. bw) +. (ty *. bz) -. (tz *. by);
+  t.y <- (tw *. by) -. (tx *. bz) +. (ty *. bw) +. (tz *. bx);
+  t.z <- (tw *. bz) +. (tx *. by) -. (ty *. bx) +. (tz *. bw);
+  t.w <- (tw *. bw) -. (tx *. bx) -. (ty *. by) -. (tz *. bz)
+
+let invert t =
+  (* Conjugate then normalize: exact inverse for unit-length quaternions,
+     graceful for drifted ones; zero length stays untouched per our
+     normalize tolerance. *)
+  t.x <- -.t.x;
+  t.y <- -.t.y;
+  t.z <- -.t.z;
+  ignore (normalize t);
+  t
+
 let set_from_euler ~x ~y ~z =
   (* Three.js default Euler order XYZ: rotations applied about X, then Y,
      then Z in the parent frame. Additional named orders land when a
@@ -87,36 +115,40 @@ let to_matrix4 t out =
   Float.Array.set out 15 1.0
 
 let from_euler_matrix m =
-  (* Shepperd's method with the positive-trace branch, reading the rotation
-     block of a column-major matrix4. *)
-  let m00 = Float.Array.get m 0 and m11 = Float.Array.get m 5 in
-  let m22 = Float.Array.get m 10 in
-  let trace = (m00 +. m11) +. m22 in
+  (* Shepperd's method, term-for-term from three.js r177
+     Quaternion.setFromRotationMatrix. Beware the upstream naming trap:
+     three.js's local m11/m22/m33 mean elements 0/5/10 (diagonal), while
+     m13 etc. count sequentially through the rotation block - every
+     off-diagonal pair below was verified against pure axis rotations of
+     150 degrees, whose non-positive trace forces these arms. *)
+  let g i = Float.Array.get m i in
+  let e00 = g 0 and e05 = g 5 and e10 = g 10 in
+  let trace = (e00 +. e05) +. e10 in
   if Float.compare trace 0.0 > 0 then begin
     let s = Float.sqrt (trace +. 1.0) *. 2.0 in
-    { x = (Float.Array.get m 6 -. Float.Array.get m 9) /. s;
-      y = (Float.Array.get m 8 -. Float.Array.get m 2) /. s;
-      z = (Float.Array.get m 1 -. Float.Array.get m 4) /. s;
+    { x = (g 6 -. g 9) /. s;
+      y = (g 8 -. g 2) /. s;
+      z = (g 1 -. g 4) /. s;
       w = 0.25 *. s }
   end
-  else if Float.compare m00 (Float.max m11 m22) >= 0 then begin
-    let s = Float.sqrt ((1.0 +. m00) -. m11 -. m22) *. 2.0 in
+  else if Float.compare e00 (Float.max e05 e10) >= 0 then begin
+    let s = Float.sqrt ((1.0 +. e00) -. e05 -. e10) *. 2.0 in
     { x = 0.25 *. s;
-      y = (Float.Array.get m 4 +. Float.Array.get m 1) /. s;
-      z = (Float.Array.get m 8 +. Float.Array.get m 2) /. s;
-      w = (Float.Array.get m 6 -. Float.Array.get m 9) /. s }
+      y = (g 4 +. g 1) /. s;
+      z = (g 8 +. g 2) /. s;
+      w = (g 6 -. g 9) /. s }
   end
-  else if Float.compare m11 m22 > 0 then begin
-    let s = Float.sqrt ((1.0 +. m11) -. m00 -. m22) *. 2.0 in
-    { x = (Float.Array.get m 9 +. Float.Array.get m 6) /. s;
+  else if Float.compare e05 e10 > 0 then begin
+    let s = Float.sqrt ((1.0 +. e05) -. e00 -. e10) *. 2.0 in
+    { x = (g 4 +. g 1) /. s;
       y = 0.25 *. s;
-      z = (Float.Array.get m 6 +. Float.Array.get m 9) /. s;
-      w = (Float.Array.get m 2 -. Float.Array.get m 8) /. s }
+      z = (g 9 +. g 6) /. s;
+      w = (g 8 -. g 2) /. s }
   end
   else begin
-    let s = Float.sqrt ((1.0 +. m22) -. m00 -. m11) *. 2.0 in
-    { x = (Float.Array.get m 8 +. Float.Array.get m 2) /. s;
-      y = (Float.Array.get m 9 +. Float.Array.get m 6) /. s;
+    let s = Float.sqrt ((1.0 +. e10) -. e00 -. e05) *. 2.0 in
+    { x = (g 8 +. g 2) /. s;
+      y = (g 9 +. g 6) /. s;
       z = 0.25 *. s;
-      w = (Float.Array.get m 1 -. Float.Array.get m 4) /. s }
+      w = (g 1 -. g 4) /. s }
   end

@@ -430,40 +430,6 @@ CAMLprim value opentui_wgpu_command_encoder_release(value encoder) {
   CAMLreturn(Val_unit);
 }
 
-CAMLprim value opentui_wgpu_encoder_begin_render_pass_clear(
-    value encoder_value,
-    value view_value,
-    value clear_color) {
-  CAMLparam3(encoder_value, view_value, clear_color);
-  WGPUCommandEncoder encoder =
-      (WGPUCommandEncoder)(uintptr_t)Int64_val(encoder_value);
-  WGPUTextureView view = (WGPUTextureView)(uintptr_t)Int64_val(view_value);
-
-  WGPURenderPassColorAttachment attachment;
-  memset(&attachment, 0, sizeof attachment);
-  attachment.view = view;
-  attachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-  attachment.resolveTarget = NULL;
-  attachment.loadOp = WGPULoadOp_Clear;
-  attachment.storeOp = WGPUStoreOp_Store;
-  attachment.clearValue.r = Double_val(Field(clear_color, 0));
-  attachment.clearValue.g = Double_val(Field(clear_color, 1));
-  attachment.clearValue.b = Double_val(Field(clear_color, 2));
-  attachment.clearValue.a = Double_val(Field(clear_color, 3));
-
-  WGPURenderPassDescriptor descriptor;
-  memset(&descriptor, 0, sizeof descriptor);
-  descriptor.label = opentui_wgpu_label("opentui-wgpu-clear-pass");
-  descriptor.colorAttachmentCount = 1;
-  descriptor.colorAttachments = &attachment;
-
-  WGPURenderPassEncoder pass =
-      wgpuCommandEncoderBeginRenderPass(encoder, &descriptor);
-  wgpuRenderPassEncoderEnd(pass);
-  wgpuRenderPassEncoderRelease(pass);
-  CAMLreturn(Val_unit);
-}
-
 CAMLprim value opentui_wgpu_encoder_copy_texture_to_buffer(
     value encoder_value,
     value texture_value,
@@ -878,23 +844,17 @@ CAMLprim value opentui_wgpu_queue_write_buffer_bytes(
   CAMLreturn(Val_unit);
 }
 
-CAMLprim value opentui_wgpu_encoder_render_draw_indexed(
+CAMLprim value opentui_wgpu_encoder_render_draws_indexed(
     value encoder_value,
-    value draw) {
-  CAMLparam2(encoder_value, draw);
+    value view_value,
+    value clear_color,
+    value draws) {
+  CAMLparam4(encoder_value, view_value, clear_color, draws);
+  CAMLlocal2(cons, draw);
   WGPUCommandEncoder encoder =
       (WGPUCommandEncoder)(uintptr_t)Int64_val(encoder_value);
   WGPUTextureView view =
-      (WGPUTextureView)(uintptr_t)Int64_val(Field(draw, 0));
-  value clear_color = Field(draw, 1);
-  WGPURenderPipeline pipeline =
-      (WGPURenderPipeline)(uintptr_t)Int64_val(Field(draw, 2));
-  WGPUBindGroup group = (WGPUBindGroup)(uintptr_t)Int64_val(Field(draw, 3));
-  WGPUBuffer vertices = (WGPUBuffer)(uintptr_t)Int64_val(Field(draw, 4));
-  uint64_t vertex_size = (uint64_t)Int64_val(Field(draw, 5));
-  WGPUBuffer indices = (WGPUBuffer)(uintptr_t)Int64_val(Field(draw, 6));
-  uint64_t index_size = (uint64_t)Int64_val(Field(draw, 7));
-  uint32_t index_count = (uint32_t)Long_val(Field(draw, 8));
+      (WGPUTextureView)(uintptr_t)Int64_val(view_value);
   WGPURenderPassColorAttachment attachment;
   memset(&attachment, 0, sizeof attachment);
   attachment.view = view;
@@ -913,24 +873,38 @@ CAMLprim value opentui_wgpu_encoder_render_draw_indexed(
   descriptor.colorAttachments = &attachment;
 
   {
-    char probe[128];
-    snprintf(probe, sizeof probe,
-             "DRAW vb=%llu ib=%llu vsz=%llu isz=%llu n=%u",
-             (unsigned long long)(uintptr_t)vertices,
-             (unsigned long long)(uintptr_t)indices,
-             (unsigned long long)vertex_size,
-             (unsigned long long)index_size, index_count);
+    int draw_count = 0;
+    value scan = draws;
+    while (scan != Val_int(0)) {
+      draw_count++;
+      scan = Field(scan, 1);
+    }
+    char probe[64];
+    snprintf(probe, sizeof probe, "DRAW pass draws=%d", draw_count);
     opentui_wgpu_diag_push(probe);
   }
 
   WGPURenderPassEncoder pass =
       wgpuCommandEncoderBeginRenderPass(encoder, &descriptor);
-  wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-  wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, NULL);
-  wgpuRenderPassEncoderSetVertexBuffer(pass, 0, vertices, 0, vertex_size);
-  wgpuRenderPassEncoderSetIndexBuffer(pass, indices, WGPUIndexFormat_Uint16, 0,
-                                      index_size);
-  wgpuRenderPassEncoderDrawIndexed(pass, index_count, 1, 0, 0, 0);
+  cons = draws;
+  while (cons != Val_int(0)) {
+    draw = Field(cons, 0);
+    WGPURenderPipeline pipeline =
+        (WGPURenderPipeline)(uintptr_t)Int64_val(Field(draw, 0));
+    WGPUBindGroup group = (WGPUBindGroup)(uintptr_t)Int64_val(Field(draw, 1));
+    WGPUBuffer vertices = (WGPUBuffer)(uintptr_t)Int64_val(Field(draw, 2));
+    uint64_t vertex_size = (uint64_t)Int64_val(Field(draw, 3));
+    WGPUBuffer indices = (WGPUBuffer)(uintptr_t)Int64_val(Field(draw, 4));
+    uint64_t index_size = (uint64_t)Int64_val(Field(draw, 5));
+    uint32_t index_count = (uint32_t)Long_val(Field(draw, 6));
+    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, NULL);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, vertices, 0, vertex_size);
+    wgpuRenderPassEncoderSetIndexBuffer(pass, indices, WGPUIndexFormat_Uint16,
+                                        0, index_size);
+    wgpuRenderPassEncoderDrawIndexed(pass, index_count, 1, 0, 0, 0);
+    cons = Field(cons, 1);
+  }
   wgpuRenderPassEncoderEnd(pass);
   wgpuRenderPassEncoderRelease(pass);
   CAMLreturn(Val_unit);

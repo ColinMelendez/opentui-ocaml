@@ -41,12 +41,16 @@ Remaining Phase 1 slices:
   capture delivered; risk 16c retired (root causes: missing copy call
   in submit_draw_frame orchestration + Double_field-on-boxed-tuple in
   draw stub clear color).
-- C: scene graph (Object3D dirty-flag world matrices), BoxGeometry with
-  per-face normals, MeshBasic/Lambert materials, directional+ambient
-  lights, PerspectiveCamera (focal-length FOV; aspect =
-  terminal_width / (terminal_height * 2), CELL_ASPECT_RATIO override),
-  WGSL unlit+lambert pipelines, backface culling instead of depth
-  buffer (convex cube only - documented limitation).
+- C: DONE (this working tree, uncommitted at time of writing). Scene
+  graph (`Object3d` unified node record + payload variant: Group,
+  Scene_root, Mesh, Perspective_camera, Directional/Ambient_light),
+  `Box_geometry` per-face normals, `Mesh_basic/lambert_material`,
+  lights, `Perspective_camera`, WGSL unlit+lambert pipelines, and
+  `Three.Engine` render core. Suites: scene-graph units (9), box
+  geometry winding/normals (4), GPU integration (7: unlit, head-on
+  lambert, pitched two-class shading, multi-mesh, determinism,
+  visibility pruning, resize). Backface culling instead of depth
+  buffer remains the documented convex-only limitation.
 - D: cell conversion (None mode = full-block per pixel; Cpu mode =
   quadrant-glyph algorithm ported from supersampling.wgsl - this is the
   Phase 2 oracle; Gpu aliases Cpu until the compute pass lands),
@@ -124,13 +128,22 @@ Unavailable=3, Error=4. (Earlier confusion: 3 is Unavailable.)
   (warnings-as-errors catches some, review catches the rest).
 - Trailing `;` on the last statement of a let-binding swallows the next
   `let` as a sequence expression - produces confusing downstream syntax
-  errors (cost an hour in quaternion.ml).
+  errors (cost an hour in quaternion.ml, struck AGAIN in
+  test_render.ml's run_frame where the error surfaces as a generic
+  EOF syntax error far from the cause).
 - Module dependency cycles: Matrix4 <-> Quaternion broke dune; keep
-  dependencies one-directional (Quaternion writes into caller-owned
-  storage via unit-returning functions).
+  dependencies one-directional. Vector3.apply_quaternion had to become
+  an inlined private helper in object3d.ml (Vector3 -> Quaternion would
+  cycle with Quaternion.from_axis_angle's axis : Vector3.t).
+- Ref vs record: `r <- v` on a ref cell is parsed as record-field set
+  and fails confusingly ("not an instance variable"); refs want `:=`.
 - Never delete _build subdirectories manually (corrupts digest db ->
   forced a second dune clean). Disk pressure: remove stale
   _build-* investigation dirs instead.
+- If dune reports "inconsistent assumptions over interface" after a
+  killed build and touching sources does not clear it, appending a
+  real content change to the stale unit forces recompilation without
+  violating the no-clean rule.
 - windtrap traps stdout/stderr per test; read captured output from
   _build/_tests/<suite>/<hash>/<test_name>.output, or write to an
   explicit file for live tracing.
@@ -138,13 +151,24 @@ Unavailable=3, Error=4. (Earlier confusion: 3 is Unavailable.)
   are bare unified diffs with paths relative to the zig source dir.
 - Parallel agent works in opentui-core concurrently: never stage
   agents.md, terminal-palette-detection/, or their commits; verify
-  staged paths belong to this task only.
+  staged paths belong to this task only. Their in-flight edits can
+  break our builds transiently (unbound values mid-edit); wait and
+  retry rather than "fixing" their half-finished code.
 
 ## Verified formulas (three.js r177 source, numerically checked)
 
 setFromEuler XYZ (half-angle c/s per axis):
 x=s1*c2*c3 + c1*s2*s3; y=c1*s2*c3 - s1*c2*s3; z=c1*c2*s3 + s1*s2*c3;
 w=c1*c2*c3 - s1*s2*s3.
+
+Quaternion.setFromRotationMatrix SHEPPERD NAMING TRAP: three.js's local
+`m11 m12 m13 / m21 ...` names are SEQUENTIAL element labels (m11=te[0],
+m12=te[4], m13=te[8], ...), NOT matrix indices. Branch conditions use
+the labels; off-diagonal pairs must be read through the label mapping
+(e.g. their `w=(m32-m23)` means te[6]-te[9]). Misreading them as matrix
+indices produced wrong dominant-diagonal arms twice in one day; final
+arms are verified against pure X/Y/Z rotations of 150 degrees (whose
+trace <= 0 forces the non-trace arms) and round-trip tested.
 
 setFromRotationMatrix branches use m_ij = R[i][j] with flat index
 j*4+i: trace>0 -> x=(m32-m23)/s etc.; dominant-diagonal branches as in
@@ -343,15 +367,53 @@ let shader =
 
 ## Slice C/D specifics (everything needed to resume without re-research)
 
-WGSL lambert plan: single uniform block per mesh (256 B): mvp(64),
-model(64), color(16), light_dir(16), light_color(16), ambient(16).
-Vertex layout already fixed by create_render_pipeline (stride 24,
-pos@0/nrm@12). Lambert fragment:
-albedo.rgb * (ambient.rgb*ambient.a + light_color.rgb*light_intensity
-* max(dot(N, L), 0)) where L = normalize(light.position - target).
-Emission converts linear -> sRGB once at cell write
-(pow(c, 1/2.4)*1.055-0.055 branch); mid-gray test value: albedo 0.5
-head-on lit => linear 0.5 => sRGB ~188.
+Landed with slice C (verify against code, which is now the source of
+truth):
+
+- Uniform block: 48 floats = 192 B. Slots (float index): mvp@0,
+  model@16, color@32, light_dir@36, light_color@40, ambient@44.
+  WGSL struct mirrors exactly; all fields vec4/mat4 so no padding
+  surprises. CPU precomputes L = normalize(light.worldPos -
+  target.worldPos), folds directional intensity into light_color.rgb,
+  and accumulates ALL visible ambient lights into ambient.rgb/a where
+  a = summed intensity. AMBIENT GOTCHA: color channels ride untouched;
+  intensity lives ONLY in the alpha slot - the shader multiplies
+  ambient.rgb * ambient.a once. Pre-multiplying color by intensity on
+  the CPU double-applies it (cost one debugging round: gray cube read
+  byte 8 instead of 32).
+- Rotation sync: Object3D keeps euler and quaternion consistent lazily
+  at matrix-build time (compare euler against synced_rotation cache;
+  differ -> Quaternion.set_from_euler). Divergence vs three.js eager
+  callbacks: reading quaternion right after writing euler (without an
+  update between) diverges; the orientation methods (rotate_on_axis,
+  translate_on_axis, look_at) call sync_rotation first so method
+  sequences behave like three.js regardless of render timing.
+- look_at feeds Quaternion.from_euler_matrix, which reads an
+  ORIENTATION block - Matrix4.look_at writes the VIEW convention
+  (transposed basis), so object3d transposes the 3x3 back before
+  extraction. Off-axis camera test (camera on +X looking at origin)
+  catches regressions; the straight-on case hides the bug entirely.
+- rotate_on_axis is deliberately pure-local (post-multiply only), NOT
+  three.js r177's parent-compensated premultiply; documented in
+  object3d.mli. Parented test pins child-local axis behavior.
+- Engine (`Three.Engine`, public phase-1 rendering core): owns device +
+  target + readback + staging + pipelines + per-mesh GPU cache keyed by
+  physical node identity. render = update_matrix_world -> camera view
+  refresh -> collect visible meshes (prune invisible subtrees) ->
+  stable front-to-back sort by distance^2 to camera translation ->
+  gather lights (first visible directional only - single uniform slot)
+  -> pack uniforms + queue writes -> submit_draw_frame -> map/copy/
+  unmap. snapshot() strips stride padding into width*height*4 bytes.
+  resize() rebuilds target/readback/staging in place.
+- wgpu reshape for slice C: submit_draw_frame takes `draws : list`
+  encoded as multiple indexed draws inside ONE render pass; empty list
+  = clear-only frame; submit_clear_frame deleted (folded in).
+  wgpu.mli now exports module Native_token (downstream needs to name
+  buffer types stored in engine mesh entries).
+- GPU test expected values (lavapipe-verified, +/-2 tolerance):
+  head-on lambert albedo .5, ambient white*.25, dir white*1 from
+  z=5: front face byte 159 (=0.625 linear), pitched 30deg gives two
+  classes 142 (front) / 96 (top), unlit hex colors encode directly.
 
 Three_cli_renderer facade must expose (reference names):
 create/init/draw_scene/set_active_camera/set_background_color/

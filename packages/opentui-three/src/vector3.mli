@@ -20,3 +20,5 @@ val normalize : t -> t
 val transform_direction : t -> floatarray -> t
 (** Applies only the rotation and scale of a column-major matrix4 to [t] and
     normalizes the result, matching three.js transformDirection. *)
+
+val distance_to_squared : t -> t -> float

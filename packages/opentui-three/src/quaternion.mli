@@ -12,6 +12,16 @@ val normalize : t -> t
 val multiply : t -> t -> t -> unit
 (** [multiply out a b] writes [a * b]; [out] may alias neither input. *)
 
+val premultiply : t -> a:t -> unit
+(** [premultiply t ~a] writes [a * t] into [t]; [a] may alias [t]. *)
+
+val postmultiply : t -> t -> unit
+(** [postmultiply t b] writes [t * b] into [t]; [b] may alias [t]. *)
+
+val invert : t -> t
+(** Conjugates and normalizes [t] in place; the exact inverse of a
+    unit-length quaternion. *)
+
 val set_from_euler : x:float -> y:float -> z:float -> t
 (** Three.js default Euler order XYZ. Additional named orders land when a
     consumer needs them. *)
