@@ -15,8 +15,11 @@
   mesh
   mesh_basic_material
   mesh_lambert_material
+  mesh_phong_material
   object3d
   perspective_camera
+  png
+  point_light
   quaternion
   scene
   shaders

@@ -34,7 +34,11 @@ module Mesh_lambert_material = Mesh_lambert_material
 
 module Object3d = Object3d
 
+module Mesh_phong_material = Mesh_phong_material
+
 module Perspective_camera = Perspective_camera
+
+module Point_light = Point_light
 
 module Quaternion = Quaternion
 

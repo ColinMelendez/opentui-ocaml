@@ -26,6 +26,8 @@ end
 
 type super_sample = [ `None | `Cpu | `Gpu ]
 
+type sample_algorithm = [ `Standard | `Pre_squeezed ]
+
 let default_super_sample : super_sample = `Gpu
 
 (* The reference reads CELL_ASPECT_RATIO once at construction; an
@@ -39,6 +41,7 @@ type t = {
   mutable output_width : int;
   mutable output_height : int;
   mutable super_sample : super_sample;
+  mutable sample_algorithm : Engine.sample_algorithm;
   mutable background : float * float * float * float;
   alpha : bool;
   cell_aspect_ratio : float option;
@@ -49,6 +52,7 @@ type t = {
   mutable stats_enabled : bool;
   mutable render_ms : float;
   mutable readback_ms : float;
+  mutable ss_draw_ms : float;
   mutable total_ms : float;
 }
 
@@ -100,6 +104,7 @@ let create ?focal_length ?(background_color = Core_color.black)
       { output_width = width;
         output_height = height;
         super_sample;
+        sample_algorithm = `Standard;
         background;
         alpha;
         cell_aspect_ratio;
@@ -110,6 +115,7 @@ let create ?focal_length ?(background_color = Core_color.black)
         stats_enabled = false;
         render_ms = 0.0;
         readback_ms = 0.0;
+        ss_draw_ms = 0.0;
         total_ms = 0.0 }
 
 let init t =
@@ -125,9 +131,14 @@ let init t =
         | Error gpu ->
             Engine.destroy engine;
             Error (Error.Gpu gpu)
-        | Ok () ->
-            t.engine <- Some engine;
-            Ok ())
+        | Ok () -> (
+            match Engine.set_super_sample_algorithm engine t.sample_algorithm with
+            | Error gpu ->
+                Engine.destroy engine;
+                Error (Error.Gpu gpu)
+            | Ok () ->
+                t.engine <- Some engine;
+                Ok ()))
 
 let now_ms () = Unix.gettimeofday () *. 1000.0
 
@@ -153,12 +164,19 @@ let render_stats t ~(buffer : Opentui_core.Owned_buffer.t) =
     | `Cpu -> "cpu"
     | `Gpu -> "gpu"
   in
+  let algorithm =
+    match t.sample_algorithm with
+    | `Standard -> "standard"
+    | `Pre_squeezed -> "pre_squeezed"
+  in
   let lines =
     [| "WebGPU Renderer Stats:";
        Printf.sprintf " Render: %.2fms" t.render_ms;
        Printf.sprintf " Readback: %.2fms" t.readback_ms;
        Printf.sprintf " Total Draw: %.2fms" t.total_ms;
-       Printf.sprintf " SuperSample: %s" mode |]
+       Printf.sprintf " SS Draw: %.2fms" t.ss_draw_ms;
+       Printf.sprintf " SuperSample: %s" mode;
+       Printf.sprintf " SuperSample Algorithm: %s" algorithm |]
   in
   Array.iteri
     (fun index line ->
@@ -201,7 +219,8 @@ let draw_scene t ~(root : Object3d.t) ~(buffer : Opentui_core.Owned_buffer.t)
                           let snapshot = Engine.snapshot engine in
                           Cell_conversion.write_quadrants ~buffer ~snapshot
                             ~output_width:t.output_width
-                            ~output_height:t.output_height ()
+                            ~output_height:t.output_height
+                            ~algorithm:t.sample_algorithm ()
                       | `Gpu ->
                           let records = Engine.last_cells engine in
                           let grid_width, _ = Engine.last_cell_grid engine in
@@ -212,7 +231,8 @@ let draw_scene t ~(root : Object3d.t) ~(buffer : Opentui_core.Owned_buffer.t)
                     in
                     let write_end = now_ms () in
                     t.render_ms <- render_end -. total_start;
-                    t.readback_ms <- write_end -. stage_end;
+                    t.readback_ms <- stage_end -. render_end;
+                    t.ss_draw_ms <- write_end -. stage_end;
                     Result.map_error (fun e -> Error.Buffer e) conversion))
           in
           t.total_ms <- now_ms () -. total_start;
@@ -284,9 +304,43 @@ let toggle_super_sampling t =
       | Error gpu -> Error (Error.Gpu gpu))
   | None -> Ok ()
 
+let get_super_sample_algorithm t = t.sample_algorithm
+
+let set_super_sample_algorithm t algorithm =
+  t.sample_algorithm <- algorithm;
+  match t.engine with
+  | Some engine -> (
+      match Engine.set_super_sample_algorithm engine algorithm with
+      | Ok () -> Ok ()
+      | Error gpu -> Error (Error.Gpu gpu))
+  | None -> Ok ()
+
 let toggle_debug_stats t = t.stats_enabled <- not t.stats_enabled
 
 let get_super_sample t = t.super_sample
+
+let save_to_file t ~(path : string) : (unit, Error.t) result =
+  (* Writes the current render-size frame (2x output when super sampled),
+     matching the reference canvas.saveToFile semantics. *)
+  if t.destroyed || Option.is_none t.engine then Ok ()
+  else
+    let engine = Option.get t.engine in
+    let data = Engine.snapshot engine in
+    let png =
+      Png.encode_rgba data ~width:(Engine.width engine)
+        ~height:(Engine.height engine)
+    in
+    match Out_channel.open_bin path with
+    | exception Sys_error message -> Error (Error.Invalid_argument message)
+    | channel ->
+        Fun.protect
+          (fun () ->
+            Out_channel.output_string channel png;
+            match Out_channel.close channel with
+            | () -> Ok ()
+            | exception Sys_error message ->
+                Error (Error.Invalid_argument message))
+          ~finally:(fun () -> try Out_channel.close channel with _ -> ())
 
 let destroy t =
   if not t.destroyed then begin

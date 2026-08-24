@@ -181,7 +181,8 @@ let write_gpu_records ~(buffer : Opentui_core.Owned_buffer.t) ~records
 let write_quadrants ~(buffer : Opentui_core.Owned_buffer.t) ~snapshot
     ~(output_width : int) ~(output_height : int)
     ?(render_width = output_width * 2)
-    ?(render_height = output_height * 2) () :
+    ?(render_height = output_height * 2)
+    ?(algorithm = `Standard) () :
     (unit, Opentui_core.Error.t) result =
   (* Render dimensions are 2x the cell grid for super-sampled frames; pass
      them explicitly when the snapshot comes from an oddly-sized surface.
@@ -212,6 +213,17 @@ let write_quadrants ~(buffer : Opentui_core.Owned_buffer.t) ~snapshot
           let tr = load (rx + 1) ry in
           let bl = load rx (ry + 1) in
           let br = load (rx + 1) (ry + 1) in
+          (* Pre-squeezed variant: horizontal blends per row first, then
+             the same quadrant math over the two blended samples duplicated
+             into each half - verbatim sampleAlgo 1 from the shader. *)
+          let tl, tr, bl, br =
+            match algorithm with
+            | `Standard -> (tl, tr, bl, br)
+            | `Pre_squeezed ->
+                let top = blend_colors tl tr in
+                let bottom = blend_colors bl br in
+                (top, top, bottom, bottom)
+          in
           let pixels = [| tl; tr; bl; br |] in
           (* Most-distant pair; strict comparison keeps the first pair on
              ties, matching the WGSL scan order. *)

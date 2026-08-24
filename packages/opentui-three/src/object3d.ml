@@ -10,6 +10,12 @@ type light_state = {
   mutable intensity : float;
 }
 
+type point_state = {
+  color : Color.t;
+  mutable intensity : float;
+  mutable distance : float;
+}
+
 type t = {
   mutable name : string option;
   mutable parent : t option;
@@ -36,6 +42,7 @@ and kind =
   | Mesh of Geometry.t * Material.t
   | Perspective_camera of camera_state
   | Directional_light of light_state * t
+  | Point_light of point_state
   | Ambient_light of light_state
 
 let make ?name ?(kind = Group) () =
@@ -243,7 +250,7 @@ let look_at ~(target : Vector3.t) t =
   (match t.kind with
   | Perspective_camera _ | Directional_light _ ->
       Matrix4.look_at ~up:t.up ~eye ~target scratch_m
-  | Group | Scene_root | Mesh _ | Ambient_light _ ->
+  | Group | Scene_root | Mesh _ | Ambient_light _ | Point_light _ ->
       Matrix4.look_at ~up:t.up ~eye:target ~target:eye scratch_m);
   transpose_rotation_block scratch_m;
   let q = Quaternion.from_euler_matrix scratch_m in

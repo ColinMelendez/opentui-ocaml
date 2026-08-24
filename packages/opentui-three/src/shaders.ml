@@ -1,10 +1,11 @@
-(* Phase-1 uniform block shared by both pipelines, 48 floats = 192 bytes,
-   matching the layout recorded in the three-renderer working notes:
-   mvp(16) model(16) color(4) light_dir(4) light_color(4) ambient(4).
-   Light data is precomputed on the CPU; the lambert fragment shader only
-   evaluates albedo * (ambient.rgb * ambient.a + light.rgb * NdotL). *)
+(* Phase-2 uniform block shared by all pipelines, 92 floats = 368 bytes.
+   Offsets (float slots): mvp@0 model@16 color@32 light_dir@36
+   light_color@40 ambient@44 specular_shininess@48 emissive_intensity@52
+   point_positions@56 (4x vec4: xyz + distance cutoff) point_colors@72
+   (4x vec4) camera_position@88. Lambert ignores the phong-only fields;
+   unlit ignores lighting entirely - one layout, three entry sets. *)
 
-let uniform_floats = 48
+let uniform_floats = 92
 
 let slot_mvp = 0
 
@@ -18,7 +19,19 @@ let slot_light_color = 40
 
 let slot_ambient = 44
 
-let header =
+let slot_specular_shininess = 48
+
+let slot_emissive_intensity = 52
+
+let slot_point_positions = 56
+
+let slot_point_colors = 72
+
+let slot_camera_position = 88
+
+let max_point_lights = 4
+
+let wgsl_uniforms =
   {wgsl| struct Uniforms {
            mvp : mat4x4<f32>,
            model : mat4x4<f32>,
@@ -26,17 +39,29 @@ let header =
            light_dir : vec4<f32>,
            light_color : vec4<f32>,
            ambient : vec4<f32>,
+           specular_shininess : vec4<f32>,
+           emissive_intensity : vec4<f32>,
+           point_pos : array<vec4<f32>, 4>,
+           point_color : array<vec4<f32>, 4>,
+           camera_position : vec4<f32>,
          };
          @group(0) @binding(0) var<uniform> u : Uniforms;
+  |wgsl}
+
+let header =
+  wgsl_uniforms ^ {wgsl|
          struct VSOut {
            @builtin(position) pos : vec4<f32>,
            @location(0) world_normal : vec3<f32>,
+           @location(1) world_pos : vec3<f32>,
          };
          @vertex fn vs_main(@location(0) pos : vec3<f32>,
                             @location(1) nrm : vec3<f32>) -> VSOut {
            var out : VSOut;
+           let world = u.model * vec4<f32>(pos, 1.0);
            out.pos = u.mvp * vec4<f32>(pos, 1.0);
            out.world_normal = (u.model * vec4<f32>(nrm, 0.0)).xyz;
+           out.world_pos = world.xyz;
            return out;
          }
   |wgsl}
@@ -48,22 +73,83 @@ let wgsl_unlit =
          }
   |wgsl}
 
+let shared_body =
+  {wgsl|
+         fn point_attenuation(distance: f32, cutoff: f32) -> f32 {
+           if (cutoff <= 0.0) {
+             return 1.0;
+           }
+           let window = max(1.0 - distance / cutoff, 0.0);
+           return window * window;
+         }
+  |wgsl}
+
 let wgsl_lambert =
-  header ^ {wgsl|
+  header ^ shared_body ^ {wgsl|
          @fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
            let n = normalize(in.world_normal);
-           let diffuse = max(dot(n, u.light_dir.xyz), 0.0);
+           var lit = u.ambient.rgb * u.ambient.a;
+           lit += u.light_color.rgb * max(dot(n, u.light_dir.xyz), 0.0);
+           for (var i = 0; i < 4; i = i + 1) {
+             let to_light = u.point_pos[i].xyz - in.world_pos;
+             let d = length(to_light);
+             if (d > 0.0001) {
+               let l = to_light / d;
+               let atten = point_attenuation(d, u.point_pos[i].w);
+               lit += u.point_color[i].rgb * (atten * max(dot(n, l), 0.0));
+             }
+           }
+           return vec4<f32>(u.color.rgb * lit, u.color.a);
+         }
+  |wgsl}
+
+let wgsl_phong =
+  header ^ shared_body ^ {wgsl|
+         @fragment fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
+           let n = normalize(in.world_normal);
+           let view_dir = normalize(u.camera_position.xyz - in.world_pos);
+           // Diffuse irradiance and specular radiance accumulate apart:
+           // albedo scales only the diffuse part, matching three.js.
+           var diffuse = u.ambient.rgb * u.ambient.a;
+           var spec_acc = vec3<f32>(0.0, 0.0, 0.0);
+
+           let dir_ndotl = max(dot(n, u.light_dir.xyz), 0.0);
+           diffuse += u.light_color.rgb * dir_ndotl;
+           if (u.specular_shininess.a > 0.0 && dir_ndotl > 0.0) {
+             let half_dir = normalize(u.light_dir.xyz + view_dir);
+             let spec = pow(max(dot(n, half_dir), 0.0),
+                            u.specular_shininess.a);
+             spec_acc += u.light_color.rgb * spec;
+           }
+
+           for (var i = 0; i < 4; i = i + 1) {
+             let to_light = u.point_pos[i].xyz - in.world_pos;
+             let d = length(to_light);
+             if (d > 0.0001) {
+               let l = to_light / d;
+               let atten = point_attenuation(d, u.point_pos[i].w)
+                 * max(dot(n, l), 0.0);
+               if (atten > 0.0) {
+                 diffuse += u.point_color[i].rgb * atten;
+                 if (u.specular_shininess.a > 0.0) {
+                   let half_dir = normalize(l + view_dir);
+                   let spec = pow(max(dot(n, half_dir), 0.0),
+                                  u.specular_shininess.a);
+                   spec_acc +=
+                     u.point_color[i].rgb * (atten * spec);
+                 }
+               }
+             }
+           }
+
            return vec4<f32>(
-             u.color.rgb * (u.ambient.rgb * u.ambient.a
-                            + (u.light_color.rgb * diffuse)),
+             (u.emissive_intensity.rgb * u.emissive_intensity.a)
+             + (u.color.rgb * diffuse)
+             + (u.specular_shininess.rgb * spec_acc),
              u.color.a);
          }
   |wgsl}
 
-(* Verbatim port of vendor/opentui/packages/three/src/shaders/
-   supersampling.wgsl with WORKGROUP_SIZE substituted. This is the twin of
-   Cell_conversion's CPU oracle; the acceptance test requires bit-equal
-   cells between them. *)
 let wgsl_supersampling =
   {wgsl|struct CellResult {
       bg: vec4<f32>,      // Background RGBA (16 bytes)

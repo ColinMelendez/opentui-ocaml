@@ -54,13 +54,15 @@ val write_quadrants :
   output_height:int ->
   ?render_width:int ->
   ?render_height:int ->
+  ?algorithm:[ `Standard | `Pre_squeezed ] ->
     unit -> (unit, Opentui_core.Error.t) result
 (** Super-sampled mode: [snapshot] holds the 2x-rendered frame
     ([2*output_width] x [2*output_height] pixels) and each terminal cell is
     classified from its 2x2 pixel block exactly as the reference WGSL
     compute pass does - most-distant pair ordered by luminance, quadrant
     bits TL=8 TR=4 BL=2 BR=1, all-dark/all-light branches averaging with
-    alpha blending. *)
+    alpha blending. [`Pre_squeezed] blends each pixel row horizontally
+    before classification, matching sampleAlgo 1. *)
 
 val record_size : int
 (** Byte size of one GPU CellResult record: bg vec4, fg vec4, char u32,

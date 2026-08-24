@@ -19,7 +19,41 @@ phase1-progress.md and the shipped code.
 
 ## Where things stand
 
-COMPUTE PASS MILESTONE LANDED (working tree at time of writing):
+MILESTONE 2 LANDED (materials/lighting/algorithm/stats/save; working
+tree at time of writing):
+
+- Uniform block v2: 92 floats / 368 B. Slots: mvp@0 model@16 color@32
+  light_dir@36 light_color@40 ambient@44 specular_shininess@48
+  emissive_intensity@52 point_positions@56 point_colors@72
+  camera_position@88. One layout shared by unlit/lambert/phong.
+- Mesh_phong_material: Blinn-Phong half-vector specular with SEPARATE
+  diffuse/specular accumulators (albedo scales ONLY diffuse - an early
+  draft multiplied spec by albedo and killed highlights on black).
+  Emissive adds unconditionally (survives zero lights).
+- PointLight: up to 4 visible lights, scene order, legacy windowed
+  squared falloff over `distance` (cutoff<=0 disables attenuation -
+  distance=0 does NOT mean "falloff to zero").
+- Pre-squeezed sampleAlgo ported CPU-side (Cell_conversion ~algorithm)
+  and GPU-side (Engine.set_super_sample_algorithm rewrites params);
+  facade accessors + stats line; oracle test covers it.
+- Stats overlay: Render/Readback/Total Draw/SS Draw/SuperSample/
+  Algorithm lines at the reference offset.
+- png.ml: stored-deflate PNG writer (CRC32 table, Adler32 BE, filter-0
+  rows); Facade.save_to_file writes render-dims frame. Verified by
+  decoding through Core.Image (dims + clear-color corner bytes).
+- Cursor-agent review findings all fixed: phong teardown leak, orphan ss
+  shader in create, dead shadowed lambert binding, facade init/Cpu-path
+  algorithm sync, point-specular attenuation, catch-all narrowing,
+  unused setters removal.
+
+REMAINING for phase 2: TEXTURED materials with wrap/filter controls
+(needs sampler stubs, UV vertex attributes -> BoxGeometry stride change,
+WGSL sampler bindings, TextureUtils procedural generators), plus the
+phong-x-point-light specular-under-attenuation test gap noted below.
+
+## Where things stood before milestone 2
+
+COMPUTE PASS MILESTONE LANDED:
 
 - opentui-wgpu gained compute infrastructure: create_compute_pipeline,
   create_supersampling_bind_group_layout (texture + rw-storage + uniform),

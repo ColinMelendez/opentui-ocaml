@@ -145,6 +145,61 @@ let () =
             ~channel:(fun ~x ~y c -> ((x * 23) + (y * 41) + c) mod 256)
             ~width:7 ~height:4);
 
+      test "pre-squeezed variant matches the CPU blend math" (fun () ->
+          let width = 16 and height = 8 in
+          let padded, stride = make_fixture ~width ~height
+              (fun ~x ~y c -> ((x * 37) + (y * 53) + c) mod 256)
+          in
+          let device = take_device "pre-squeezed" (Wgpu.create_device ()) in
+          let engine = expect_ok "engine" (Three.Engine.create ~width ~height ()) in
+          expect_ok "mode" (Three.Engine.set_super_sample engine `Gpu);
+          expect_ok "algorithm"
+            (Three.Engine.set_super_sample_algorithm engine `Pre_squeezed);
+          expect_ok "upload"
+            (Three.Engine.upload_frame engine ~data:padded ~bytes_per_row:stride);
+          expect_ok "stage" (Three.Engine.stage engine);
+          let records = Three.Engine.last_cells engine in
+          let grid_width, _ = Three.Engine.last_cell_grid engine in
+
+          let cpu_buffer =
+            core_ok "cpu buffer"
+              (Owned_buffer.create ~width:(width / 2) ~height:(height / 2) ())
+          in
+          core_ok "cpu write"
+            (Cc.write_quadrants ~buffer:cpu_buffer
+               ~snapshot:(stripped ~width ~height padded ~stride)
+               ~output_width:(width / 2) ~output_height:(height / 2)
+               ~render_width:width ~render_height:height
+               ~algorithm:`Pre_squeezed ());
+          let gpu_buffer =
+            core_ok "gpu buffer"
+              (Owned_buffer.create ~width:(width / 2) ~height:(height / 2) ())
+          in
+          core_ok "gpu write"
+            (Cc.write_gpu_records ~buffer:gpu_buffer ~records
+               ~output_width:(width / 2) ~output_height:(height / 2)
+               ~record_pitch:grid_width);
+
+          let cpu_snapshot = core_ok "cpu snap" (Owned_buffer.snapshot cpu_buffer) in
+          let gpu_snapshot = core_ok "gpu snap" (Owned_buffer.snapshot gpu_buffer) in
+          if not (snapshots_equal (cpu_snapshot, gpu_snapshot)) then begin
+            let ca, _, _, _ = cpu_snapshot and cb, _, _, _ = gpu_snapshot in
+            let dump prefix arr =
+              String.concat " "
+                (Array.to_list
+                   (Array.mapi
+                      (fun i w -> Printf.sprintf "%s[%d]=%08lx" prefix i w)
+                      arr))
+            in
+            fail
+              ("pre-squeezed GPU cells diverged\nCPU: " ^ dump "c" ca
+             ^ "\nGPU: " ^ dump "c" cb)
+          end;
+          Owned_buffer.close cpu_buffer;
+          Owned_buffer.close gpu_buffer;
+          Three.Engine.destroy engine;
+          Wgpu.destroy_device device);
+
       test "repeated runs are deterministic" (fun () ->
           let channel ~x ~y c = ((x * 11) + (y * 29) + c) mod 256 in
           let padded, stride = make_fixture ~width:16 ~height:8 channel in

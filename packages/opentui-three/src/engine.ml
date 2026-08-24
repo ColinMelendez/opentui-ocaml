@@ -23,7 +23,10 @@ type mesh_entry = {
 
 type super_sample = [ `None | `Cpu | `Gpu ]
 
+type sample_algorithm = [ `Standard | `Pre_squeezed ]
+
 type supersampler = {
+  ss_shader : Wgpu.shader_module;
   ss_bgl : Wgpu.bind_group_layout;
   ss_playout : Wgpu.pipeline_layout;
   ss_pipeline : Wgpu.compute_pipeline;
@@ -33,6 +36,7 @@ type supersampler = {
   mutable group : Wgpu.bind_group;
   mutable cells_x : int;
   mutable cells_y : int;
+  mutable algorithm : sample_algorithm;
   mutable staging :
     (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t;
 }
@@ -49,14 +53,16 @@ type t = {
   playout : Wgpu.pipeline_layout;
   shader_unlit : Wgpu.shader_module;
   shader_lambert : Wgpu.shader_module;
+  shader_phong : Wgpu.shader_module;
   pipeline_unlit : Wgpu.render_pipeline;
   pipeline_lambert : Wgpu.render_pipeline;
+  pipeline_phong : Wgpu.render_pipeline;
   mutable meshes : mesh_entry list;
   uniforms : floatarray;
   view_model : Matrix4.t;
   mvp : Matrix4.t;
-  shader_supersampling : Wgpu.shader_module;
   mutable super_sample : super_sample;
+  mutable sample_algorithm : sample_algorithm;
   mutable supersampler : supersampler option;
 }
 let pack_u32_le values =
@@ -191,6 +197,7 @@ let destroy_supersampler t =
       Wgpu.destroy_pipeline_layout ss.ss_playout;
       Wgpu.destroy_bind_group_layout ss.ss_bgl;
       Wgpu.destroy_compute_pipeline ss.ss_pipeline;
+      Wgpu.destroy_shader_module ss.ss_shader;
       t.supersampler <- None
 
 let supersampler_bytes cells_x cells_y =
@@ -203,13 +210,33 @@ let ensure_supersampler t =
       let cells_x = (t.width + 1) / 2 and cells_y = (t.height + 1) / 2 in
       match t.supersampler with
       | Some ss
-        when Int.equal ss.cells_x cells_x && Int.equal ss.cells_y cells_y ->
+        when Int.equal ss.cells_x cells_x
+             && Int.equal ss.cells_y cells_y
+             &&
+             (match (ss.algorithm, t.sample_algorithm) with
+             | `Standard, `Standard
+             | `Pre_squeezed, `Pre_squeezed ->
+                 true
+             | _ -> false) ->
           Ok ()
       | _ -> (
         destroy_supersampler t;
         let bytes = supersampler_bytes cells_x cells_y in
-        let* bgl = Wgpu.create_supersampling_bind_group_layout t.device in
-        let close_bgl () = Wgpu.destroy_bind_group_layout bgl in
+        let* ss_shader =
+          Wgpu.create_shader_module t.device ~wgsl:Shaders.wgsl_supersampling
+        in
+        let close_shader () = Wgpu.destroy_shader_module ss_shader in
+        let* bgl =
+          match Wgpu.create_supersampling_bind_group_layout t.device with
+          | Ok bgl -> Ok bgl
+          | Error _ as failure ->
+              close_shader ();
+              failure
+        in
+        let close_bgl () =
+          Wgpu.destroy_bind_group_layout bgl;
+          close_shader ()
+        in
         let* playout =
           match Wgpu.create_pipeline_layout t.device bgl with
           | Ok playout -> Ok playout
@@ -224,7 +251,7 @@ let ensure_supersampler t =
         let* pipeline =
           match
             Wgpu.create_compute_pipeline t.device ~layout:playout
-              ~shader:t.shader_supersampling ~entry_point:"main"
+              ~shader:ss_shader ~entry_point:"main"
           with
           | Ok pipeline -> Ok pipeline
           | Error _ as failure ->
@@ -237,7 +264,10 @@ let ensure_supersampler t =
         in
         (* Four u32s - width, height, algorithm, struct padding - matching
            the shader's 16-byte SuperSamplingParams exactly. *)
-        let params_bytes = pack_u32_le [ t.width; t.height; 0; 0 ] in
+        let algo =
+          match t.sample_algorithm with `Standard -> 0 | `Pre_squeezed -> 1
+        in
+        let params_bytes = pack_u32_le [ t.width; t.height; algo; 0 ] in
         let* params =
           match
             Wgpu.create_buffer t.device
@@ -302,7 +332,8 @@ let ensure_supersampler t =
         in
         t.supersampler <-
           Some
-            { ss_bgl = bgl;
+            { ss_shader;
+              ss_bgl = bgl;
               ss_playout = playout;
               ss_pipeline = pipeline;
               params;
@@ -311,6 +342,7 @@ let ensure_supersampler t =
               group;
               cells_x;
               cells_y;
+              algorithm = t.sample_algorithm;
               staging =
                 Bigarray.Array1.create Bigarray.char Bigarray.c_layout bytes };
         Ok ()))
@@ -322,6 +354,12 @@ let set_super_sample t mode =
   | `None | `Cpu ->
       destroy_supersampler t;
       Ok ()
+
+let set_super_sample_algorithm t algorithm =
+  t.sample_algorithm <- algorithm;
+  match t.super_sample with
+  | `Gpu -> ensure_supersampler t
+  | `None | `Cpu -> Ok ()
 
 let last_cell_grid t =
   match t.supersampler with
@@ -364,6 +402,10 @@ type lights = {
   ambient_a : float;
   light_dir : Vector3.t;
   light_color : Color.t;
+  points :
+    (float * float * float * float * float * float * float) list;
+        (* x, y, z, cutoff, r, g, b - already scaled by intensity, in scene
+           order, at most {!Shaders.max_point_lights} entries *)
 }
 
 let no_lights =
@@ -372,13 +414,15 @@ let no_lights =
     ambient_b = 0.0;
     ambient_a = 0.0;
     light_dir = Vector3.create ~y:1.0 ();
-    light_color = Color.create ~r:0.0 ~g:0.0 ~b:0.0 () }
+    light_color = Color.create ~r:0.0 ~g:0.0 ~b:0.0 ();
+    points = [] }
 
 let world_translation m =
   (Float.Array.get m 12, Float.Array.get m 13, Float.Array.get m 14)
 
 let scan_lights root =
   let ambient = ref no_lights in
+  let points = ref [] in
   let directional : Object3d.t option ref = ref None in
   let rec walk node =
     if Object3d.visible node then begin
@@ -396,13 +440,26 @@ let scan_lights root =
               ambient_a = a.ambient_a +. state.intensity }
       | Object3d.Directional_light _ when Option.is_none !directional ->
           directional := Some node
+      | Object3d.Point_light state
+        when List.length !points < Shaders.max_point_lights ->
+          let px, py, pz = world_translation (Object3d.matrix_world node) in
+          points :=
+            ( px,
+              py,
+              pz,
+              state.distance,
+              state.color.r *. state.intensity,
+              state.color.g *. state.intensity,
+              state.color.b *. state.intensity )
+            :: !points
       | _ -> ());
       List.iter walk (Object3d.children node)
     end
   in
   walk root;
+  let result = { !ambient with points = List.rev !points } in
   match !directional with
-  | None -> !ambient
+  | None -> result
   | Some node -> (
       match Object3d.kind node with
       | Object3d.Directional_light (state, target) ->
@@ -412,7 +469,7 @@ let scan_lights root =
             Vector3.normalize
               (Vector3.create ~x:(lx -. tx) ~y:(ly -. ty) ~z:(lz -. tz) ())
           in
-          { !ambient with
+          { result with
             light_dir = dir;
             light_color =
               Color.create
@@ -420,23 +477,26 @@ let scan_lights root =
                 ~g:(state.color.g *. state.intensity)
                 ~b:(state.color.b *. state.intensity)
                 () }
-      | _ -> !ambient)
+      | _ -> result)
 
 let distance_squared_to ax ay az node =
   let mx, my, mz = world_translation (Object3d.matrix_world node) in
   let dx = mx -. ax and dy = my -. ay and dz = mz -. az in
   (dx *. dx) +. (dy *. dy) +. (dz *. dz)
 
-let pack_uniforms t ~projection ~camera_inverse node material lights =
+let pack_uniforms t ~(camera : Object3d.t) node material lights =
+  let projection = Object3d.projection_matrix camera in
+  let camera_inverse = Object3d.matrix_world_inverse camera in
   let model_world = Object3d.matrix_world node in
   Matrix4.multiply t.view_model camera_inverse model_world;
   Matrix4.multiply t.mvp projection t.view_model;
   let u = t.uniforms in
   Float.Array.blit t.mvp 0 u Shaders.slot_mvp 16;
   Float.Array.blit model_world 0 u Shaders.slot_model 16;
-  Float.Array.set u Shaders.slot_color material.Material.color.r;
-  Float.Array.set u (Shaders.slot_color + 1) material.Material.color.g;
-  Float.Array.set u (Shaders.slot_color + 2) material.Material.color.b;
+  let albedo = Material.color material in
+  Float.Array.set u Shaders.slot_color albedo.r;
+  Float.Array.set u (Shaders.slot_color + 1) albedo.g;
+  Float.Array.set u (Shaders.slot_color + 2) albedo.b;
   Float.Array.set u (Shaders.slot_color + 3) 1.0;
   Float.Array.set u Shaders.slot_light_dir lights.light_dir.x;
   Float.Array.set u (Shaders.slot_light_dir + 1) lights.light_dir.y;
@@ -449,127 +509,157 @@ let pack_uniforms t ~projection ~camera_inverse node material lights =
   Float.Array.set u Shaders.slot_ambient lights.ambient_r;
   Float.Array.set u (Shaders.slot_ambient + 1) lights.ambient_g;
   Float.Array.set u (Shaders.slot_ambient + 2) lights.ambient_b;
-  Float.Array.set u (Shaders.slot_ambient + 3) lights.ambient_a
+  Float.Array.set u (Shaders.slot_ambient + 3) lights.ambient_a;
+  let spec = Material.specular material in
+  Float.Array.set u Shaders.slot_specular_shininess spec.r;
+  Float.Array.set u (Shaders.slot_specular_shininess + 1) spec.g;
+  Float.Array.set u (Shaders.slot_specular_shininess + 2) spec.b;
+  Float.Array.set u (Shaders.slot_specular_shininess + 3)
+    (Material.shininess material);
+  let emissive = Material.emissive material in
+  Float.Array.set u Shaders.slot_emissive_intensity emissive.r;
+  Float.Array.set u (Shaders.slot_emissive_intensity + 1) emissive.g;
+  Float.Array.set u (Shaders.slot_emissive_intensity + 2) emissive.b;
+  Float.Array.set u (Shaders.slot_emissive_intensity + 3)
+    (Material.emissive_intensity material);
+  for slot = 0 to Shaders.max_point_lights - 1 do
+    let base = Shaders.slot_point_positions + (slot * 4) in
+    if slot < List.length lights.points then begin
+      let px, py, pz, cutoff, r, g, b =
+        List.nth lights.points slot
+      in
+      Float.Array.set u base px;
+      Float.Array.set u (base + 1) py;
+      Float.Array.set u (base + 2) pz;
+      Float.Array.set u (base + 3) cutoff;
+      let color_base = Shaders.slot_point_colors + (slot * 4) in
+      Float.Array.set u color_base r;
+      Float.Array.set u (color_base + 1) g;
+      Float.Array.set u (color_base + 2) b;
+      Float.Array.set u (color_base + 3) 0.0
+    end
+    else begin
+      Float.Array.fill u base 4 0.0;
+      Float.Array.fill u (Shaders.slot_point_colors + (slot * 4)) 4 0.0
+    end
+  done;
+  let cx, cy, cz = world_translation (Object3d.matrix_world camera) in
+  Float.Array.set u Shaders.slot_camera_position cx;
+  Float.Array.set u (Shaders.slot_camera_position + 1) cy;
+  Float.Array.set u (Shaders.slot_camera_position + 2) cz;
+  Float.Array.set u (Shaders.slot_camera_position + 3) 1.0
 
 let create ~width ~height () =
   Wgpu.enable_diagnostics ();
+  let releases = ref [] in
+  let own release = releases := release :: !releases in
+  let fail error =
+    List.iter (fun release -> release ()) !releases;
+    Error error
+  in
   match Wgpu.create_device () with
   | Error _ as failure -> failure
   | Ok device -> (
+      own (fun () -> Wgpu.destroy_device device);
       match Wgpu.create_render_target device ~width ~height with
-      | Error _ as failure ->
-          Wgpu.destroy_device device;
-          failure
+      | Error error -> fail error
       | Ok target -> (
-          let stride = Wgpu.readback_stride ~width in
-          match Wgpu.create_readback device ~stride ~rows:height with
-          | Error _ as failure ->
-              Wgpu.destroy_render_target target;
-              Wgpu.destroy_device device;
-              failure
+          own (fun () -> Wgpu.destroy_render_target target);
+          match
+            Wgpu.create_readback device
+              ~stride:(Wgpu.readback_stride ~width)
+              ~rows:height
+          with
+          | Error error -> fail error
           | Ok readback -> (
-              let close_through_readback () =
-                Wgpu.destroy_readback readback;
-                Wgpu.destroy_render_target target;
-                Wgpu.destroy_device device
+              own (fun () -> Wgpu.destroy_readback readback);
+              let staging =
+                Bigarray.Array1.create Bigarray.char Bigarray.c_layout
+                  (Wgpu.readback_size readback)
               in
-              match
-                Wgpu.create_shader_module device
-                  ~wgsl:Shaders.wgsl_supersampling
-              with
-              | Error _ as failure -> close_through_readback (); failure
-              | Ok shader_supersampling -> (
-                  let close_through_ss_shader () =
-                    Wgpu.destroy_shader_module shader_supersampling;
-                    close_through_readback ()
-                  in
-                  match Wgpu.create_shader_module device ~wgsl:Shaders.wgsl_unlit with
-                  | Error _ as failure ->
-                      close_through_ss_shader ();
-                      failure
-                  | Ok shader_unlit -> (
-                      let close_through_unlit () =
-                        Wgpu.destroy_shader_module shader_unlit;
-                        close_through_ss_shader ()
-                      in
-                  match
-                    Wgpu.create_shader_module device ~wgsl:Shaders.wgsl_lambert
-                  with
-                  | Error _ as failure -> close_through_unlit (); failure
-                  | Ok shader_lambert -> (
-                      let close_through_lamberts () =
-                        Wgpu.destroy_shader_module shader_lambert;
-                        close_through_unlit ()
-                      in
-                      match
-                        Wgpu.create_uniform_bind_group_layout device
-                      with
-                      | Error _ as failure ->
-                          close_through_lamberts (); failure
-                      | Ok bgl -> (
-                          let close_through_bgl () =
-                            Wgpu.destroy_bind_group_layout bgl;
-                            close_through_lamberts ()
-                          in
-                          match Wgpu.create_pipeline_layout device bgl with
-                          | Error _ as failure ->
-                              close_through_bgl (); failure
-                          | Ok playout -> (
-                              let close_through_playout () =
-                                Wgpu.destroy_pipeline_layout playout;
-                                close_through_bgl ()
-                              in
+              let build_shader wgsl what =
+                match Wgpu.create_shader_module device ~wgsl with
+                | Ok module_ ->
+                    own (fun () -> Wgpu.destroy_shader_module module_);
+                    Ok module_
+                | Error error ->
+                    ignore what;
+                    fail error
+              in
+              match build_shader Shaders.wgsl_unlit "unlit" with
+              | Error error -> fail error
+              | Ok shader_unlit -> (
+                  match build_shader Shaders.wgsl_lambert "lambert" with
+                      | Error error -> fail error
+                      | Ok shader_lambert -> (
+                          match build_shader Shaders.wgsl_phong "phong" with
+                          | Error error -> fail error
+                          | Ok shader_phong -> (
                               match
-                                Wgpu.create_render_pipeline device
-                                  ~layout:playout ~shader:shader_unlit
-                                  ~vs_entry:"vs_main" ~fs_entry:"fs_main"
-                                  ~target_format:
-                                    Wgpu.texture_format_rgba8_unorm
+                                Wgpu.create_uniform_bind_group_layout device
                               with
-                              | Error _ as failure ->
-                                  close_through_playout (); failure
-                              | Ok pipeline_unlit -> (
-                                  let close_through_unlit_pipeline () =
-                                    Wgpu.destroy_render_pipeline
-                                      pipeline_unlit;
-                                    close_through_playout ()
-                                  in
-                                  match
-                                    Wgpu.create_render_pipeline device
-                                      ~layout:playout ~shader:shader_lambert
-                                      ~vs_entry:"vs_main" ~fs_entry:"fs_main"
-                                      ~target_format:
-                                        Wgpu.texture_format_rgba8_unorm
-                                  with
-                                  | Error _ as failure ->
-                                      close_through_unlit_pipeline ();
-                                      failure
-                                  | Ok pipeline_lambert ->
-                                      Ok
-                                        { device;
-                                          target;
-                                          readback;
-                                          staging =
-                                            Bigarray.Array1.create
-                                              Bigarray.char Bigarray.c_layout
-                                              (Wgpu.readback_size readback);
-                                          width;
-                                          height;
-                                          bgl;
-                                          playout;
-                                          shader_unlit;
-                                          shader_lambert;
-                                          pipeline_unlit;
-                                          pipeline_lambert;
-                                          meshes = [];
-                                          uniforms =
-                                            Float.Array.make uniform_floats
-                                              0.0;
-                                          view_model = Matrix4.create ();
-                                          mvp = Matrix4.create ();
-                                          shader_supersampling;
-                                          super_sample = `None;
-                                          supersampler = None })))))))))
+                              | Error error -> fail error
+                              | Ok bgl -> (
+                                  own (fun () ->
+                                    Wgpu.destroy_bind_group_layout bgl);
+                                  match Wgpu.create_pipeline_layout device bgl with
+                                  | Error error -> fail error
+                                  | Ok playout -> (
+                                      own (fun () ->
+                                        Wgpu.destroy_pipeline_layout playout);
+                                      let make_pipeline shader =
+                                        Wgpu.create_render_pipeline device
+                                          ~layout:playout ~shader
+                                          ~vs_entry:"vs_main"
+                                          ~fs_entry:"fs_main"
+                                          ~target_format:
+                                            Wgpu.texture_format_rgba8_unorm
+                                      in
+                                      match make_pipeline shader_unlit with
+                                      | Error error -> fail error
+                                      | Ok pipeline_unlit -> (
+                                          own (fun () ->
+                                            Wgpu.destroy_render_pipeline
+                                              pipeline_unlit);
+                                          match make_pipeline shader_lambert with
+                                          | Error error -> fail error
+                                          | Ok pipeline_lambert -> (
+                                              own (fun () ->
+                                                Wgpu.destroy_render_pipeline
+                                                  pipeline_lambert);
+                                              match make_pipeline shader_phong with
+                                              | Error error -> fail error
+                                              | Ok pipeline_phong -> (
+                                                  own (fun () ->
+                                                    Wgpu.destroy_render_pipeline
+                                                      pipeline_phong);
+                                                  Ok
+                                                    { device;
+                                                      target;
+                                                      readback;
+                                                      staging;
+                                                      width;
+                                                      height;
+                                                      bgl;
+                                                      playout;
+                                                      shader_unlit;
+                                                      shader_lambert;
+                                                      shader_phong;
+                                                      pipeline_unlit;
+                                                      pipeline_lambert;
+                                                      pipeline_phong;
+                                                      meshes = [];
+                                                      uniforms =
+                                                        Float.Array.make
+                                                          uniform_floats 0.0;
+                                                      view_model =
+                                                        Matrix4.create ();
+                                                      mvp = Matrix4.create ();
+                                                      supersampler = None;
+                                                      super_sample = `None;
+                                                      sample_algorithm =
+                                                        `Standard;
+                                                  })))))))))))
 
 let submit t ~(root : Object3d.t) ~(camera : Object3d.t)
     ~(clear_color : float * float * float * float) () =
@@ -593,8 +683,6 @@ let submit t ~(root : Object3d.t) ~(camera : Object3d.t)
       meshes
   in
   let lights = scan_lights root in
-  let projection = Object3d.projection_matrix camera in
-  let camera_inverse = Object3d.matrix_world_inverse camera in
   let rec gather acc = function
     | [] -> Ok (List.rev acc)
     | node :: rest -> (
@@ -606,7 +694,7 @@ let submit t ~(root : Object3d.t) ~(camera : Object3d.t)
               | Object3d.Mesh (_, material) -> material
               | _ -> raise (Invalid_argument "engine: non-mesh in draw list")
             in
-            pack_uniforms t ~projection ~camera_inverse node material lights;
+            pack_uniforms t ~camera node material lights;
             match
               Wgpu.write_buffer_string t.device entry.uniform_buffer ~offset:0
                 (Wgpu.pack_f32_le t.uniforms)
@@ -617,7 +705,8 @@ let submit t ~(root : Object3d.t) ~(camera : Object3d.t)
                   { Wgpu.pipeline =
                       (match Material.kind material with
                       | Material.Basic -> t.pipeline_unlit
-                      | Material.Lambert -> t.pipeline_lambert);
+                      | Material.Lambert -> t.pipeline_lambert
+                      | Material.Phong -> t.pipeline_phong);
                     group = entry.group;
                     vertex_buffer = entry.vertex_buffer;
                     vertex_size = entry.vertex_size;
@@ -750,9 +839,10 @@ let destroy t =
   t.meshes <- [];
   Wgpu.destroy_render_pipeline t.pipeline_unlit;
   Wgpu.destroy_render_pipeline t.pipeline_lambert;
-  Wgpu.destroy_shader_module t.shader_supersampling;
+  Wgpu.destroy_render_pipeline t.pipeline_phong;
   Wgpu.destroy_shader_module t.shader_unlit;
   Wgpu.destroy_shader_module t.shader_lambert;
+  Wgpu.destroy_shader_module t.shader_phong;
   Wgpu.destroy_pipeline_layout t.playout;
   Wgpu.destroy_bind_group_layout t.bgl;
   Wgpu.destroy_readback t.readback;

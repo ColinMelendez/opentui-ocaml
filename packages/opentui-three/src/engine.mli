@@ -46,6 +46,13 @@ val snapshot : t -> string
 
 type super_sample = [ `None | `Cpu | `Gpu ]
 
+type sample_algorithm = [ `Standard | `Pre_squeezed ]
+
+val set_super_sample_algorithm :
+  t -> sample_algorithm -> (unit, Opentui_wgpu.Wgpu.Error.t) result
+(** Selects the reference's supersampling variant for the [`Gpu] path;
+    rebuilding the compute state is automatic. *)
+
 val set_super_sample : t -> super_sample -> (unit, Opentui_wgpu.Wgpu.Error.t) result
 (** Selects the staging path. [`Gpu] builds the supersampling compute state
     against the current target; rebuilding after resize is automatic. *)

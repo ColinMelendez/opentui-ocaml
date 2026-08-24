@@ -85,7 +85,21 @@ val render_stats : t -> buffer:Opentui_core.Owned_buffer.t -> unit
     MapAsync/SS-Draw splits and algorithm line arrive with the phase-2
     compute pass. *)
 
+val save_to_file : t -> path:string -> (unit, Error.t) result
+(** Encodes the most recently staged frame as PNG (8-bit RGBA, render
+    dimensions) and writes it to [path]. Drawing before init or after
+    destroy no-ops like {!draw_scene}. *)
+
 val get_super_sample : t -> super_sample
+
+type sample_algorithm = [ `Standard | `Pre_squeezed ]
+
+val get_super_sample_algorithm : t -> sample_algorithm
+
+val set_super_sample_algorithm :
+  t -> sample_algorithm -> (unit, Error.t) result
+(** Selects the reference's supersampling variant used by the [`Gpu] path
+    and reported in the stats overlay. *)
 
 val destroy : t -> unit
 (** Releases all GPU state; idempotent. *)

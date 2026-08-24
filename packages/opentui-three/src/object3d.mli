@@ -13,6 +13,14 @@ type light_state = {
   mutable intensity : float;
 }
 
+type point_state = {
+  color : Color.t;
+  mutable intensity : float;
+  mutable distance : float;
+}
+(** Positional light parameters; [distance] is the falloff cutoff, zero or
+    less meaning unlimited range. *)
+
 type t = {
   mutable name : string option;
   mutable parent : t option;
@@ -56,6 +64,7 @@ and kind =
   | Directional_light of light_state * t
       (* The payload's second component is the light target node; its world
          position completes the light direction. *)
+  | Point_light of point_state
   | Ambient_light of light_state
 
 val make : ?name:string -> ?kind:kind -> unit -> t

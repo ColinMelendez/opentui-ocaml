@@ -32,3 +32,8 @@
  (name test_supersampling)
  (modules test_supersampling)
  (libraries opentui-three opentui-core opentui-wgpu windtrap))
+
+(test
+ (name test_phong)
+ (modules test_phong)
+ (libraries opentui-three opentui-wgpu windtrap))

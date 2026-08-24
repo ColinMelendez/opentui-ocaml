@@ -173,6 +173,92 @@ let () =
             fail "resize did not refresh the camera aspect to 32/(8*2)";
           Facade.destroy facade);
 
+      test "save_to_file emits a decodable PNG of the staged frame"
+        (fun () ->
+          let blue =
+            match Core.Color.rgba ~red:0 ~green:0 ~blue:255 ~alpha:255 with
+            | Ok color -> color
+            | Error e -> fail ("color: " ^ Core.Native.Error.message e)
+          in
+          let facade =
+            take_facade "the save check"
+              (Facade.create ~super_sample:`Cpu ~background_color:blue
+                 ~focal_length:0.75 ~width:8 ~height:4 ())
+          in
+          expect_ok "init" (Facade.init facade);
+          let root = make_scene () in
+          let buffer =
+            core_ok "buffer" (Core.Owned_buffer.create ~width:8 ~height:4 ())
+          in
+          expect_ok "draw"
+            (Facade.draw_scene facade ~root ~buffer ~delta_time:0.016);
+          let path =
+            Filename.concat (Filename.get_temp_dir_name ())
+              ("otui-three-save-" ^ string_of_int (Unix.getpid ()) ^ ".png")
+          in
+          expect_ok "save" (Facade.save_to_file facade ~path);
+          let encoded =
+            let channel = open_in_bin path in
+            Fun.protect
+              (fun () ->
+                let length = in_channel_length channel in
+                really_input_string channel length)
+              ~finally:(fun () -> close_in channel)
+          in
+          Sys.remove path;
+          (* Structural verification: core's native decoder accepts our
+             emission at the render dimensions with the clear color's blue
+             channel present somewhere in the corner region. *)
+          let image =
+            match Core.Image.decode (Bytes.of_string encoded) with
+            | Ok image -> image
+            | Error error ->
+                fail ("decode: " ^ Core.Image.decode_message error)
+          in
+          (* Cpu mode renders at 2x output; saves use render dimensions. *)
+          (match Core.Image.width image with
+          | Ok w when Int.equal w 16 -> ()
+          | Ok w -> fail (Printf.sprintf "png width %d, expected 16" w)
+          | Error e -> fail ("width: " ^ Core.Image.message e));
+          (match Core.Image.height image with
+          | Ok h when Int.equal h 8 -> ()
+          | Ok h -> fail (Printf.sprintf "png height %d, expected 8" h)
+          | Error e -> fail ("height: " ^ Core.Image.message e));
+          let decoded, _stride =
+            match Core.Image.copy image () with
+            | Ok (bytes, stride) -> (bytes, stride)
+            | Error e -> fail ("copy: " ^ Core.Image.message e)
+          in
+          (* Corner pixel is the blue clear color in raw linear bytes. *)
+          if not (Int.equal (Char.code (Bytes.get decoded 2)) 255) then begin
+            let prefix = Bytes.sub_string decoded 0 32 in
+            fail
+              (Printf.sprintf "corner blue got %d; prefix=%s"
+                 (Char.code (Bytes.get decoded 2))
+                 (String.escaped prefix))
+          end;
+          Core.Image.close image;
+          Core.Owned_buffer.close buffer;
+          Facade.destroy facade);
+
+      test "sample algorithm accessors round trip" (fun () ->
+          let facade = expect_ok "create" (Facade.create ~width:8 ~height:4 ()) in
+          if
+            (match Facade.get_super_sample_algorithm facade with
+            | `Standard -> true
+            | _ -> false)
+            |> not
+          then fail "default algorithm should be standard";
+          expect_ok "set pre-squeezed"
+            (Facade.set_super_sample_algorithm facade `Pre_squeezed);
+          if
+            (match Facade.get_super_sample_algorithm facade with
+            | `Pre_squeezed -> true
+            | _ -> false)
+            |> not
+          then fail "algorithm setter did not stick";
+          Facade.destroy facade);
+
       test "memory renderer shows cube structure deterministically" (fun () ->
           let core_renderer =
             core_ok "memory renderer"
