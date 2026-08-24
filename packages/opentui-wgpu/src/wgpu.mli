@@ -71,6 +71,11 @@ val create_readback :
 (** [stride] must be a multiple of {!readback_stride_alignment}; use
     {!readback_stride}. *)
 
+val create_copy_readback : device -> size:int -> (readback, Error.t) result
+(** A map-read staging buffer of exactly [size] bytes for
+    buffer-to-buffer copies, which carry no row-alignment requirement -
+    unlike the texture-copy readbacks built by {!create_readback}. *)
+
 val destroy_readback : readback -> unit
 (** Unmap (when mapped) and release the buffer. Repeated calls are harmless. *)
 
@@ -88,6 +93,8 @@ val texture_usage_render_attachment : int64
 
 val texture_usage_copy_source : int64
 
+val texture_usage_copy_destination : int64
+
 val buffer_usage_map_read : int64
 
 val buffer_usage_copy_destination : int64
@@ -97,6 +104,49 @@ type bind_group_layout
 type pipeline_layout
 type render_pipeline
 type bind_group
+type compute_pipeline
+
+val buffer_usage_storage : int64
+
+val texture_usage_texture_binding : int64
+
+val create_compute_pipeline :
+  device ->
+  layout:pipeline_layout ->
+  shader:shader_module ->
+  entry_point:string ->
+    (compute_pipeline, Error.t) result
+
+val destroy_compute_pipeline : compute_pipeline -> unit
+
+val create_supersampling_bind_group_layout :
+  device -> (bind_group_layout, Error.t) result
+(** The supersampling pass layout: binding 0 the frame texture (loaded via
+    [textureLoad], no sampler), binding 1 a read-write storage buffer of
+    48-byte cell records, binding 2 a uniform block of three u32s -
+    width, height, and algorithm - all visible to the compute stage. *)
+
+val create_compute_bind_group :
+  device ->
+  layout:bind_group_layout ->
+  view:Native_token.Texture_view.t ->
+  storage:Native_token.Buffer.t ->
+  storage_size:int ->
+  params:Native_token.Buffer.t ->
+    (bind_group, Error.t) result
+
+val dispatch_compute_pass :
+  device ->
+  pipeline:compute_pipeline ->
+  group:bind_group ->
+  groups_x:int ->
+  groups_y:int ->
+  source:Native_token.Buffer.t ->
+  destination:readback ->
+    (unit, Error.t) result
+(** Encodes one compute pass - pipeline, bind group, one workgroup-grid
+    dispatch - copies the whole source storage buffer into [destination],
+    and submits. Completion is observed by {!map_read} on [destination]. *)
 
 type draw_frame = {
   pipeline : render_pipeline;
@@ -153,6 +203,8 @@ val buffer_usage_vertex : int64
 val buffer_usage_index : int64
 val buffer_usage_uniform : int64
 
+val buffer_usage_copy_source : int64
+
 val create_shader_module :
   device -> wgsl:string -> (shader_module, Error.t) result
 
@@ -190,6 +242,18 @@ val create_uniform_bind_group :
 
 val destroy_bind_group : bind_group -> unit
 
+val write_texture_bytes :
+  device ->
+  texture:Native_token.Texture.t ->
+  data:string ->
+  bytes_per_row:int ->
+  width:int ->
+  height:int ->
+    (unit, Error.t) result
+(** Uploads tightly packed rgba8unorm rows straight into a texture through
+    a queue write. Callers pad [data] themselves when they need copy-style
+    row alignment; the write itself carries no stride restriction. *)
+
 val write_buffer_string :
   device -> Native_token.Buffer.t -> offset:int -> string ->
     (unit, Error.t) result
@@ -211,6 +275,10 @@ val destroy_buffer : Native_token.Buffer.t -> unit
     the caller's responsibility at this level; higher-level owners wrap it. *)
 
 val render_target_view : render_target -> Native_token.Texture_view.t
+
+val render_target_texture : render_target -> Native_token.Texture.t
+(** The underlying texture for queue writes; borrowing only, destruction
+    stays with {!destroy_render_target}. *)
 
 val debug_triangle : device -> int
 (** Temporary phase-1 probe: runs an entire red-triangle sequence inside C

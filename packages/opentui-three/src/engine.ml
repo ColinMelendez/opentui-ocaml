@@ -21,6 +21,22 @@ type mesh_entry = {
   group : Wgpu.bind_group;
 }
 
+type super_sample = [ `None | `Cpu | `Gpu ]
+
+type supersampler = {
+  ss_bgl : Wgpu.bind_group_layout;
+  ss_playout : Wgpu.pipeline_layout;
+  ss_pipeline : Wgpu.compute_pipeline;
+  params : Wgpu.Native_token.Buffer.t;
+  mutable storage : Wgpu.Native_token.Buffer.t;
+  mutable readback : Wgpu.readback;
+  mutable group : Wgpu.bind_group;
+  mutable cells_x : int;
+  mutable cells_y : int;
+  mutable staging :
+    (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t;
+}
+
 type t = {
   device : Wgpu.device;
   mutable target : Wgpu.render_target;
@@ -39,7 +55,19 @@ type t = {
   uniforms : floatarray;
   view_model : Matrix4.t;
   mvp : Matrix4.t;
+  shader_supersampling : Wgpu.shader_module;
+  mutable super_sample : super_sample;
+  mutable supersampler : supersampler option;
 }
+let pack_u32_le values =
+  let bytes = Bytes.create (List.length values * 4) in
+  List.iteri
+    (fun index value ->
+      let open Int32 in
+      let word = Int32.of_int value in
+      Bytes.set_int32_le bytes (index * 4) word)
+    values;
+  Bytes.to_string bytes
 
 let usage_vertex =
   Int64.logor Wgpu.buffer_usage_vertex Wgpu.buffer_usage_copy_destination
@@ -51,7 +79,7 @@ let usage_uniform =
 
 let ( let* ) = Result.bind
 
-let destroy_mesh_entry entry =
+let destroy_mesh_entry (entry : mesh_entry) =
   Wgpu.destroy_bind_group entry.group;
   Wgpu.destroy_buffer entry.uniform_buffer;
   Wgpu.destroy_buffer entry.index_buffer;
@@ -149,6 +177,167 @@ let entry_for t node =
       let* entry = create_mesh_entry t.device t.bgl node geometry in
       t.meshes <- entry :: t.meshes;
       Ok entry
+
+(* --- GPU supersampling state --- *)
+
+let destroy_supersampler t =
+  match t.supersampler with
+  | None -> ()
+  | Some ss ->
+      Wgpu.destroy_bind_group ss.group;
+      Wgpu.destroy_readback ss.readback;
+      Wgpu.destroy_buffer ss.storage;
+      Wgpu.destroy_buffer ss.params;
+      Wgpu.destroy_pipeline_layout ss.ss_playout;
+      Wgpu.destroy_bind_group_layout ss.ss_bgl;
+      Wgpu.destroy_compute_pipeline ss.ss_pipeline;
+      t.supersampler <- None
+
+let supersampler_bytes cells_x cells_y =
+  cells_x * cells_y * Cell_conversion.record_size
+
+let ensure_supersampler t =
+  match t.super_sample with
+  | `None | `Cpu -> Ok ()
+  | `Gpu -> (
+      let cells_x = (t.width + 1) / 2 and cells_y = (t.height + 1) / 2 in
+      match t.supersampler with
+      | Some ss
+        when Int.equal ss.cells_x cells_x && Int.equal ss.cells_y cells_y ->
+          Ok ()
+      | _ -> (
+        destroy_supersampler t;
+        let bytes = supersampler_bytes cells_x cells_y in
+        let* bgl = Wgpu.create_supersampling_bind_group_layout t.device in
+        let close_bgl () = Wgpu.destroy_bind_group_layout bgl in
+        let* playout =
+          match Wgpu.create_pipeline_layout t.device bgl with
+          | Ok playout -> Ok playout
+          | Error _ as failure ->
+              close_bgl ();
+              failure
+        in
+        let close_playout () =
+          Wgpu.destroy_pipeline_layout playout;
+          close_bgl ()
+        in
+        let* pipeline =
+          match
+            Wgpu.create_compute_pipeline t.device ~layout:playout
+              ~shader:t.shader_supersampling ~entry_point:"main"
+          with
+          | Ok pipeline -> Ok pipeline
+          | Error _ as failure ->
+              close_playout ();
+              failure
+        in
+        let close_pipeline () =
+          Wgpu.destroy_compute_pipeline pipeline;
+          close_playout ()
+        in
+        (* Four u32s - width, height, algorithm, struct padding - matching
+           the shader's 16-byte SuperSamplingParams exactly. *)
+        let params_bytes = pack_u32_le [ t.width; t.height; 0; 0 ] in
+        let* params =
+          match
+            Wgpu.create_buffer t.device
+              ~size:(Wgpu.align4 (String.length params_bytes))
+              ~usage:(Int64.logor Wgpu.buffer_usage_uniform
+                        Wgpu.buffer_usage_copy_destination)
+          with
+          | Ok buffer -> Ok buffer
+          | Error _ as failure ->
+              close_pipeline ();
+              failure
+        in
+        let close_params () =
+          Wgpu.destroy_buffer params;
+          close_pipeline ()
+        in
+        let* () =
+          match
+            Wgpu.write_buffer_string t.device params ~offset:0 params_bytes
+          with
+          | Ok () -> Ok ()
+          | Error _ as failure ->
+              close_params ();
+              failure
+        in
+        let* storage =
+          match
+            Wgpu.create_buffer t.device ~size:bytes
+              ~usage:(Int64.logor Wgpu.buffer_usage_storage
+                        Wgpu.buffer_usage_copy_source)
+          with
+          | Ok buffer -> Ok buffer
+          | Error _ as failure ->
+              close_params ();
+              failure
+        in
+        let close_storage () =
+          Wgpu.destroy_buffer storage;
+          close_params ()
+        in
+        let* readback =
+          match Wgpu.create_copy_readback t.device ~size:bytes with
+          | Ok readback -> Ok readback
+          | Error _ as failure ->
+              close_storage ();
+              failure
+        in
+        let close_readback () =
+          Wgpu.destroy_readback readback;
+          close_storage ()
+        in
+        let view = Wgpu.render_target_view t.target in
+        let* group =
+          match
+            Wgpu.create_compute_bind_group t.device ~layout:bgl ~view ~storage
+              ~storage_size:bytes ~params
+          with
+          | Ok group -> Ok group
+          | Error _ as failure ->
+              close_readback ();
+              failure
+        in
+        t.supersampler <-
+          Some
+            { ss_bgl = bgl;
+              ss_playout = playout;
+              ss_pipeline = pipeline;
+              params;
+              storage;
+              readback;
+              group;
+              cells_x;
+              cells_y;
+              staging =
+                Bigarray.Array1.create Bigarray.char Bigarray.c_layout bytes };
+        Ok ()))
+
+let set_super_sample t mode =
+  t.super_sample <- mode;
+  match mode with
+  | `Gpu -> ensure_supersampler t
+  | `None | `Cpu ->
+      destroy_supersampler t;
+      Ok ()
+
+let last_cell_grid t =
+  match t.supersampler with
+  | Some ss -> (ss.cells_x, ss.cells_y)
+  | None -> (0, 0)
+
+let last_cells t =
+  match t.supersampler with
+  | None -> ""
+  | Some ss ->
+      let bytes = supersampler_bytes ss.cells_x ss.cells_y in
+      let out = Bytes.create bytes in
+      for i = 0 to bytes - 1 do
+        Bytes.set out i (Bigarray.Array1.get ss.staging i)
+      done;
+      Bytes.to_string out
 
 (* Visible-scene scans share one pruning rule: an invisible node hides its
    whole subtree from rendering and lighting, while matrix updates still run
@@ -284,13 +473,25 @@ let create ~width ~height () =
                 Wgpu.destroy_render_target target;
                 Wgpu.destroy_device device
               in
-              match Wgpu.create_shader_module device ~wgsl:Shaders.wgsl_unlit with
+              match
+                Wgpu.create_shader_module device
+                  ~wgsl:Shaders.wgsl_supersampling
+              with
               | Error _ as failure -> close_through_readback (); failure
-              | Ok shader_unlit -> (
-                  let close_through_unlit () =
-                    Wgpu.destroy_shader_module shader_unlit;
+              | Ok shader_supersampling -> (
+                  let close_through_ss_shader () =
+                    Wgpu.destroy_shader_module shader_supersampling;
                     close_through_readback ()
                   in
+                  match Wgpu.create_shader_module device ~wgsl:Shaders.wgsl_unlit with
+                  | Error _ as failure ->
+                      close_through_ss_shader ();
+                      failure
+                  | Ok shader_unlit -> (
+                      let close_through_unlit () =
+                        Wgpu.destroy_shader_module shader_unlit;
+                        close_through_ss_shader ()
+                      in
                   match
                     Wgpu.create_shader_module device ~wgsl:Shaders.wgsl_lambert
                   with
@@ -365,7 +566,10 @@ let create ~width ~height () =
                                             Float.Array.make uniform_floats
                                               0.0;
                                           view_model = Matrix4.create ();
-                                          mvp = Matrix4.create () }))))))))
+                                          mvp = Matrix4.create ();
+                                          shader_supersampling;
+                                          super_sample = `None;
+                                          supersampler = None })))))))))
 
 let submit t ~(root : Object3d.t) ~(camera : Object3d.t)
     ~(clear_color : float * float * float * float) () =
@@ -437,16 +641,43 @@ let submit t ~(root : Object3d.t) ~(camera : Object3d.t)
           Ok ())
 
 let stage t =
-  (* Block until the submitted frame's pixels land in the owned staging
-     buffer. One readback path, awaited immediately - reference parity. *)
-  match Wgpu.map_read t.device t.readback with
-  | Error _ as failure -> failure
-  | Ok () -> (
-      match Wgpu.copy_mapped t.readback t.staging with
+  (* Block until the submitted frame's output lands in owned staging: the
+     pixel readback for None/Cpu modes, or compute-pass cell records for
+     Gpu. One readback path per mode, awaited immediately - reference
+     parity. *)
+  match t.super_sample with
+  | `Gpu -> (
+      match t.supersampler with
+      | None ->
+          Error
+            (Wgpu.Error.Invalid_argument
+               "gpu super sampling requested without compute state")
+      | Some ss -> (
+          let groups_x = (ss.cells_x + 3) / 4 and groups_y = (ss.cells_y + 3) / 4 in
+          match
+            Wgpu.dispatch_compute_pass t.device ~pipeline:ss.ss_pipeline
+              ~group:ss.group ~groups_x ~groups_y ~source:ss.storage
+              ~destination:ss.readback
+          with
+          | Error _ as failure -> failure
+          | Ok () -> (
+              match Wgpu.map_read t.device ss.readback with
+              | Error _ as failure -> failure
+              | Ok () -> (
+                  match Wgpu.copy_mapped ss.readback ss.staging with
+                  | Error _ as failure -> failure
+                  | Ok () ->
+                      Wgpu.unmap ss.readback;
+                      Ok ()))))
+  | `None | `Cpu -> (
+      match Wgpu.map_read t.device t.readback with
       | Error _ as failure -> failure
-      | Ok () ->
-          Wgpu.unmap t.readback;
-          Ok ())
+      | Ok () -> (
+          match Wgpu.copy_mapped t.readback t.staging with
+          | Error _ as failure -> failure
+          | Ok () ->
+              Wgpu.unmap t.readback;
+              Ok ()))
 
 let render t ~(root : Object3d.t) ~(camera : Object3d.t)
     ~(clear_color : float * float * float * float) () =
@@ -466,6 +697,14 @@ let snapshot t =
     done
   done;
   Bytes.to_string bytes
+
+let upload_frame t ~(data : string) ~(bytes_per_row : int) =
+  (* Queue-writes caller bytes straight into the current frame texture;
+     the primary consumer is the oracle test feeding known pixels through
+     the GPU supersampling pass. *)
+  Wgpu.write_texture_bytes t.device
+    ~texture:(Wgpu.render_target_texture t.target)
+    ~data ~bytes_per_row ~width:t.width ~height:t.height
 
 let resize t ~width ~height =
   if width <= 0 || height <= 0 then
@@ -492,6 +731,11 @@ let resize t ~width ~height =
             t.staging <-
               Bigarray.Array1.create Bigarray.char Bigarray.c_layout
                 (Wgpu.readback_size readback);
+            let* () =
+              match t.super_sample with
+              | `Gpu -> ensure_supersampler t
+              | `None | `Cpu -> Ok ()
+            in
             Wgpu.destroy_readback old_readback;
             Wgpu.destroy_render_target old_target;
             Ok ())
@@ -501,10 +745,12 @@ let width t = t.width
 let height t = t.height
 
 let destroy t =
+  destroy_supersampler t;
   List.iter destroy_mesh_entry t.meshes;
   t.meshes <- [];
   Wgpu.destroy_render_pipeline t.pipeline_unlit;
   Wgpu.destroy_render_pipeline t.pipeline_lambert;
+  Wgpu.destroy_shader_module t.shader_supersampling;
   Wgpu.destroy_shader_module t.shader_unlit;
   Wgpu.destroy_shader_module t.shader_lambert;
   Wgpu.destroy_pipeline_layout t.playout;

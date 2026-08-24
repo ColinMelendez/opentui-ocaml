@@ -43,10 +43,18 @@ let texture_usage_render_attachment =
 
 let texture_usage_copy_source = Native.texture_usage_copy_source_c ()
 
+let texture_usage_copy_destination =
+  Native.texture_usage_copy_destination_c ()
+
 let buffer_usage_map_read = Native.buffer_usage_map_read_c ()
 
 let buffer_usage_copy_destination =
   Native.buffer_usage_copy_destination_c ()
+
+let buffer_usage_storage = Native.buffer_usage_storage_c ()
+
+let texture_usage_texture_binding =
+  Native.texture_usage_texture_binding_c ()
 
 let readback_stride ~width =
   let unaligned = width * rgba_bytes_per_pixel in
@@ -125,7 +133,10 @@ let create_render_target device ~width ~height =
       ( width,
         height,
         texture_format_rgba8_unorm,
-        Int64.logor texture_usage_render_attachment texture_usage_copy_source )
+        Int64.logor texture_usage_render_attachment
+          (Int64.logor texture_usage_copy_source
+             (Int64.logor texture_usage_copy_destination
+                texture_usage_texture_binding)) )
     |> creation_result ~what:"texture"
     >>= fun texture ->
     match
@@ -171,6 +182,20 @@ let create_readback device ~stride ~rows =
       with
       | Ok buffer -> Ok { stride; rows; buffer; mapped = false; released = false }
       | Error _ as failure -> failure
+
+let create_copy_readback device ~(size : int) =
+  check_open device "create_copy_readback" >>= fun () ->
+  if size <= 0 then
+    Error (Error.Invalid_argument "readback size must be positive")
+  else
+    match
+      creation_result ~what:"readback buffer"
+        (Native.device_create_buffer device.handle
+           ( Int64.of_int size,
+             Int64.logor buffer_usage_map_read buffer_usage_copy_destination ))
+    with
+    | Ok buffer -> Ok { stride = size; rows = 1; buffer; mapped = false; released = false }
+    | Error _ as failure -> failure
 
 let destroy_readback (buffer_view : readback) =
   if not buffer_view.released then begin
@@ -351,6 +376,8 @@ let destroy_buffer (buffer : Native_token.Buffer.t) =
 
 let render_target_view (target : render_target) = target.view
 
+let render_target_texture (target : render_target) = target.texture
+
 let buffer_handle_string (buffer : Native_token.Buffer.t) : string =
   Int64.to_string buffer
 
@@ -363,6 +390,8 @@ let buffer_usage_vertex = 0x20L
 let buffer_usage_index = 0x10L
 
 let buffer_usage_uniform = 0x40L
+
+let buffer_usage_copy_source = 0x4L
 
 let create_shader_module device ~wgsl =
   match check_open device "create_shader_module" with
@@ -466,6 +495,115 @@ let destroy_bind_group group =
     group.bg_released <- true;
     Native.bind_group_release group.bg_handle
   end
+
+type compute_pipeline = {
+  cp_handle : Native_token.Compute_pipeline.t;
+  mutable cp_released : bool;
+}
+
+let create_compute_pipeline device ~layout ~(shader : shader_module)
+    ~entry_point =
+  match check_open device "create_compute_pipeline" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        Native.device_create_compute_pipeline device.handle
+          (layout.pl_handle, shader.handle, entry_point)
+        |> creation_result ~what:"compute pipeline"
+      with
+      | Ok handle -> Ok { cp_handle = handle; cp_released = false }
+      | Error _ as failure -> failure)
+
+let destroy_compute_pipeline pipeline =
+  if not pipeline.cp_released then begin
+    pipeline.cp_released <- true;
+    Native.compute_pipeline_release pipeline.cp_handle
+  end
+
+(* The supersampling compute layout: binding 0 is the rendered frame
+   texture (sampled through textureLoad), binding 1 the read-write storage
+   buffer of 48-byte cell records, binding 2 a uniform of three u32s. *)
+let create_supersampling_bind_group_layout device =
+  match check_open device "create_supersampling_bind_group_layout" with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match
+        Native.device_create_supersampling_bind_group_layout device.handle
+        |> creation_result ~what:"supersampling bind group layout"
+      with
+      | Ok bgl_handle -> Ok { bgl_handle; bgl_released = false }
+      | Error _ as failure -> failure)
+
+let create_compute_bind_group device ~layout
+    ~(view : Native_token.Texture_view.t) ~storage ~storage_size ~params =
+  match check_open device "create_compute_bind_group" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      if storage_size <= 0 then
+        Error (Error.Invalid_argument "storage size must be positive")
+      else
+        match
+          Native.device_create_compute_bind_group device.handle
+            ( layout.bgl_handle,
+              view,
+              storage,
+              Int64.of_int storage_size,
+              params )
+          |> creation_result ~what:"compute bind group"
+        with
+        | Ok bg_handle -> Ok { bg_handle; bg_released = false }
+        | Error _ as failure -> failure
+
+let dispatch_compute_pass device ~(pipeline : compute_pipeline)
+    ~(group : bind_group) ~groups_x ~groups_y ~source
+    ~(destination : readback) =
+  let operation = "dispatch_compute_pass" in
+  match check_open device operation with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      if
+        pipeline.cp_released || group.bg_released || destination.released
+        || groups_x <= 0 || groups_y <= 0
+      then
+        Error (Error.Invalid_argument "compute dispatch references invalid state")
+      else
+        let copy_size = readback_size destination in
+        match
+          creation_result ~what:"command encoder"
+            (Native.device_create_command_encoder device.handle)
+        with
+        | Error _ as failure -> failure
+        | Ok encoder ->
+            Native.encoder_dispatch_compute_to_buffer encoder
+              ( pipeline.cp_handle,
+                group.bg_handle,
+                groups_x,
+                groups_y,
+                source,
+                destination.buffer,
+                Int64.of_int copy_size );
+            let submit_result =
+              match
+                creation_result ~what:"command buffer"
+                  (Native.command_encoder_finish encoder)
+              with
+              | Error _ as failure -> failure
+              | Ok command_buffer ->
+                  Native.queue_submit_one device.queue command_buffer;
+                  Native.command_buffer_release command_buffer;
+                  Ok ()
+            in
+            Native.command_encoder_release encoder;
+            submit_result)
+
+let write_texture_bytes device ~(texture : Native_token.Texture.t)
+    ~(data : string) ~(bytes_per_row : int) ~width ~height =
+  match check_open device "write_texture_bytes" with
+  | Error _ as failure -> failure
+  | Ok () ->
+      Native.queue_write_texture_bytes device.queue
+        (texture, data, Int64.of_int bytes_per_row, width, height);
+      Ok ()
 
 let write_buffer_string device buffer ~(offset : int) (data : string) =
   match check_open device "write_buffer_string" with

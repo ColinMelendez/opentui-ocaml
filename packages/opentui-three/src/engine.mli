@@ -42,7 +42,28 @@ val render :
 
 val snapshot : t -> string
 (** [width * height * 4] RGBA bytes of the last staged frame with row
-    padding stripped. *)
+    padding stripped. Only meaningful in [`None] and [`Cpu] modes. *)
+
+type super_sample = [ `None | `Cpu | `Gpu ]
+
+val set_super_sample : t -> super_sample -> (unit, Opentui_wgpu.Wgpu.Error.t) result
+(** Selects the staging path. [`Gpu] builds the supersampling compute state
+    against the current target; rebuilding after resize is automatic. *)
+
+val upload_frame :
+  t -> data:string -> bytes_per_row:int -> (unit, Opentui_wgpu.Wgpu.Error.t) result
+(** Queue-writes tightly packed rgba8unorm rows into the current frame
+    texture. Rows are NOT padded by this call; pass [bytes_per_row] matching
+    [data]'s layout. *)
+
+val last_cell_grid : t -> int * int
+(** The active supersampler's compute grid in cells; (0, 0) before the
+    first [`Gpu] stage. *)
+
+val last_cells : t -> string
+(** Raw 48-byte CellResult records staged by the most recent {!stage} call
+    in [`Gpu] mode; empty otherwise. Decoding lives in
+    {!Cell_conversion.write_gpu_records}. *)
 
 val resize : t -> width:int -> height:int -> (unit, Opentui_wgpu.Wgpu.Error.t) result
 (** Rebuilds the offscreen target and readback for a new size. *)

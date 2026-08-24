@@ -92,7 +92,7 @@ let () =
           let snapshot = String.make 16 (Char.chr 64) in
           expect_ok "write_quadrants"
             (Cc.write_quadrants ~buffer ~snapshot ~output_width:1
-               ~output_height:1);
+               ~output_height:1 ());
           (* All-dark branch: full block of the alpha-blended average - four
              identical samples stay at linear 64/255, which emits as sRGB
              137 - over the light candidate, which equals the same sample. *)
@@ -109,7 +109,7 @@ let () =
           in
           expect_ok "write_quadrants"
             (Cc.write_quadrants ~buffer ~snapshot ~output_width:1
-               ~output_height:1);
+               ~output_height:1 ());
           (* TL is the only dark quadrant: bit 8 selects U+2598, inked in the
              dark candidate over the light candidate. *)
           expect_single_cell buffer ~character:0x2598l ~foreground:(rgb 0 0 0)
@@ -125,7 +125,7 @@ let () =
           in
           expect_ok "write_quadrants"
             (Cc.write_quadrants ~buffer ~snapshot ~output_width:1
-               ~output_height:1);
+               ~output_height:1 ());
           (* TL+BL dark -> bits 8+2 = 10 -> U+258C left half block. *)
           expect_single_cell buffer ~character:0x258Cl ~foreground:(rgb 0 0 0)
             ~background:(rgb 255 255 255);
@@ -141,7 +141,7 @@ let () =
           in
           expect_ok "write_quadrants"
             (Cc.write_quadrants ~buffer ~snapshot ~output_width:1
-               ~output_height:1);
+               ~output_height:1 ());
           (* Dim samples sit on the right and lose the luminance ordering,
              so they become the dark ink: TR+BR -> bits 5 -> U+2590 right
              half block. *)

@@ -106,12 +106,87 @@ let blend_colors c1 c2 =
 let average_colors_with_alpha p0 p1 p2 p3 =
   blend_colors (blend_colors p0 p1) (blend_colors p2 p3)
 
+(* --- GPU compute-pass record decoding --- *)
+
+let record_size = 48
+
+let f32_at records base offset =
+  (* Little-endian f32 assembled byte by byte; the compute buffer has no
+     alignment guarantee at OCaml string granularity beyond bytes. *)
+  let b0 = Char.code records.[base + offset] in
+  let b1 = Char.code records.[base + offset + 1] in
+  let b2 = Char.code records.[base + offset + 2] in
+  let b3 = Char.code records.[base + offset + 3] in
+  let bits =
+    Int32.of_int (b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24))
+  in
+  Int32.float_of_bits bits
+
+let u32_at records base offset =
+  let b0 = Char.code records.[base + offset] in
+  let b1 = Char.code records.[base + offset + 1] in
+  let b2 = Char.code records.[base + offset + 2] in
+  let b3 = Char.code records.[base + offset + 3] in
+  Int32.of_int
+    ((b3 lsl 24) lor (b2 lsl 16) lor (b1 lsl 8) lor b0)
+
+(* One 48-byte CellResult straight from the compute storage buffer:
+   bg vec4 (linear), fg vec4, char u32, three padding words. *)
+let read_record records index : int32 * pixel * pixel =
+  let base = index * record_size in
+  let vec4 offset =
+    { r = f32_at records base (offset + 0);
+      g = f32_at records base (offset + 4);
+      b = f32_at records base (offset + 8);
+      a = f32_at records base (offset + 12) }
+  in
+  let character = u32_at records base 32 in
+  (character, vec4 16, vec4 0)
+
+let write_gpu_records ~(buffer : Opentui_core.Owned_buffer.t) ~records
+    ~(output_width : int) ~(output_height : int)
+    ~(record_pitch : int) : (unit, Opentui_core.Error.t) result =
+  (* Compute storage lays records out at the compute-grid pitch, which is
+     wider than the cell grid whenever render dimensions are odd. *)
+  if
+    String.length records
+    < (((output_height - 1) * record_pitch) + output_width) * record_size
+  then invalid_arg "cell_conversion: records smaller than the cell grid";
+  let rec rows cy =
+    if cy >= output_height then Ok ()
+    else begin
+      let rec columns cx =
+        if cx >= output_width then Ok ()
+        else begin
+          let index = (cy * record_pitch) + cx in
+          let character, foreground, background = read_record records index in
+          match
+            Opentui_core.Owned_buffer.set_cell_with_alpha_blending buffer
+              ~x:cx ~y:cy ~character
+              ~foreground:(color_of foreground)
+              ~background:(color_of background)
+              ~attributes:0l
+          with
+          | Ok () -> columns (cx + 1)
+          | Error _ as failure -> failure
+        end
+      in
+      match columns 0 with
+      | Ok () -> rows (cy + 1)
+      | Error _ as failure -> failure
+    end
+  in
+  rows 0
+
 let write_quadrants ~(buffer : Opentui_core.Owned_buffer.t) ~snapshot
-    ~(output_width : int) ~(output_height : int) :
+    ~(output_width : int) ~(output_height : int)
+    ?(render_width = output_width * 2)
+    ?(render_height = output_height * 2) () :
     (unit, Opentui_core.Error.t) result =
-  (* Render dimensions are 2x the cell grid; each cell consumes one 2x2
-     pixel block exactly as the compute pass does. *)
-  let render_width = output_width * 2 and render_height = output_height * 2 in
+  (* Render dimensions are 2x the cell grid for super-sampled frames; pass
+     them explicitly when the snapshot comes from an oddly-sized surface.
+     Each cell consumes one 2x2 pixel block exactly as the compute pass
+     does, including the out-of-bounds-black rule on overhanging edges. *)
   if
     String.length snapshot < pixel_count ~width:render_width ~height:render_height
   then invalid_arg "cell_conversion: snapshot smaller than declared dimensions";
@@ -125,10 +200,18 @@ let write_quadrants ~(buffer : Opentui_core.Owned_buffer.t) ~snapshot
         if cx >= output_width then Ok ()
         else begin
           let rx = cx * 2 and ry = cy * 2 in
-          let tl = sample snapshot ~width:render_width ~x:rx ~y:ry in
-          let tr = sample snapshot ~width:render_width ~x:(rx + 1) ~y:ry in
-          let bl = sample snapshot ~width:render_width ~x:rx ~y:(ry + 1) in
-          let br = sample snapshot ~width:render_width ~x:(rx + 1) ~y:(ry + 1) in
+          (* Out-of-bounds loads return opaque black exactly like the
+             shader's getPixelColor guard; reachable when render dimensions
+             are odd so edge cells overhang the pixel grid. *)
+          let load x y =
+            if x >= render_width || y >= render_height then
+              { r = 0.0; g = 0.0; b = 0.0; a = 1.0 }
+            else sample snapshot ~width:render_width ~x ~y
+          in
+          let tl = load rx ry in
+          let tr = load (rx + 1) ry in
+          let bl = load rx (ry + 1) in
+          let br = load (rx + 1) (ry + 1) in
           let pixels = [| tl; tr; bl; br |] in
           (* Most-distant pair; strict comparison keeps the first pair on
              ties, matching the WGSL scan order. *)

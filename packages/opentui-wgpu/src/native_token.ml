@@ -53,3 +53,7 @@ end
 module Bind_group = struct
   type t = int64
 end
+
+module Compute_pipeline = struct
+  type t = int64
+end

@@ -119,10 +119,15 @@ let init t =
   else
     let render_width, render_height = render_dimensions t in
     match Engine.create ~width:render_width ~height:render_height () with
-    | Ok engine ->
-        t.engine <- Some engine;
-        Ok ()
     | Error error -> Error (Error.Gpu error)
+    | Ok engine -> (
+        match Engine.set_super_sample engine t.super_sample with
+        | Error gpu ->
+            Engine.destroy engine;
+            Error (Error.Gpu gpu)
+        | Ok () ->
+            t.engine <- Some engine;
+            Ok ())
 
 let now_ms () = Unix.gettimeofday () *. 1000.0
 
@@ -186,16 +191,24 @@ let draw_scene t ~(root : Object3d.t) ~(buffer : Opentui_core.Owned_buffer.t)
                 | Error gpu -> Error (Error.Gpu gpu)
                 | Ok () -> (
                     let stage_end = now_ms () in
-                    let snapshot = Engine.snapshot engine in
                     let conversion =
                       match t.super_sample with
                       | `None ->
+                          let snapshot = Engine.snapshot engine in
                           Cell_conversion.write_none ~buffer ~snapshot
                             ~width:t.output_width ~height:t.output_height
-                      | `Cpu | `Gpu ->
+                      | `Cpu ->
+                          let snapshot = Engine.snapshot engine in
                           Cell_conversion.write_quadrants ~buffer ~snapshot
                             ~output_width:t.output_width
+                            ~output_height:t.output_height ()
+                      | `Gpu ->
+                          let records = Engine.last_cells engine in
+                          let grid_width, _ = Engine.last_cell_grid engine in
+                          Cell_conversion.write_gpu_records ~buffer ~records
+                            ~output_width:t.output_width
                             ~output_height:t.output_height
+                            ~record_pitch:grid_width
                     in
                     let write_end = now_ms () in
                     t.render_ms <- render_end -. total_start;
@@ -261,7 +274,15 @@ let toggle_super_sampling t =
     | `None -> `Cpu
     | `Cpu -> `Gpu
     | `Gpu -> `None);
-  set_size ~force:true t ~width:t.output_width ~height:t.output_height
+  let* () =
+    set_size ~force:true t ~width:t.output_width ~height:t.output_height
+  in
+  match t.engine with
+  | Some engine -> (
+      match Engine.set_super_sample engine t.super_sample with
+      | Ok () -> Ok ()
+      | Error gpu -> Error (Error.Gpu gpu))
+  | None -> Ok ()
 
 let toggle_debug_stats t = t.stats_enabled <- not t.stats_enabled
 

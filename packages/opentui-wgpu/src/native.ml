@@ -12,6 +12,7 @@ module Bind_group_layout = Native_token.Bind_group_layout
 module Pipeline_layout = Native_token.Pipeline_layout
 module Render_pipeline = Native_token.Render_pipeline
 module Bind_group = Native_token.Bind_group
+module Compute_pipeline = Native_token.Compute_pipeline
 
 (* Raw native status codes; see webgpu.h enum definitions. *)
 let request_status_success = 1
@@ -118,6 +119,9 @@ external texture_usage_render_attachment_c : unit -> int64
 external texture_usage_copy_source_c : unit -> int64
   = "opentui_wgpu_texture_usage_copy_source"
 
+external texture_usage_copy_destination_c : unit -> int64
+  = "opentui_wgpu_texture_usage_copy_destination"
+
 external buffer_usage_map_read_c : unit -> int64
   = "opentui_wgpu_buffer_usage_map_read"
 
@@ -172,6 +176,14 @@ external queue_write_buffer_bytes :
   Queue.t -> Buffer.t -> offset:int64 -> string -> unit
   = "opentui_wgpu_queue_write_buffer_bytes"
 
+(* texture, data, bytes per row, width, height *)
+type write_texture_options =
+  Texture.t * string * int64 * int * int
+
+external queue_write_texture_bytes :
+  Queue.t -> write_texture_options -> unit
+  = "opentui_wgpu_queue_write_texture_bytes"
+
 (* pipeline, bind group,
    vertex buffer + byte size, index buffer + byte size, index count *)
 type draw_call =
@@ -185,5 +197,42 @@ external encoder_render_draws_indexed :
   Command_encoder.t ->
   Texture_view.t -> clear_color -> draw_call list -> unit
   = "opentui_wgpu_encoder_render_draws_indexed"
+
+external buffer_usage_storage_c : unit -> int64
+  = "opentui_wgpu_buffer_usage_storage"
+
+external texture_usage_texture_binding_c : unit -> int64
+  = "opentui_wgpu_texture_usage_texture_binding"
+
+(* layout, shader module, entry point *)
+type compute_pipeline_options =
+  Pipeline_layout.t * Shader_module.t * string
+
+external device_create_compute_pipeline :
+  Device.t -> compute_pipeline_options -> creation
+  = "opentui_wgpu_device_create_compute_pipeline"
+
+external compute_pipeline_release : Compute_pipeline.t -> unit
+  = "opentui_wgpu_compute_pipeline_release"
+
+external device_create_supersampling_bind_group_layout :
+  Device.t -> creation
+  = "opentui_wgpu_device_create_supersampling_bind_group_layout"
+
+(* layout, texture view, storage buffer + size, params buffer *)
+type compute_bind_group_options =
+  Bind_group_layout.t * Texture_view.t * Buffer.t * int64 * Buffer.t
+
+external device_create_compute_bind_group :
+  Device.t -> compute_bind_group_options -> creation
+  = "opentui_wgpu_device_create_compute_bind_group"
+
+(* pipeline, bind group, groups x/y, source storage, destination, size *)
+type compute_dispatch_options =
+  Compute_pipeline.t * Bind_group.t * int * int * Buffer.t * Buffer.t * int64
+
+external encoder_dispatch_compute_to_buffer :
+  Command_encoder.t -> compute_dispatch_options -> unit
+  = "opentui_wgpu_encoder_dispatch_compute_to_buffer"
 
 external debug_triangle_raw : Device.t -> int = "opentui_wgpu_debug_triangle"

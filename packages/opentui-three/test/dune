@@ -27,3 +27,8 @@
  (name test_three_cli_renderer)
  (modules test_three_cli_renderer)
  (libraries opentui-three opentui-core windtrap))
+
+(test
+ (name test_supersampling)
+ (modules test_supersampling)
+ (libraries opentui-three opentui-core opentui-wgpu windtrap))

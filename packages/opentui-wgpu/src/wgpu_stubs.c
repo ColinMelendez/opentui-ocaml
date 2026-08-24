@@ -601,6 +601,12 @@ CAMLprim value opentui_wgpu_texture_usage_copy_source(value unit) {
   CAMLreturn(caml_copy_int64((int64_t)WGPUTextureUsage_CopySrc));
 }
 
+CAMLprim value opentui_wgpu_texture_usage_copy_destination(value unit) {
+  CAMLparam1(unit);
+  (void)unit;
+  CAMLreturn(caml_copy_int64((int64_t)WGPUTextureUsage_CopyDst));
+}
+
 CAMLprim value opentui_wgpu_buffer_usage_map_read(value unit) {
   CAMLparam1(unit);
   (void)unit;
@@ -841,6 +847,43 @@ CAMLprim value opentui_wgpu_queue_write_buffer_bytes(
   mlsize_t size = caml_string_length(data);
   wgpuQueueWriteBuffer(queue, buffer, (uint64_t)Int64_val(offset),
                        String_val(data), size);
+  CAMLreturn(Val_unit);
+}
+
+/* Uploads tightly packed rgba8unorm rows into a texture. Callers pad
+   rows themselves when they need copy-style alignment. */
+CAMLprim value opentui_wgpu_queue_write_texture_bytes(
+    value queue_value,
+    value options) {
+  CAMLparam2(queue_value, options);
+  WGPUQueue queue = (WGPUQueue)(uintptr_t)Int64_val(queue_value);
+  WGPUTexture texture =
+      (WGPUTexture)(uintptr_t)Int64_val(Field(options, 0));
+  value data = Field(options, 1);
+  uint64_t bytes_per_row = (uint64_t)Int64_val(Field(options, 2));
+  uint32_t width = (uint32_t)Long_val(Field(options, 3));
+  uint32_t height = (uint32_t)Long_val(Field(options, 4));
+
+  WGPUTexelCopyTextureInfo destination;
+  memset(&destination, 0, sizeof destination);
+  destination.texture = texture;
+  destination.aspect = WGPUTextureAspect_All;
+
+  WGPUTexelCopyBufferLayout layout;
+  memset(&layout, 0, sizeof layout);
+  layout.offset = 0;
+  layout.bytesPerRow = bytes_per_row;
+  layout.rowsPerImage = height;
+
+  WGPUExtent3D extent;
+  memset(&extent, 0, sizeof extent);
+  extent.width = width;
+  extent.height = height;
+  extent.depthOrArrayLayers = 1;
+
+  mlsize_t size = caml_string_length(data);
+  wgpuQueueWriteTexture(queue, &destination, String_val(data), size, &layout,
+                        &extent);
   CAMLreturn(Val_unit);
 }
 
@@ -1163,4 +1206,175 @@ CAMLprim value opentui_wgpu_debug_triangle(value device_value,
     result = -2;
   }
   CAMLreturn(Val_int(result));
+}
+
+CAMLprim value opentui_wgpu_buffer_usage_storage(value unit) {
+  CAMLparam1(unit);
+  CAMLreturn(caml_copy_int64(WGPUBufferUsage_Storage));
+}
+
+CAMLprim value opentui_wgpu_texture_usage_texture_binding(value unit) {
+  CAMLparam1(unit);
+  CAMLreturn(caml_copy_int64(WGPUTextureUsage_TextureBinding));
+}
+
+CAMLprim value opentui_wgpu_device_create_compute_pipeline(
+    value device_value,
+    value options) {
+  CAMLparam2(device_value, options);
+  WGPUDevice device = (WGPUDevice)(uintptr_t)Int64_val(device_value);
+  WGPUPipelineLayout layout =
+      (WGPUPipelineLayout)(uintptr_t)Int64_val(Field(options, 0));
+  WGPUShaderModule shader_module =
+      (WGPUShaderModule)(uintptr_t)Int64_val(Field(options, 1));
+  const char *entry_name = String_val(Field(options, 2));
+
+  WGPUComputeState compute;
+  memset(&compute, 0, sizeof compute);
+  compute.module = shader_module;
+  compute.entryPoint.data = entry_name;
+  compute.entryPoint.length = strlen(entry_name);
+
+  WGPUComputePipelineDescriptor descriptor;
+  memset(&descriptor, 0, sizeof descriptor);
+  descriptor.label = opentui_wgpu_label("opentui-wgpu-compute-pipeline");
+  descriptor.layout = layout;
+  descriptor.compute = compute;
+
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &descriptor);
+  { char d[96]; snprintf(d,96,"CREATE cp -> %llu", (unsigned long long)(uintptr_t)pipeline); opentui_wgpu_diag_push(d); }
+  CAMLreturn(opentui_wgpu_make_handle_pair(
+      pipeline != NULL,
+      (uint64_t)(uintptr_t)pipeline));
+}
+
+CAMLprim value opentui_wgpu_compute_pipeline_release(value pipeline_value) {
+  CAMLparam1(pipeline_value);
+  wgpuComputePipelineRelease(
+      (WGPUComputePipeline)(uintptr_t)Int64_val(pipeline_value));
+  CAMLreturn(Val_unit);
+}
+
+/* The supersampling compute pass binds the rendered frame (textureLoad,
+   no sampler), one read-write storage buffer of 48-byte cell records, and
+   a uniform block of three u32s (width, height, algorithm). */
+CAMLprim value opentui_wgpu_device_create_supersampling_bind_group_layout(
+    value device_value) {
+  CAMLparam1(device_value);
+  WGPUDevice device = (WGPUDevice)(uintptr_t)Int64_val(device_value);
+
+  WGPUBindGroupLayoutEntry entries[3];
+  memset(entries, 0, sizeof entries);
+
+  entries[0].binding = 0;
+  entries[0].visibility = WGPUShaderStage_Compute;
+  entries[0].texture.sampleType = WGPUTextureSampleType_Float;
+  entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
+  entries[0].texture.multisampled = 0;
+
+  entries[1].binding = 1;
+  entries[1].visibility = WGPUShaderStage_Compute;
+  entries[1].buffer.type = WGPUBufferBindingType_Storage;
+
+  entries[2].binding = 2;
+  entries[2].visibility = WGPUShaderStage_Compute;
+  entries[2].buffer.type = WGPUBufferBindingType_Uniform;
+
+  WGPUBindGroupLayoutDescriptor descriptor;
+  memset(&descriptor, 0, sizeof descriptor);
+  descriptor.label =
+      opentui_wgpu_label("opentui-wgpu-supersampling-bgl");
+  descriptor.entryCount = 3;
+  descriptor.entries = entries;
+
+  WGPUBindGroupLayout layout =
+      wgpuDeviceCreateBindGroupLayout(device, &descriptor);
+  { char d[96]; snprintf(d,96,"CREATE ssbgl -> %llu", (unsigned long long)(uintptr_t)layout); opentui_wgpu_diag_push(d); }
+  CAMLreturn(opentui_wgpu_make_handle_pair(
+      layout != NULL,
+      (uint64_t)(uintptr_t)layout));
+}
+
+CAMLprim value opentui_wgpu_device_create_compute_bind_group(
+    value device_value,
+    value options) {
+  CAMLparam2(device_value, options);
+  WGPUDevice device = (WGPUDevice)(uintptr_t)Int64_val(device_value);
+  WGPUBindGroupLayout layout =
+      (WGPUBindGroupLayout)(uintptr_t)Int64_val(Field(options, 0));
+  WGPUTextureView view =
+      (WGPUTextureView)(uintptr_t)Int64_val(Field(options, 1));
+  WGPUBuffer storage = (WGPUBuffer)(uintptr_t)Int64_val(Field(options, 2));
+  uint64_t storage_size = (uint64_t)Int64_val(Field(options, 3));
+  WGPUBuffer params = (WGPUBuffer)(uintptr_t)Int64_val(Field(options, 4));
+
+  WGPUBindGroupEntry entries[3];
+  memset(entries, 0, sizeof entries);
+  entries[0].binding = 0;
+  entries[0].textureView = view;
+  entries[1].binding = 1;
+  entries[1].buffer = storage;
+  entries[1].offset = 0;
+  entries[1].size = storage_size;
+  entries[2].binding = 2;
+  entries[2].buffer = params;
+  entries[2].offset = 0;
+  entries[2].size = WGPU_WHOLE_SIZE;
+
+  WGPUBindGroupDescriptor descriptor;
+  memset(&descriptor, 0, sizeof descriptor);
+  descriptor.label = opentui_wgpu_label("opentui-wgpu-compute-group");
+  descriptor.layout = layout;
+  descriptor.entryCount = 3;
+  descriptor.entries = entries;
+
+  WGPUBindGroup group = wgpuDeviceCreateBindGroup(device, &descriptor);
+  { char d[96]; snprintf(d,96,"CREATE cgroup -> %llu", (unsigned long long)(uintptr_t)group); opentui_wgpu_diag_push(d); }
+  CAMLreturn(opentui_wgpu_make_handle_pair(
+      group != NULL,
+      (uint64_t)(uintptr_t)group));
+}
+
+/* One compute submission: dispatch the supersampling workgroups, copy the
+   storage cells into a map-read buffer, and finish for queue submission.
+   Completion is observed by mapping [destination] like any readback. */
+CAMLprim value opentui_wgpu_encoder_dispatch_compute_to_buffer(
+    value encoder_value,
+    value options) {
+  CAMLparam2(encoder_value, options);
+  WGPUCommandEncoder encoder =
+      (WGPUCommandEncoder)(uintptr_t)Int64_val(encoder_value);
+  WGPUComputePipeline pipeline =
+      (WGPUComputePipeline)(uintptr_t)Int64_val(Field(options, 0));
+  WGPUBindGroup group = (WGPUBindGroup)(uintptr_t)Int64_val(Field(options, 1));
+  uint32_t groups_x = (uint32_t)Long_val(Field(options, 2));
+  uint32_t groups_y = (uint32_t)Long_val(Field(options, 3));
+  WGPUBuffer source = (WGPUBuffer)(uintptr_t)Int64_val(Field(options, 4));
+  WGPUBuffer destination =
+      (WGPUBuffer)(uintptr_t)Int64_val(Field(options, 5));
+  uint64_t size = (uint64_t)Int64_val(Field(options, 6));
+
+  WGPUComputePassDescriptor pass_descriptor;
+  memset(&pass_descriptor, 0, sizeof pass_descriptor);
+  pass_descriptor.label = opentui_wgpu_label("opentui-wgpu-compute-pass");
+
+  {
+    char probe[96];
+    snprintf(probe, sizeof probe, "COMPUTE gx=%u gy=%u bytes=%llu",
+             groups_x, groups_y, (unsigned long long)size);
+    opentui_wgpu_diag_push(probe);
+  }
+
+  WGPUComputePassEncoder pass =
+      wgpuCommandEncoderBeginComputePass(encoder, &pass_descriptor);
+  wgpuComputePassEncoderSetPipeline(pass, pipeline);
+  wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, NULL);
+  wgpuComputePassEncoderDispatchWorkgroups(pass, groups_x, groups_y, 1);
+  wgpuComputePassEncoderEnd(pass);
+  wgpuComputePassEncoderRelease(pass);
+
+  wgpuCommandEncoderCopyBufferToBuffer(encoder, source, 0, destination, 0,
+                                       size);
+  CAMLreturn(Val_unit);
 }

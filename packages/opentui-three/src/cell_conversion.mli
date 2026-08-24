@@ -52,10 +52,34 @@ val write_quadrants :
   snapshot:string ->
   output_width:int ->
   output_height:int ->
-    (unit, Opentui_core.Error.t) result
+  ?render_width:int ->
+  ?render_height:int ->
+    unit -> (unit, Opentui_core.Error.t) result
 (** Super-sampled mode: [snapshot] holds the 2x-rendered frame
     ([2*output_width] x [2*output_height] pixels) and each terminal cell is
     classified from its 2x2 pixel block exactly as the reference WGSL
     compute pass does - most-distant pair ordered by luminance, quadrant
     bits TL=8 TR=4 BL=2 BR=1, all-dark/all-light branches averaging with
     alpha blending. *)
+
+val record_size : int
+(** Byte size of one GPU CellResult record: bg vec4, fg vec4, char u32,
+    three padding u32s. *)
+
+val read_record : string -> int -> int32 * pixel * pixel
+(** [read_record records index] decodes character, background, and
+    foreground from the [index]'th 48-byte compute output record. Colors
+    stay in linear working space; conversion happens at cell write. *)
+
+val write_gpu_records :
+  buffer:Opentui_core.Owned_buffer.t ->
+  records:string ->
+  output_width:int ->
+  output_height:int ->
+  record_pitch:int ->
+    (unit, Opentui_core.Error.t) result
+(** [record_pitch] is the compute grid's width in cells - [(render_width +
+    1) / 2] - which exceeds [output_width] on oddly-sized surfaces. *)
+(** Writes cells decoded from raw compute-pass storage output - the Gpu
+    super-sample path's twin of {!write_quadrants}, sharing the same
+    sRGB-at-write emission so both paths produce identical buffers. *)
