@@ -1,0 +1,4 @@
+(executable
+ (name spinning_cube_demo)
+ (modules spinning_cube_demo)
+ (libraries opentui-three opentui-core opentui_examples_lib eio_main))

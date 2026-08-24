@@ -7,17 +7,16 @@ val create : width:int -> height:int -> unit -> (t, Opentui_wgpu.Wgpu.Error.t) r
 (** Opens the device and builds the render surface. Failing intermediate
     steps release every partially created resource. *)
 
-val render :
+val submit :
   t ->
   root:Object3d.t ->
   camera:Object3d.t ->
   clear_color:float * float * float * float ->
   unit ->
     (unit, Opentui_wgpu.Wgpu.Error.t) result
-(** One frame: update world matrices from [root], refresh the camera's view,
-    collect visible meshes sorted front-to-back, upload per-mesh uniforms,
-    draw through the material-selected pipeline into the offscreen target,
-    and stage the pixels for {!snapshot}.
+(** The first half of {!render}: update world matrices from [root], refresh
+    the camera's view, collect visible meshes sorted front-to-back, upload
+    per-mesh uniforms, and encode every draw into one submitted frame.
 
     Lighting gathers every visible ambient light and the first visible
     directional light - the phase-1 uniform block carries one directional
@@ -25,6 +24,21 @@ val render :
     be a perspective-camera node. Rendering assumes convex geometry without
     mutual screen overlap: there is no depth buffer, only back-face
     culling (documented phase-1 limitation). *)
+
+val stage : t -> (unit, Opentui_wgpu.Wgpu.Error.t) result
+(** The second half of {!render}: block until the submitted frame's pixels
+    land in the owned staging buffer for {!snapshot}. One readback path,
+    awaited immediately - reference parity. *)
+
+val render :
+  t ->
+  root:Object3d.t ->
+  camera:Object3d.t ->
+  clear_color:float * float * float * float ->
+  unit ->
+    (unit, Opentui_wgpu.Wgpu.Error.t) result
+(** [submit] followed by [stage]: one complete frame ending with staged
+    pixels ready for {!snapshot}. *)
 
 val snapshot : t -> string
 (** [width * height * 4] RGBA bytes of the last staged frame with row

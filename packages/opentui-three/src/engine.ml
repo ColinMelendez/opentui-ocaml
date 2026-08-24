@@ -367,13 +367,15 @@ let create ~width ~height () =
                                           view_model = Matrix4.create ();
                                           mvp = Matrix4.create () }))))))))
 
-let render t ~(root : Object3d.t) ~(camera : Object3d.t)
+let submit t ~(root : Object3d.t) ~(camera : Object3d.t)
     ~(clear_color : float * float * float * float) () =
+  (* Scene walk, uniform upload, draw encoding, and queue submission.
+     Completion is observed by {!stage}. *)
   (match Object3d.kind camera with
   | Object3d.Perspective_camera _ -> ()
   | _ ->
       raise
-        (Invalid_argument "Engine.render: camera node is not a perspective camera"));
+        (Invalid_argument "Engine.submit: camera node is not a perspective camera"));
   Object3d.update_matrix_world root;
   Perspective_camera.update_matrices camera;
   let meshes = collect_visible root in
@@ -429,15 +431,27 @@ let render t ~(root : Object3d.t) ~(camera : Object3d.t)
           ~clear:clear_color ~draws ()
       with
       | Error _ as failure -> failure
-      | Ok () -> (
-          match Wgpu.map_read t.device t.readback with
-          | Error _ as failure -> failure
-          | Ok () -> (
-              match Wgpu.copy_mapped t.readback t.staging with
-              | Error _ as failure -> failure
-              | Ok () ->
-                  Wgpu.unmap t.readback;
-                  Ok ())))
+      | Ok () ->
+          (* The staging area now belongs to the in-flight frame; the caller
+             observes completion through {!Engine.stage}. *)
+          Ok ())
+
+let stage t =
+  (* Block until the submitted frame's pixels land in the owned staging
+     buffer. One readback path, awaited immediately - reference parity. *)
+  match Wgpu.map_read t.device t.readback with
+  | Error _ as failure -> failure
+  | Ok () -> (
+      match Wgpu.copy_mapped t.readback t.staging with
+      | Error _ as failure -> failure
+      | Ok () ->
+          Wgpu.unmap t.readback;
+          Ok ())
+
+let render t ~(root : Object3d.t) ~(camera : Object3d.t)
+    ~(clear_color : float * float * float * float) () =
+  let* () = submit t ~root ~camera ~clear_color () in
+  stage t
 
 let snapshot t =
   (* Strips the 256-byte row padding from the staged frame; only valid after

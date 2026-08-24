@@ -7,6 +7,8 @@ module Ambient_light = Ambient_light
 
 module Box_geometry = Box_geometry
 
+module Cell_conversion = Cell_conversion
+
 module Color = Color
 
 module Directional_light = Directional_light

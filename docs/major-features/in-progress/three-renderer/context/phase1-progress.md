@@ -41,22 +41,19 @@ Remaining Phase 1 slices:
   capture delivered; risk 16c retired (root causes: missing copy call
   in submit_draw_frame orchestration + Double_field-on-boxed-tuple in
   draw stub clear color).
-- C: DONE (this working tree, uncommitted at time of writing). Scene
-  graph (`Object3d` unified node record + payload variant: Group,
-  Scene_root, Mesh, Perspective_camera, Directional/Ambient_light),
-  `Box_geometry` per-face normals, `Mesh_basic/lambert_material`,
-  lights, `Perspective_camera`, WGSL unlit+lambert pipelines, and
-  `Three.Engine` render core. Suites: scene-graph units (9), box
-  geometry winding/normals (4), GPU integration (7: unlit, head-on
-  lambert, pitched two-class shading, multi-mesh, determinism,
-  visibility pruning, resize). Backface culling instead of depth
-  buffer remains the documented convex-only limitation.
-- D: cell conversion (None mode = full-block per pixel; Cpu mode =
-  quadrant-glyph algorithm ported from supersampling.wgsl - this is the
-  Phase 2 oracle; Gpu aliases Cpu until the compute pass lands),
-  Three_cli_renderer facade (create/init/draw_scene/set_active_camera/
-  set_background_color/set_size/toggle_super_sampling/render_stats/
-  destroy), Memory-renderer snapshot tests, spinning-cube demo.
+- C: DONE (commit ee48256). Scene graph (`Object3d` unified node record
+  + payload variant), `Box_geometry` per-face normals, basic/lambert
+  materials, lights, `Perspective_camera`, WGSL unlit+lambert
+  pipelines, `Three.Engine` render core with submit/stage split.
+- D: DONE (this working tree at time of writing; Phase 1 acceptance
+  complete). `Three.Cell_conversion` (public CPU oracle: None full-block
+  path + verbatim WGSL quadrant port with alpha blending; linear->sRGB
+  once at cell write, mid-gray locked at 188), `Opentui_three.
+  Three_cli_renderer` facade (reference option names, CELL_ASPECT_RATIO,
+  focal-length FOV, toggle cycle None->Cpu->Gpu, concurrent draw_scene
+  structured rejection, silent no-op pre-init/post-destroy like the
+  reference), memory-renderer snapshot suite (structure classes,
+  determinism), spinning_cube_demo example.
 
 ## webgpu.h v29.0.1.1 ABI facts (verified against pinned header)
 
@@ -415,25 +412,29 @@ truth):
   z=5: front face byte 159 (=0.625 linear), pitched 30deg gives two
   classes 142 (front) / 96 (top), unlit hex colors encode directly.
 
-Three_cli_renderer facade must expose (reference names):
+Three_cli_renderer facade (landed; names match the reference):
 create/init/draw_scene/set_active_camera/set_background_color/
-set_size/toggle_super_sampling/render_stats/destroy.
+set_size/toggle_super_sampling/toggle_debug_stats/render_stats/destroy.
 Options: width, height, ?focal_length (FOV = 2*atan(H/(2*focal))
-degrees when given), ?background_color, ?super_sample (None|Cpu|Gpu;
-Gpu aliases Cpu until phase 2 compute pass - documented divergence),
-?alpha. Camera default position (0,0,3) lookAt origin, near 0.1 far
-1000. Aspect = terminal_width / (terminal_height * 2) unless
-CELL_ASPECT_RATIO env set (risk item 16 wants a construction test).
+degrees when given, else one-degree default like the reference),
+?background_color (core Color), ?super_sample (`None|`Cpu|`Gpu,
+default `Gpu; Gpu aliases Cpu until phase 2 - documented divergence),
+?alpha, ?cell_aspect_ratio (test seam over the CELL_ASPECT_RATIO env).
+Camera default position (0,0,3) lookAt origin, near 0.1 far 1000.
+Aspect = terminal_width / (terminal_height * 2) unless
+CELL_ASPECT_RATIO set. draw_scene rejects reentrant calls with a
+structured error (reference only warns); pre-init/post-destroy draws
+no-op silently like the reference renderMethod.
 
-Snapshot tests: Renderer.create ~output:Memory + Frame_buffer renderable
-+ pre_render driver calling draw_scene; assert Owned_buffer.snapshot
-cell structure (glyph/color classes, not exact RGB everywhere);
-determinism check = two identical renders bit-equal.
+Snapshot suite drives Core.Renderer ~output:Memory + Frame_buffer
+~respect_alpha:true + attach_pre_render -> draw_scene +
+Renderer.render ~force:true; asserts block-glyph structure classes and
+bit-equal determinism across repeated frames.
 
-Demo: packages/opentui-three/examples/spinning_cube_demo.ml using the
-examples/lib App.run pattern (see grayscale_buffer_demo.ml):
-Frame_buffer renderable + pre_render tick rotating cube.rotation.y/x,
-live lease, standalone keys for exit.
+Demo: packages/opentui-three/examples/spinning_cube_demo.ml via the
+examples/lib App.run pattern: Frame_buffer renderable + pre_render tick
+rotating cube.rotation.y/x, live lease, 's' toggles super sampling,
+standalone keys for exit.
 
 Cell conversion (Cpu mode) port of supersampling.wgsl quadrant
 algorithm: per 2x2 block pick two most RGB-distant samples, order by

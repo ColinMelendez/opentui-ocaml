@@ -17,3 +17,13 @@
  (name test_render)
  (modules test_render)
  (libraries opentui-three windtrap))
+
+(test
+ (name test_cell_conversion)
+ (modules test_cell_conversion)
+ (libraries opentui-three opentui-core windtrap))
+
+(test
+ (name test_three_cli_renderer)
+ (modules test_three_cli_renderer)
+ (libraries opentui-three opentui-core windtrap))
